@@ -1,0 +1,11 @@
+{
+  "name": "@rich4/extract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "构建期：从用户正版文件只读提取数据 JSON（任何 app 不得依赖本包）",
+  "bin": { "rich4-extract": "./src/cli.ts" },
+  "scripts": { "typecheck": "tsc -p tsconfig.json" },
+  "dependencies": { "@rich4/shared": "0.1.0", "zod": "4.6.5" },
+  "devDependencies": { "opencc-js": "1.4.2" }
+}

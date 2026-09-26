@@ -1,0 +1,22 @@
+{
+  "name": "@rich4/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "纯 TS、零 IO、确定性：规则引擎、数据表、地图契约、协议、小游戏 sim、AI",
+  "exports": {
+    ".": "./src/index.ts",
+    "./util": "./src/util/index.ts",
+    "./geom": "./src/geom/index.ts",
+    "./data": "./src/data/index.ts",
+    "./engine": "./src/engine/index.ts",
+    "./engine-testing": "./src/engine/testing/index.ts",
+    "./view": "./src/view/index.ts",
+    "./net": "./src/net/index.ts",
+    "./minigames": "./src/minigames/index.ts",
+    "./ai": "./src/ai/index.ts",
+    "./save": "./src/save/index.ts"
+  },
+  "scripts": { "typecheck": "tsc -p tsconfig.json" },
+  "dependencies": { "zod": "4.6.5" }
+}

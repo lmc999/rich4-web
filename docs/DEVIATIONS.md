@@ -1,0 +1,19 @@
+# 有意偏差清单（DEVIATIONS）
+
+> 来源：`docs/architecture.md` §7.3（初始内容），细节见各领域设计。规则基准是原版程序的实际行为（v3.11 逆向为主、v2.06 核实）；下表列出**有意**与原版不同的地方。
+> 每条要么有开关（房间设置 / `RuleConfig` / 构建变量），要么写明理由。凡因 `docs/VERIFY.md` 的核实结论而新增、修改或撤销的条目，按 architecture.md §11 末尾的回写路径同步：先改数据表或 `RuleConfig` 默认值，再刷新 golden，升 `ENGINE_VERSION` 的次版本号，最后更新本文件与 VERIFY.md。
+
+| 编号 | 偏差 | 原版行为 | 我们的做法 | 开关或理由 |
+|---|---|---|---|---|
+| DEV-01 | 金额、点券溢出默认饱和 | 金额按 int32 回绕，点券按 uint16 回绕（`&0xffff`），长局可能出现负资产或点券清零 | `RuleConfig.intOverflow` 默认 `'saturate'`：金额夹在 ±2147483647，点券夹在 0..65535；数值计算仍按 int32 语义（`add32`、`Math.imul`、`divTrunc`） | 开关 `intOverflow: 'wrap'` 恢复原版回绕。理由：溢出是实现缺陷而非规则，联机长局里负资产会破坏物价指数与胜负判定（design/engine.md §3、design/minigames-ai.md §0） |
+| DEV-02 | 引擎 RNG 改用 xoshiro128** | 全局 Watcom C `rand()`（15 位 LCG），公式写成 `rand()%n` | 引擎用可序列化的 xoshiro128**，对外提供 `rand15()`（0..32767），公式保留 `rand15()%n`，因此取值分布相同；每次取数带 purpose 标签，测试可按语义强制结果。小游戏 sim 与 AI 用 `util/rng/watcom.ts`，分布与原版一致 | 无开关。理由：服务器权威模式不需要与原版随机序列逐位对拍（原版序列本来也无从对拍）；xoshiro 质量更好，可序列化进 `state.secret.rng`，便于存档、重放与场景测试（design/engine.md §0、§2） |
+| DEV-03 | AI 随机数按决策派生、稳定排序、固定视角 0 | 电脑与游戏共享同一条全局 `rand()` 序列；候选排序用不稳定的 `qsort`；AI 的「视野」随当时的镜头视角档位变化 | 种子按 `(aiSeed, seat, decisionId \| turnIndex+salt)` 派生（`aiSeed` 在 `secret` 中，只有 AiDriver 可读）；同分候选按下标或 id 稳定排序；视野固定使用规范视角 0 | 无开关。理由：联机时各客户端视角不同，AI 行为必须与观察者无关；决策级派生让同一局可复现、AI 不影响引擎 RNG 序列（design/minigames-ai.md §8–9） |
+| DEV-04 | 目标范围与 AI 视野用世界坐标方窗近似 | 以角色为中心的 440×440 **屏幕**视窗（经等角投影），判定 −220 ≤ 投影偏移 < 220 | v1 由 `shared/geom/viewWindow.ts` 统一实现：世界坐标方窗，半宽 220，半开区间；引擎算目标候选与 AI 判视野共用这一个函数 | 开关 `RuleConfig.targetRange`：`'window'`（默认，`windowHalf` 220）或 `'global'`（全图）。V-E10 取得原版视角 0 投影表后换成投影版，并升 `ENGINE_VERSION` 次版本号 |
+| DEV-05 | 时光机的联机语义 | 单机：全场一个锚点，取最近一次真人掷骰前的世界；使用后恢复整个世界，随机数作为延续点继续 | 锚点 = 真人座位提交 ROLL 前的世界（不含 rng、counters）；回滚时 RNG 与决策 id 都不回退，使用者的时光机数 −1 并刷新锚点；发 `TIME_REWOUND` + `SYNC`，客户端整体 reset；AI 永不使用 | 开关 `RuleConfig.timeMachine`：`'global'`（默认，原版）、`'perSeat'`、`'disabled'`。多真人房间 UI 提示它会回滚他人的操作并推荐 disabled；最终默认值待用户拍板（design/engine.md §10.10） |
+| DEV-06 | 真人可在小游戏倒计时阶段主动跳过 | 只有全局设定「動畫過程」关闭时，真人才走不玩分支（50 + rand%20 点券）；否则必须亲自玩 | 开局前 3 秒倒计时内可点「跳过」，走与原版不玩分支完全相同的结算（`score = 50 + rand15()%20`，`speechSlot = rand15()&1`，恰好 2 次取数）；开局后再发 decline 被拒 | 房间设置 `allowMinigameDecline`（默认 true）。理由：相当于把原版全局开关细化到每位玩家，结果仍在原版可达范围内（design/minigames-ai.md §2） |
+| DEV-07 | 企鹅用几何菱形拾取；气球点击按最近 tick 归属 | 企鹅按 Panel#81 逐像素命中表判定；气球点击在当前帧生效 | 企鹅：`\|dx\|*24 + \|dy\|*48 ≤ 48*24` 的菱形判定，边缘最多差一两个像素；气球：插值系数 α < 0.5 时把点击记到 t−1，客户端本地回滚一步重算 | 无开关。理由：美术自制，不读取原版命中表；插值渲染会让画面落后于逻辑位置，按最近 tick 归属后偏差 ≤ 24px，小于最小命中框半高 26px，且不影响确定性（design/minigames-ai.md §3.3、§2.2、§7.2） |
+| DEV-08 | 神明重生尝试 64 次后放宽距离约束 | 从可走、无禁放、无人、无物件的路面格中随机抽，X 或 Y 方向与参照点相距 ≥300 才接受，否则一直重抽 | 最多尝试 64 次，仍不满足就改为任意合法节点 | 无开关。理由：保证在小地图（fixture）或极端占位下必然终止，不出现死循环；台湾图上几乎不会触发（design/engine.md §10） |
+| DEV-09 | 单次超时默认执行 defaultIntent | 单机无超时概念，玩家可以无限思考 | 决策超时后执行该决策的 `defaultIntent`（不买、不用卡、掷骰……），不交给 AI 代决；连续 2 次超时进入托管（AI 代打） | 房间设置 `timeoutPolicy`：`'default'`（默认）或 `'ai'`（超时由 AI 代决）。理由：偶发超时保守处理，避免 AI 替真人做出激进决定（architecture.md §14 net） |
+| DEV-10 | 美术、音频全部自制；角色名走 i18n | 原版位图、FLIC 动画、MIDI 与语音 | 程序化 SVG/Pixi 绘制与自制或许可明确的音频；沿用原作 12 个角色名，文案全部走 i18n | 构建变量 `VITE_NAMESET=alt` 一键替换为 `characters.alt.json`。理由：不分发任何原版素材（用户决策 0.5） |
+| DEV-11 | AI 不使用特別融資，不做公布栏重新定价 | 电脑可能使用特別融資（0x436b0a）；公布栏有「1/3 重新定价」分支（0x428a37 以后） | v1 的 AI 两者都不做 | 无开关。理由：这两块逆向尚未解明（design/minigames-ai.md §11 A12），待 V-C2 核实后再补 |
+| DEV-12 | 证据缺失的规则先按标注默认值实现 | 以原版程序实际行为为准，但部分行为尚无指令级证据 | 在代码和数据中标 ⚑，先按标注的默认值实现；可切换的做成 `RuleConfig` 开关或数据表字段（PROGRAM / MANUAL 预设见 architecture.md §7.1） | 逐项等待 `docs/VERIFY.md` 核实；结论出来后按本文件开头的回写路径更新 |

@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: typecheck / lint / test / guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # CI 永远没有原版文件：只用 fixture 地图；tools/extract 的 test/local 会自动 skip
+      RICH4_DATASET: fixture
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Typecheck scripts/
+        run: npx tsc -p scripts/tsconfig.json
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Guard - determinism
+        run: npm run check:determinism
+
+      - name: Guard - no original files
+        run: npm run check:no-original
+
+      - name: Guard - layer dependencies
+        run: npm run check:deps

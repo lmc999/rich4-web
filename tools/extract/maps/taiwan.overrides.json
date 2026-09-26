@@ -1,0 +1,23 @@
+{
+  "$schema": "./overrides.schema.json",
+  "mapKey": "taiwan",
+  "source": {
+    "id": "v206-mapdat",
+    "expectResourceSha256": "e95239947d93656cb8786cd291395a1db53e117b262425d65ed0ffd7c9b76197"
+  },
+  "lattice": { "tile": 48, "origin": [4, 36], "transform": "identity" },
+  "compact": false,
+  "nodeCell": { "47": [22, 9] },
+  "edgeRoute": {},
+  "lot": {},
+  "landmark": {},
+  "terrain": { "margin": 4 },
+  "expect": { "nodes": 103, "lands": 50, "facilities": 4, "companies": 3, "landscapes": 21 },
+  "notes": [
+    "坐标为格点坐标：(世界坐标 − origin) / tile 四舍五入、再做 transform 之后，平移到原点之前。",
+    "lattice：T=32 覆盖率只有约 12%，轴向边长众数为 48、斜向边约 (±33,±33)；自动检测得到 T=48、原点 (4,36)（0 个节点同格），此处固定下来。",
+    "transform 暂用 identity（世界 +x → 网格 +x），岛屿朝向尚未与原版截图核对。",
+    "nodeCell 47：新竹街阶梯的起点左移一格，让 47、48 两块住宅地都能放在东北侧（facing 1）。",
+    "terrain.margin 4：四周多留两格，让外海与海岸（w/s）能显示出来。"
+  ]
+}

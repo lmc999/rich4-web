@@ -1,0 +1,30 @@
+# 镜像只含代码与 fixture：原版正版文件、派生数据、提取工具源码一律不进构建上下文（docs/architecture.md §9.3）
+node_modules
+**/node_modules
+original
+.cache
+rich4-data
+tools/extract/src
+tools/extract/test
+e2e
+docs
+**/*.mkf
+**/*.MKF
+**/rich4.exe
+**/RICH4.EXE
+**/SAVE*.DAT
+**/*.avi
+**/*.mid
+
+# 其他无关内容
+.git
+.github
+test
+**/dist
+**/coverage
+test-results
+playwright-report
+**/*.tsbuildinfo
+.env
+deploy/.env
+**/.DS_Store

@@ -1,0 +1,20 @@
+# 原版正版文件与派生数据：永不入库（见 docs/architecture.md §9.3）
+original/
+.cache/
+rich4-data/
+**/*.mkf
+**/*.MKF
+**/RICH4.EXE
+**/rich4.exe
+**/SAVE*.DAT
+
+# 构建与依赖
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo
+.DS_Store
+.env
+deploy/.env

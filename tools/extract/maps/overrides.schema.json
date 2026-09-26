@@ -1,0 +1,359 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "compact": {
+      "default": false,
+      "type": "boolean"
+    },
+    "edgeRoute": {
+      "additionalProperties": {
+        "items": {
+          "items": false,
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          ],
+          "type": "array"
+        },
+        "type": "array"
+      },
+      "default": {},
+      "propertyNames": {
+        "pattern": "^[1-9]\\d*-[1-9]\\d*$",
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "expect": {
+      "additionalProperties": false,
+      "properties": {
+        "companies": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "facilities": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "lands": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "landscapes": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "nodes": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "landmark": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "hidden": {
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "hospital",
+              "jail",
+              "scenery"
+            ],
+            "type": "string"
+          },
+          "rect": {
+            "items": false,
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              }
+            ],
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "default": {},
+      "propertyNames": {
+        "pattern": "^[1-9]\\d*$",
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "lattice": {
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "origin": {
+          "items": false,
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          ],
+          "type": "array"
+        },
+        "tile": {
+          "maximum": 256,
+          "minimum": 4,
+          "type": "integer"
+        },
+        "transform": {
+          "enum": [
+            "identity",
+            "rot90",
+            "rot180",
+            "rot270",
+            "flipX",
+            "flipY"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "lot": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "cell": {
+            "items": false,
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              }
+            ],
+            "type": "array"
+          },
+          "rect": {
+            "items": false,
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              }
+            ],
+            "type": "array"
+          },
+          "side": {
+            "enum": [
+              "a",
+              "b"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "default": {},
+      "propertyNames": {
+        "pattern": "^[LFC][1-9]\\d*$",
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "mapKey": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "nodeCell": {
+      "additionalProperties": {
+        "items": false,
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        ],
+        "type": "array"
+      },
+      "default": {},
+      "propertyNames": {
+        "pattern": "^[1-9]\\d*$",
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "expectResourceSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "id": {
+          "enum": [
+            "v206-mapdat",
+            "v206-mapmkf",
+            "v311-mapmkf"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "terrain": {
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "margin": {
+          "maximum": 32,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "paint": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "rect": {
+                "items": false,
+                "maxItems": 4,
+                "minItems": 4,
+                "prefixItems": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  },
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  },
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                ],
+                "type": "array"
+              },
+              "t": {
+                "enum": [
+                  "g",
+                  "w",
+                  "s",
+                  "p",
+                  "m"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "rect",
+              "t"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "mapKey",
+    "source"
+  ],
+  "type": "object"
+}

@@ -1,0 +1,89 @@
+{
+  "schema": "rich4.known-files/1",
+  "files": [
+    {
+      "id": "steam.game.exe",
+      "role": "exe",
+      "edition": "v206",
+      "path": "Game/RICH4.EXE",
+      "sha256": "110b29f9d2fadcff3836eb69ec380aa264951859c90955da6e11158d2f956a13",
+      "sha1": null,
+      "size": null,
+      "reference": false,
+      "verified": true,
+      "source": "nurockplayer/richman4-remake docs/calendar-and-setup.md；本项目用户文件实测一致"
+    },
+    {
+      "id": "steam.mj.exe",
+      "role": "exe",
+      "edition": "v311",
+      "path": "MultiverseJourney/RICH4.EXE",
+      "sha256": "50cb24bbbd86353e26127e8e89e891c437984655d338a32f1458a3b79596219f",
+      "sha1": null,
+      "size": null,
+      "reference": false,
+      "verified": true,
+      "source": "nurockplayer/richman4-remake docs/calendar-and-setup.md；本项目用户文件实测一致"
+    },
+    {
+      "id": "steam.game.mapdat",
+      "role": "mapdat",
+      "edition": "v206",
+      "path": "Game/MapDat.mkf",
+      "sha256": "4dc6a47efe03f64484e6b9ac5ee31489b7f42fc369c0296f2f0b8d63845294b1",
+      "sha1": null,
+      "size": null,
+      "reference": false,
+      "verified": true,
+      "source": "本项目用户 Steam 文件实测"
+    },
+    {
+      "id": "steam.game.mapmkf",
+      "role": "mapmkf",
+      "edition": "v206",
+      "path": "Game/map.mkf",
+      "sha256": "717aaa1c1becf277064d29772500027427d39488bad64a7ee42875975c0e7106",
+      "sha1": null,
+      "size": null,
+      "reference": false,
+      "verified": true,
+      "source": "本项目用户 Steam 文件实测"
+    },
+    {
+      "id": "steam.mj.mapmkf",
+      "role": "mapmkf",
+      "edition": "v311",
+      "path": "MultiverseJourney/map.mkf",
+      "sha256": "311f44e6ab6f97623b8bc6a8bc27425806fc21ae17791d61966bd9bef778a6b8",
+      "sha1": null,
+      "size": null,
+      "reference": false,
+      "verified": true,
+      "source": "本项目用户 Steam 文件实测"
+    },
+    {
+      "id": "ref.mytbk.exe",
+      "role": "exe",
+      "edition": "v311",
+      "path": null,
+      "sha256": "5a90aee28ee5f7a5c3ba5cb935c9e55751a529c25fcd91208748a66293569550",
+      "sha1": null,
+      "size": 602112,
+      "reference": true,
+      "verified": false,
+      "source": "mytbk/rich4 r2/rich4_dump.py（mytbk 所用 v3.11，非 Steam 版）"
+    },
+    {
+      "id": "ref.mytbk.datamkf",
+      "role": "datamkf",
+      "edition": "v311",
+      "path": null,
+      "sha256": null,
+      "sha1": "639dab8f896ea1d18bfda5309a4c7e0d7a990254",
+      "size": null,
+      "reference": true,
+      "verified": false,
+      "source": "mytbk/rich4 csrc/mkf/test/Data.mkf.sha1"
+    }
+  ]
+}

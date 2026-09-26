@@ -1,0 +1,10 @@
+{
+  "files": {
+    "Game/MapDat.MKF": "4dc6a47efe03f64484e6b9ac5ee31489b7f42fc369c0296f2f0b8d63845294b1",
+    "Game/map.mkf": "717aaa1c1becf277064d29772500027427d39488bad64a7ee42875975c0e7106",
+    "Game/rich4.exe": "110b29f9d2fadcff3836eb69ec380aa264951859c90955da6e11158d2f956a13",
+    "MultiverseJourney/map.mkf": "311f44e6ab6f97623b8bc6a8bc27425806fc21ae17791d61966bd9bef778a6b8",
+    "MultiverseJourney/rich4.exe": "50cb24bbbd86353e26127e8e89e891c437984655d338a32f1458a3b79596219f"
+  },
+  "schema": "rich4.fingerprints-lock/1"
+}
