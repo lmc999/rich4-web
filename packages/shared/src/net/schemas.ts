@@ -21,19 +21,40 @@ import {
   SAVE_NAME_MAX,
   TOKEN_RE,
 } from './limits';
-import type { C2SEventName, C2SPayload, HandshakeAuth } from './protocol';
+import { type C2SEventName, type C2SPayload, type ChatMessage, type HandshakeAuth, SYSTEM_MSG_KEYS } from './protocol';
+import { RECONNECT_GRACE_MAX_S, RECONNECT_GRACE_MIN_S } from './timing';
 
 // ───────────────────────── 文本清洗 ─────────────────────────
 
-/** 控制字符、零宽字符、双向控制符与 BOM */
+/**
+ * 去掉的码点：控制字符、零宽字符、双向控制符、BOM，以及其他从不需要显示的默认可忽略码点——软连字符 U+00AD、
+ * CGJ U+034F、阿拉伯字母标记 U+061C、Hangul 填充符（U+115F/1160/3164/FFA0，常被用来造「空白」昵称）、
+ * 高棉元音 U+17B4/17B5、蒙古文变体选择符与元音分隔符 U+180B–180F、U+FFF0–FFF8、速记格式 U+1BCA0–1BCA3、
+ * 音乐格式 U+1D173–1D17A。
+ * 保留变体选择符 U+FE00–FE0F / U+E0100–E01EF（emoji 与异体字需要）与 tag 字符 U+E0000–E007F（旗帜子区域）：
+ * 它们插在敏感词中间的情况由服务器的敏感词过滤在比对时跳过（apps/server/src/rooms/chatFilter.ts）。
+ */
 function isStrippedCodePoint(cp: number): boolean {
   return (
     cp <= 0x1f ||
     (cp >= 0x7f && cp <= 0x9f) ||
+    cp === 0xad ||
+    cp === 0x34f ||
+    cp === 0x61c ||
+    cp === 0x115f ||
+    cp === 0x1160 ||
+    cp === 0x17b4 ||
+    cp === 0x17b5 ||
+    (cp >= 0x180b && cp <= 0x180f) ||
     (cp >= 0x200b && cp <= 0x200f) ||
     (cp >= 0x2028 && cp <= 0x202e) ||
     (cp >= 0x2060 && cp <= 0x206f) ||
-    cp === 0xfeff
+    cp === 0x3164 ||
+    cp === 0xfeff ||
+    cp === 0xffa0 ||
+    (cp >= 0xfff0 && cp <= 0xfff8) ||
+    (cp >= 0x1bca0 && cp <= 0x1bca3) ||
+    (cp >= 0x1d173 && cp <= 0x1d17a)
   );
 }
 
@@ -56,6 +77,12 @@ export function sanitizeNickname(raw: string): string {
 /** 聊天文本：NFC、去控制和零宽字符（换行变空格）、去首尾空白、截到 CHAT_MAX_CHARS 字；结果可能为空串 */
 export function sanitizeChatText(raw: string): string {
   return Array.from(cleanText(raw, true).join('').trim()).slice(0, CHAT_MAX_CHARS).join('');
+}
+
+/** 存档名：与昵称相同的清洗规则，截到 SAVE_NAME_MAX 字；结果可能为空串 */
+export function sanitizeSaveName(raw: string): string {
+  const s = cleanText(raw, true).join('').trim().replace(/\s+/g, ' ');
+  return Array.from(s).slice(0, SAVE_NAME_MAX).join('');
 }
 
 // ───────────────────────── 基础 ─────────────────────────
@@ -182,7 +209,11 @@ export const RoomSettingsSchema = z.strictObject({
 
 /** room:create / room:updateSettings 的补丁；客户端只能把断线宽限设为 5..120 秒 */
 export const RoomSettingsPatchSchema = z
-  .strictObject({ ...roomSettingsShape, reconnectGraceSec: int(5, 120), game: GameConfigPatchSchema })
+  .strictObject({
+    ...roomSettingsShape,
+    reconnectGraceSec: int(RECONNECT_GRACE_MIN_S, RECONNECT_GRACE_MAX_S),
+    game: GameConfigPatchSchema,
+  })
   .partial();
 
 // ───────────────────────── 小游戏 ─────────────────────────
@@ -207,6 +238,36 @@ export const MinigameSubmitMsgSchema = z.strictObject({
   finalHash: int(0, 0xffffffff),
   clientElapsedMs: int(0, 3_600_000),
 });
+
+// ───────────────────────── 聊天记录（存档 chatTail 与房间快照） ─────────────────────────
+
+const ChatSenderSchema = z.union([
+  z.strictObject({ kind: z.literal('seat'), seat: SeatSchema, nickname: z.string().max(64) }),
+  z.strictObject({ kind: z.literal('spectator'), id: z.string().min(1).max(64), nickname: z.string().max(64) }),
+  z.strictObject({ kind: z.literal('system') }),
+]);
+
+/** 一条聊天消息（服务器产生的数据：导入存档与恢复快照时校验，不用于 C2S） */
+export const ChatMessageSchema = z.strictObject({
+  id: z.string().min(1).max(64),
+  ts: z.number().finite(),
+  from: ChatSenderSchema,
+  text: z
+    .string()
+    .max(CHAT_MAX_CHARS * 4)
+    .optional(),
+  system: z
+    .strictObject({
+      key: z.enum(SYSTEM_MSG_KEYS),
+      params: z.record(z.string(), z.union([z.string().max(256), z.number()])),
+    })
+    .optional(),
+  audience: z.enum(['all', 'spectators']),
+});
+
+/** ChatMessageSchema 的输出类型必须能赋给协议里的 ChatMessage */
+const chatMessageOk: z.infer<typeof ChatMessageSchema> extends ChatMessage ? true : false = true;
+void chatMessageOk;
 
 // ───────────────────────── C2S 事件表 ─────────────────────────
 

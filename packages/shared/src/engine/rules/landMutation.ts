@@ -4,7 +4,7 @@
  * 纯状态变换：不发事件，调用方负责先改再 emit。
  */
 import type { LotLevel } from '../types/ids';
-import type { FacilityState, LandState } from '../types/state';
+import type { FacilityResearch, FacilityState, LandState } from '../types/state';
 import { MAX_LEVEL } from './purchase';
 
 export type MutateMode = 0 | 1 | 2;
@@ -33,12 +33,23 @@ export function mutateLand(l: LandState, mode: MutateMode): LevelChange {
   } else {
     l.level = 0;
     l.chain = false;
-    if (mode === 1) {
-      l.owner = null;
-      l.tenure = 0;
-    }
+    if (mode === 1) releaseLot(l);
   }
   return { from, to: l.level };
+}
+
+/**
+ * 地块变为无主（破产清算、地契到期、mode 1 清为无主共用）：清地主与地契，等级保留；设施同时作废进行中的研发
+ * （invariants：研发只能挂在有主的研究所上，新业主也不应继承旧业主的研发）。
+ * 返回被作废的研发，调用方决定是否发 RESEARCH_CANCELLED。
+ */
+export function releaseLot(l: LandState | FacilityState): FacilityResearch | null {
+  l.owner = null;
+  l.tenure = 0;
+  if (!('research' in l)) return null;
+  const r = l.research;
+  l.research = null;
+  return r;
 }
 
 /** 设施等级上限：公园 1、旅馆 5、购物中心 5、加油站 1、研究所 5（docs/research/r_rules_map.md §11.3） */
@@ -50,13 +61,13 @@ export function mutateFacility(f: FacilityState, mode: MutateMode): LevelChange 
     if (f.level > 0) f.level = (f.level - 1) as LotLevel;
   } else {
     f.level = 0;
-    if (mode === 1) {
-      f.owner = null;
-      f.tenure = 0;
-    }
+    if (mode === 1) releaseLot(f);
   }
   if (f.level === 0) {
     f.type = 'park';
+    f.research = null;
+  } else if (f.research !== null && f.level < f.research.project) {
+    // 拆到低于项目等级：研发作废（invariants 要求研究所等级 ≥ 项目；调用方按需发 RESEARCH_CANCELLED）
     f.research = null;
   }
   return { from, to: f.level };

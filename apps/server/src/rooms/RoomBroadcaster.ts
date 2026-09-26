@@ -62,9 +62,19 @@ export class RoomBroadcaster {
     if (ids.length > 0) this.em.emit(ids, 'chat:message', msg);
   }
 
-  emote(room: Room, msg: EmoteMsg): void {
-    const ids = room.connectedMembers().map((m) => m.socketId);
+  /** 表情：spectatorChat='spectators' 时观战者的表情只发给观战者 */
+  emote(room: Room, msg: EmoteMsg, audience: ChatMessage['audience'] = 'all'): void {
+    const ids = room
+      .connectedMembers()
+      .filter((m) => audience === 'all' || m.viewer.kind === 'spectator')
+      .map((m) => m.socketId);
     if (ids.length > 0) this.em.emit(ids, 'chat:emote', msg);
+  }
+
+  /** 发给房间全部在线成员（server:notice 等） */
+  toRoom<E extends S2CEventName>(room: Room, event: E, payload: S2CPayload<E>): void {
+    const ids = room.connectedMembers().map((m) => m.socketId);
+    if (ids.length > 0) this.em.emit(ids, event, payload);
   }
 
   closed(socketIds: readonly string[], reason: RoomClosedReason): void {

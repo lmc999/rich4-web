@@ -12,6 +12,7 @@ import {
   isValidDate,
   loanDueDate,
   nextDate,
+  nthWeekdayDay,
   weekdayOf,
 } from './calendar';
 
@@ -107,5 +108,23 @@ describe('calendar（design/engine.md §3「日期」）', () => {
     // 贷款到期日落在 1998-11-26 → 顺延到 11-27（星期五）
     expect(loanDueDate(19981125, 1, holidays)).toBe(19981127);
     expect(loanDueDate(19981103, 1, holidays)).toBe(19981104);
+  });
+
+  it('kind 2 照搬 exe 0x4521f0：w < 当月 1 日的星期时丢掉 w，目标日落在星期日', () => {
+    // mapId 3 slot 6 式：2 月第 3 个星期一，休市。2000-02-01 是星期二（wd1 = 2 > w = 1）
+    const third: HolidayDef = { slot: 6, month: 2, day: 3, kind: 2, flagsRaw: 1, weekday: 1, closed: true };
+    expect(weekdayOf(20000201)).toBe(2);
+    expect(nthWeekdayDay(2, 1, 3)).toBe(20);
+    expect(weekdayOf(20000220)).toBe(0);
+    expect(holidayOn(20000220, [third])).toBe(third);
+    expect(holidayOn(20000221, [third])).toBeNull(); // 数学上的第 3 个星期一，原版照常开市
+    expect(isMarketClosedDay(20000221, 1, [third])).toBe(false);
+    // w ≥ wd1 时与数学定义一致：2005-02-01 是星期二，第 3 个星期四 = 2/17
+    const thu: HolidayDef = { ...third, weekday: 4 };
+    expect(weekdayOf(20050201)).toBe(2);
+    expect(holidayOn(20050217, [thu])).toBe(thu);
+    // 超出当月天数不命中（2000-02 第 5 个星期二 = 2/29 命中；第 5 个星期三 = 3/1 不算）
+    expect(nthWeekdayDay(2, 3, 5)).toBe(30);
+    expect(holidayOn(20000229, [{ ...third, day: 5, weekday: 2 }])?.slot).toBe(6);
   });
 });

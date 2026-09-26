@@ -53,6 +53,8 @@ export class Camera {
   private shakeLeft = 0;
   private shakeOffset: Pt = { x: 0, y: 0 };
   private animating = 0;
+  /** dispose 之后（棋盘已销毁）：仍在共享动画时钟上的镜头补间不再写 target */
+  private disposed = false;
   /** 最小缩放：通常为 MIN_ZOOM，大地图 fitAll 时会临时放宽到恰好容纳全图 */
   private minZoomDyn = MIN_ZOOM;
   readonly maxZoom = MAX_ZOOM;
@@ -297,7 +299,14 @@ export class Camera {
 
   // ───────── 内部 ─────────
 
+  /** 棋盘销毁时调用：之后的 apply 与补间都不再写 target（共享时钟上的补间会在到点后自然结束） */
+  dispose(): void {
+    this.disposed = true;
+    this.followTarget = null;
+  }
+
   private animate(ms: number, signal: AbortSignal | undefined, ease: Ease, step: (t: number) => void): Promise<void> {
+    if (this.disposed) return Promise.resolve();
     if (!this.clock || ms <= 0) {
       step(1);
       this.apply();
@@ -344,6 +353,7 @@ export class Camera {
   }
 
   private apply(): void {
+    if (this.disposed) return;
     const a = this.screenAnchor();
     this.target.scale.set(this.z, this.z);
     this.target.position.set(a.x - this.cx * this.z + this.shakeOffset.x, a.y - this.cy * this.z + this.shakeOffset.y);

@@ -9,7 +9,9 @@ import events from './locales/zh-CN/events.json';
 import fate from './locales/zh-CN/fate.json';
 import game from './locales/zh-CN/game.json';
 import gods from './locales/zh-CN/gods.json';
+import hud from './locales/zh-CN/hud.json';
 import items from './locales/zh-CN/items.json';
+import lobby from './locales/zh-CN/lobby.json';
 import magic from './locales/zh-CN/magic.json';
 import minigames from './locales/zh-CN/minigames.json';
 import news from './locales/zh-CN/news.json';
@@ -32,6 +34,8 @@ export const NAMESPACES = [
   'magic',
   'minigames',
   'characters',
+  'lobby',
+  'hud',
 ] as const;
 export type Namespace = (typeof NAMESPACES)[number];
 
@@ -51,6 +55,8 @@ export function zhCNResources(nameset: NameSet = 'original') {
     magic,
     minigames,
     characters: CHARACTER_NAMESETS[nameset],
+    lobby,
+    hud,
   };
 }
 

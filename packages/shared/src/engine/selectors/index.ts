@@ -7,12 +7,14 @@ import type { MapIndex } from '../../data/maps/mapIndex';
 import type { LotId, World } from '../../data/maps/types';
 import { sub32 } from '../../util/int32';
 import { engineMap } from '../core/mapCache';
+import { daysBetween } from '../rules/calendar';
 import { facilityBuyPrice, facilityUpgradeCost, landBuyPrice, landUpgradeCost } from '../rules/purchase';
+import { limitDownPrice, limitUpPrice, tickSize } from '../rules/stock';
 import { quoteLandToll } from '../rules/toll';
 import { netWorth as netWorthRule } from '../rules/wealth';
 import { modeOf, playerOf, type RuleWorld } from '../rules/world';
 import type { TollExemptReason, TollQuote } from '../types/frames';
-import type { SeatIndex } from '../types/ids';
+import type { DateNum, SeatIndex } from '../types/ids';
 
 export type { RulePlayer, RuleWorld } from '../rules/world';
 
@@ -26,7 +28,7 @@ export type TollPreview =
   | { kind: 'exempt'; reason: TollExemptReason }
   | { kind: 'toll'; amount: number; quote: TollQuote };
 
-/** payer 停在 lot 上要付的过路费（M1 只算住宅；设施与企业收费属于 M4，返回 none） */
+/** payer 停在住宅 lot 上要付的过路费（设施与企业收费含转盘，不在这里预览；返回 none） */
 export function tollPreview(w: RuleWorld, map: MapIndex, lot: LotId, payer: SeatIndex): TollPreview {
   const em = engineMap(map);
   const i = em.landIdx(lot);
@@ -41,7 +43,7 @@ export function calcToll(w: RuleWorld, map: MapIndex, lot: LotId, payer: SeatInd
   return r.kind === 'toll' ? r.amount : 0;
 }
 
-/** 无主地产的标价（住宅：(地价 + 房价 × 等级) × PI；设施：(地价 + rate0 × 等级) × PI）；企业不能买，返回 null */
+/** 无主地产的标价（住宅：(地价 + 房价 × 等级) × PI；设施：地价 × PI）；企业不能买，返回 null */
 export function buyPrice(w: RuleWorld, map: MapIndex, lot: LotId): number | null {
   const em = engineMap(map);
   const li = em.landIdx(lot);
@@ -76,6 +78,21 @@ export function lotsInWindow(map: MapIndex, center: World, half: number): LotId[
 /** 今日股市是否开市（星期日、休市节日、全面停市都不开） */
 export function marketOpen(w: Pick<RuleWorld, 'clock' | 'econ'>): boolean {
   return w.clock.marketOpen && w.econ.marketClosedDays === 0;
+}
+
+/** 股价档位（分）：按价格判断 <5 元 0.01、<15 元 0.05、<50 元 0.1、<150 元 0.5、其余 1 元 */
+export function stockTickSize(priceCents: number): number {
+  return tickSize(priceCents);
+}
+
+/** 以前日收盘价计的涨停价 / 跌停价（分）；当日价达到即为涨停 / 跌停（涨停不能买、跌停不能卖） */
+export function stockLimitPrices(prevCents: number): { up: number; down: number } {
+  return { up: limitUpPrice(prevCents), down: limitDownPrice(prevCents) };
+}
+
+/** 从今天到 date 的天数（date − 今天；date 为 0 时返回 null） */
+export function daysUntil(w: Pick<RuleWorld, 'clock'>, date: DateNum): number | null {
+  return date === 0 ? null : daysBetween(w.clock.date, date);
 }
 
 /** 贷款额度 = 总资产 − 现有贷款（M4 的柜台还要判挤兑、拒绝往来） */

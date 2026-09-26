@@ -226,10 +226,8 @@ export function renderProvenance(p: ProvenanceInput): string {
       `本图的 ${pending.join('、')} 需要从 exe 表抽取（先运行 exe tables 或提供 original/ 下的 RICH4.EXE），目前为空数组；因此企业的 stockIndex 在 validateMap 中悬空（分类「待 exe 数据」）。`,
     );
   }
-  if (build.def.holidays.some((h) => h.kind === 2)) {
-    open.push(
-      'MapDef 的 HolidayDef 没有星期字段：kind 2（该月第 n 个星期几）的星期暂放在 flagsRaw 的 16..23 位（flagsRaw = flags0 | 事件位 << 8 | 星期 << 16），建议 shared 契约增加 weekday。',
-    );
+  if (build.def.holidays.some((h) => h.kind === 2 && h.weekday === undefined)) {
+    open.push('有 kind 2（该月第 n 个星期几）的节日缺 weekday 字段。');
   }
   if (lat.mode === 'fitted') {
     open.push(

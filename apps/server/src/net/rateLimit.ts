@@ -57,9 +57,13 @@ export function bucketOf(event: C2SEventName): BucketGroup {
   return 'room';
 }
 
+/** 每 IP 每分钟存档导入次数（HTTP POST /api/saves/import） */
+export const IMPORT_PER_IP_PER_MIN = 10;
+
 export const IP_RULES = Object.freeze({
   joinFail: { count: JOIN_FAIL_PER_IP_PER_MIN, perMs: 60_000, burst: JOIN_FAIL_PER_IP_PER_MIN },
   create: { count: CREATE_ROOM_PER_IP_PER_MIN, perMs: 60_000, burst: CREATE_ROOM_PER_IP_PER_MIN },
+  import: { count: IMPORT_PER_IP_PER_MIN, perMs: 60_000, burst: IMPORT_PER_IP_PER_MIN },
 } as const satisfies Record<string, RateRule>);
 
 export interface RateLimiterOptions {

@@ -281,24 +281,45 @@ export interface ResearchOptions {
   projects: { project: ResearchProject; item: ItemId; days: number }[];
 }
 
+/** 百货公司的一笔交易（SHOP_TRADE 事件与 ShopOptions.visit.trades 共用；points 为这笔花掉或得到的点券） */
+export interface ShopTradeRecord {
+  op: 'buyCard' | 'sellCard' | 'buyItem' | 'sellItem';
+  card: CardId | null;
+  item: ItemId | null;
+  qty: number;
+  points: number;
+}
+
+/** 每次进店的交易次数上限（防刷；到上限后只能 LEAVE） */
+export const SHOP_TRADE_LIMIT = 60;
+
 export interface ShopOptions {
   points: number;
   handCount: number;
   handMax: number;
-  /** 真人座位：本次货架（rand15()%10+6 张）；电脑座位：牌堆里所有剩余卡种（fullDeck=true） */
-  shelf: { idx: number; card: CardId; price: number }[];
+  /**
+   * 真人座位：本次货架（进店时 rand15()%10+6 张，按牌堆剩余张数加权、不放回；买走的从货架移除）；
+   * 电脑座位（fullDeck=true）：牌堆里每种剩余的卡各一行。idx 即 SHOP_BUY_CARD.shelfIdx。
+   * buyable=false：手牌已满、点券不足或牌堆里已没有这张。
+   */
+  shelf: { idx: number; card: CardId; price: number; buyable: boolean }[];
   fullDeck: boolean;
+  /** 只卖道具 1..8；maxQty = min(库存, 9 − 持有, 点券 / 单价)，为 0 表示不能买 */
   items: { item: ItemId; price: number; pool: number; own: number; maxQty: number }[];
+  /** value / unitValue 为卖回价 trunc(标价 × 数量 × 0.9) */
   sell: {
     cards: { slot: number; card: CardId; value: number }[];
     items: { item: ItemId; count: number; unitValue: number }[];
   };
+  /** 本次进店：进店时的点券、已完成的交易、剩余可交易次数（AI 据此推算进度，客户端可忽略） */
+  visit: { entryPoints: number; trades: ShopTradeRecord[]; remaining: number };
 }
 
 export interface LotteryOptions {
   cash: number;
+  /** 每注 1000 元（不乘 PI，只用现金，进公库） */
   price: number;
-  /** 36 个号码的持有者（下标 0 = 显示的 1 号） */
+  /** 36 个号码的持有者（下标 0 = 显示的 1 号）；LOTTERY_BUY.number 用下标 */
   sold: (SeatIndex | null)[];
   pool: number;
 }
@@ -325,16 +346,25 @@ export interface MagicCastOptions {
 
 export interface ConstructionPickOptions {
   company: CompanyLotId;
+  /** 停留者是本公司董事长：免费加盖 levels 级 */
   chairman: boolean;
-  lots: { lot: LandLotId; level: LotLevel; cost: number }[];
-  /** CONSTRUCTION_PICK 能否跳过（V-R19 ⚑） */
+  /** 本次加盖的级数：非董事长 1，董事长 = rules.constructionChairmanLevels（到 5 级或上限即止） */
+  levels: number;
+  /**
+   * 可选目标：自己的住宅（非连锁店、未满 5 级）与自己已建成、未到上限的设施。
+   * cost = 工程费（非董事长：该地地价 × PI，付给公司，可用存款、付不起即破产；董事长 0）；rent = 当前等级租金（设施为 0）
+   */
+  lots: { lot: LotId; level: LotLevel; cost: number; rent: number }[];
+  /** CONSTRUCTION_PICK 能否跳过（V-R19 ⚑：PROGRAM 下为 false，原版真人界面与 AI 都会选一块） */
   canSkip: boolean;
 }
 
 export interface SubscribeSharesOptions {
   company: CompanyLotId;
   stock: number;
+  /** 每股单价 = trunc(资产额 / 10000)（元，不乘 PI，只用现金） */
   unitPrice: number;
+  /** min(1000, trunc(现金 / 单价), 公司保留股) */
   max: number;
   cash: number;
   reserved: number;

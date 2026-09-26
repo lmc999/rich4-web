@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "description": "纯 TS、零 IO、确定性：规则引擎、数据表、地图契约、协议、小游戏 sim、AI",
   "exports": {
     ".": "./src/index.ts",

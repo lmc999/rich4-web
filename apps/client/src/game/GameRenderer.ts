@@ -44,10 +44,16 @@ export interface GameRendererOptions {
   onDoubleTap?: (screen: Pt) => void;
   /** WebGL 上下文丢失 / 恢复通知（UI 显示「图形重建中…」） */
   onContextLost?: (lost: boolean) => void;
+  /**
+   * 外部动画时钟（对局页与 EventPlayer 共用一个时钟，由客户端服务驱动）；给出时渲染器不再推进它，
+   * 缺省时渲染器自带时钟并在 ticker 里推进（开发页）。
+   */
+  clock?: AnimClock;
 }
 
 export class GameRenderer {
-  readonly clock = new AnimClock();
+  readonly clock: AnimClock;
+  private readonly ownsClock: boolean;
   readonly atlas = new CharacterAtlas(2);
   camera!: Camera;
   board!: BoardView;
@@ -76,6 +82,8 @@ export class GameRenderer {
     private readonly opts: GameRendererOptions,
   ) {
     this.quality = QUALITY_PRESETS[opts.quality ?? 'high'];
+    this.ownsClock = !opts.clock;
+    this.clock = opts.clock ?? new AnimClock();
   }
 
   /** 创建并挂载到 host（host 需要有尺寸；画布铺满 host） */
@@ -115,7 +123,7 @@ export class GameRenderer {
     app.renderer.on('resize', (w: number, h: number) => this.camera.setViewport(w, h));
     app.ticker.add((t) => {
       const dt = Math.min(100, t.deltaMS);
-      this.clock.advance(dt);
+      if (this.ownsClock) this.clock.advance(dt);
       this.camera.update(dt);
     });
     this.detachGestures = attachGestures(canvas, this.camera, {
@@ -199,9 +207,12 @@ export class GameRenderer {
     this.detachGestures?.();
     this.detachGestures = null;
     const canvas = this.app.canvas;
+    if (!this.ownsClock) this.camera.follow(null);
+    // 共享时钟上可能还有镜头补间（没带 signal 的 zoomTo 等）：先让镜头失效，再销毁 world
+    this.camera.dispose();
     canvas.removeEventListener('webglcontextlost', this.onLost);
     canvas.removeEventListener('webglcontextrestored', this.onRestored);
-    this.clock.flushAll();
+    if (this.ownsClock) this.clock.flushAll();
     this.board.destroy();
     void this.atlas.destroy();
     this.cache.clear();

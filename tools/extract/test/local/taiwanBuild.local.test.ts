@@ -17,6 +17,8 @@ const ctx = new ExtractContext({ logger: { out: () => {}, err: () => {} } });
 const REQUIRED = ['Game/MapDat.MKF', 'Game/map.mkf', 'MultiverseJourney/map.mkf', 'Game/rich4.exe'];
 const available = REQUIRED.every((p) => existsSync(path.join(ctx.srcDir, p)));
 const OVERRIDES = path.join(ctx.packageDir, 'maps', 'taiwan.overrides.json');
+/** 首次构建含 exe 抽取（两版、第二阶段），给足时间 */
+const T = { timeout: 60_000 };
 
 describe.skipIf(!available)('台湾 MapDef 构建（本机原版文件）', () => {
   const ov = parseOverrides(JSON.parse(readFileSync(OVERRIDES, 'utf8')));
@@ -37,7 +39,7 @@ describe.skipIf(!available)('台湾 MapDef 构建（本机原版文件）', () =
     return cached;
   };
 
-  it('构建成功（exit 0），几何无 error，MapDef 通过 zod', async () => {
+  it('构建成功（exit 0），几何无 error，MapDef 通过 zod', T, async () => {
     const r = await once();
     expect(r.exitCode).toBe(ExitCode.OK);
     expect(r.geometry.report.issues.filter((i) => i.severity === 'error')).toEqual([]);
@@ -45,17 +47,21 @@ describe.skipIf(!available)('台湾 MapDef 构建（本机原版文件）', () =
     expect(computeMapDataHash(r.def)).toBe(r.def.meta.dataHash);
   });
 
-  it('validateMap（strict4）ok：无 error、无 pending；企业远端百货格只报 W_COMPANY_REMOTE_FRONT；没有对角 link', async () => {
-    const r = await once();
-    expect(r.validation.ok).toBe(true);
-    expect(r.classified.filter((i) => i.class !== 'warn')).toEqual([]);
-    expect(r.semantic.pending).toEqual([]);
-    const remote = r.classified.filter((i) => i.code === 'W_COMPANY_REMOTE_FRONT');
-    expect(remote.map((i) => i.tiles)).toEqual([[15]]);
-    expect(r.validation.issues.some((i) => i.code === 'W_DIAGONAL_LINK')).toBe(false);
-  });
+  it(
+    'validateMap（strict4）ok：无 error、无 pending；企业远端百货格只报 W_COMPANY_REMOTE_FRONT；没有对角 link',
+    T,
+    async () => {
+      const r = await once();
+      expect(r.validation.ok).toBe(true);
+      expect(r.classified.filter((i) => i.class !== 'warn')).toEqual([]);
+      expect(r.semantic.pending).toEqual([]);
+      const remote = r.classified.filter((i) => i.code === 'W_COMPANY_REMOTE_FRONT');
+      expect(remote.map((i) => i.tiles)).toEqual([[15]]);
+      expect(r.validation.issues.some((i) => i.code === 'W_DIAGONAL_LINK')).toBe(false);
+    },
+  );
 
-  it('股票 12 支（名称去空格、整数分）、节日 23 条（停用槽 12 不输出）；企业 ↔ 股票同名', async () => {
+  it('股票 12 支（名称去空格、整数分）、节日 23 条（停用槽 12 不输出）；企业 ↔ 股票同名', T, async () => {
     const r = await once();
     const tw = r.def.strings['zh-TW'];
     expect(r.def.stocks.map((s) => [tw[s.nameKey], s.initPriceCents / 100, s.volatility])).toEqual([
@@ -85,7 +91,7 @@ describe.skipIf(!available)('台湾 MapDef 构建（本机原版文件）', () =
     expect(companyStockChecks(r.def).every((c) => c.ok)).toBe(true);
   });
 
-  it('计数 103/50/4/3/21，恰好 2 处静态封路，关押格双向引用', async () => {
+  it('计数 103/50/4/3/21，恰好 2 处静态封路，关押格双向引用', T, async () => {
     const r = await once();
     expect(r.def.meta.counts).toEqual({ nodes: 103, lands: 50, facilities: 4, companies: 3, landscapes: 21 });
     const blocked = r.def.tiles.flatMap((t) => t.links.filter((l) => l.blocked).map((l) => `${t.id}->${l.to}`));
@@ -96,7 +102,7 @@ describe.skipIf(!available)('台湾 MapDef 构建（本机原版文件）', () =
     }
   });
 
-  it('§10.1 样本在三个来源上都通过', async () => {
+  it('§10.1 样本在三个来源上都通过', T, async () => {
     const known = await loadKnownFiles(ctx.packageDir);
     for (const def of RAW_SOURCES) {
       const { raw } = await loadRawSource(ctx, def, 0, known);
@@ -107,7 +113,7 @@ describe.skipIf(!available)('台湾 MapDef 构建（本机原版文件）', () =
     }
   });
 
-  it('住宅地全部在 facing 所指一侧；两次构建字节一致', async () => {
+  it('住宅地全部在 facing 所指一侧；两次构建字节一致', T, async () => {
     const r = await once();
     expect(r.geometry.report.facing.enabled).toBe(true);
     expect(r.geometry.report.landsOffSide).toEqual([]);

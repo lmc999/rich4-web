@@ -1,0 +1,127 @@
+/* 系统叠层：断线遮罩、旋转提示、设置、存档（design/client.md §5.7） */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: rgb(20 30 50 / 0.55);
+}
+
+.card {
+  max-width: 420px;
+  text-align: center;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto var(--space-3);
+  border: 5px solid var(--c-cream-deep);
+  border-top-color: var(--c-blue);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 竖屏阻断：只在手机竖屏（窄且竖）时出现 */
+.rotate {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background: var(--c-sky);
+  text-align: center;
+}
+
+@media (orientation: portrait) and (max-width: 900px) {
+  .rotate {
+    display: flex;
+  }
+}
+
+.rotateIcon {
+  font-size: 64px;
+  animation: tilt 1.6s ease-in-out infinite;
+}
+
+@keyframes tilt {
+  0%,
+  30% {
+    transform: rotate(0deg);
+  }
+  60%,
+  100% {
+    transform: rotate(-90deg);
+  }
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.group {
+  display: flex;
+  gap: var(--space-3);
+  border: 2px solid var(--c-cream-deep);
+  border-radius: var(--radius-sm);
+}
+
+.radio,
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.saves h3 {
+  margin-top: var(--space-3);
+  font-size: 17px;
+}
+
+.saveList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.saveList li {
+  display: grid;
+  gap: 4px;
+  padding: var(--space-2);
+  border: 2px solid var(--c-cream-deep);
+  border-radius: var(--radius-sm);
+  background: var(--c-white);
+}
+
+.tag,
+.warnTag {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.tag {
+  background: var(--c-cream-deep);
+}
+
+.warnTag {
+  background: var(--c-orange);
+}

@@ -8,22 +8,31 @@
  *   --map <id>          test | test-allkinds（默认 test-allkinds）
  *   --actions <n>       计时的 action 数（默认 20000；对局结束就换一局继续）
  *   --warmup <n>        预热 action 数（默认 2000，不计时）
- *   --policy <p>        random | default（defaultIntent，默认 random）
+ *   --policy <p>        random | default（defaultIntent）| original（OriginalAiPolicy，另报 AI decide 的耗时），默认 random
  *   --players <n>       2..4（默认 4）
  *   --seed <hex>        基础种子（默认 be0c4）
  *   --no-assert         只报告，不因超出阈值而返回非 0
  *   --json              输出 JSON
  */
 import { performance } from 'node:perf_hooks';
+import { makeAiContext, OriginalAiPolicy } from '@rich4/shared/ai';
 import { fixtureRegistry } from '@rich4/shared/data';
 import { createEngine, type GameAction, type GameState, type SeatIndex } from '@rich4/shared/engine';
-import { DEFAULT_CHARACTERS, intentRng, makeConfig, randomAction } from '@rich4/shared/engine-testing';
+import {
+  DEFAULT_CHARACTERS,
+  decisionForSeat,
+  intentRng,
+  makeConfig,
+  randomAction,
+  simpleView,
+} from '@rich4/shared/engine-testing';
+import type { DecisionForYou, GameView } from '@rich4/shared/view';
 
 interface Options {
   map: string;
   actions: number;
   warmup: number;
-  policy: 'random' | 'default';
+  policy: 'random' | 'default' | 'original';
   players: number;
   seed: string;
   assert: boolean;
@@ -68,7 +77,9 @@ function parseArgs(argv: readonly string[]): Options {
         break;
       case '--policy': {
         const p = need(i++, a);
-        if (p !== 'random' && p !== 'default') throw new Error('--policy must be random or default');
+        if (p !== 'random' && p !== 'default' && p !== 'original') {
+          throw new Error('--policy must be random, default or original');
+        }
         o.policy = p;
         break;
       }
@@ -122,9 +133,27 @@ function main(): void {
   };
   const rng = intentRng(o.seed);
   let s = newState();
+  const aiTimes: number[] = [];
   const next = (): GameAction => {
     if (o.policy === 'random') return randomAction(s, rng)!;
     const d = s.pending[0]!;
+    if (o.policy === 'original') {
+      const t0 = performance.now();
+      const view = simpleView(s) as GameView;
+      const p = s.players.find((x) => x.seat === d.seat)!;
+      const ctx = makeAiContext({
+        aiSeed: s.secret.aiSeed,
+        seat: d.seat,
+        decisionId: d.id,
+        turnNo: view.clock.turnNo,
+        traits: p.aiTraits,
+        map: fixtureRegistry.getMap(o.map),
+        handVisibility: 'public',
+      });
+      const intent = OriginalAiPolicy.decide(view, decisionForSeat(d) as DecisionForYou, ctx);
+      aiTimes.push(performance.now() - t0);
+      return { ...intent, seat: d.seat, decisionId: d.id } as GameAction;
+    }
     return { ...d.defaultIntent, seat: d.seat, decisionId: d.id } as GameAction;
   };
 
@@ -175,6 +204,13 @@ function main(): void {
         `(${report.actions} actions, ${report.games} games, ${report.eventsPerAction} events/action, ` +
         `clone≈${report.cloneMs}ms, state≈${Math.round(report.stateBytes / 1024)}KB, map=${report.map})`,
     );
+    if (aiTimes.length > 0) {
+      const ai = aiTimes.slice().sort((a, b) => a - b);
+      console.log(
+        `AI decide（含 simpleView 投影）p50=${round(percentile(ai, 0.5))}ms p99=${round(percentile(ai, 0.99))}ms ` +
+          `max=${round(ai[ai.length - 1] ?? 0)}ms`,
+      );
+    }
     console.log(ok ? `OK: p50 < ${P50_LIMIT_MS}ms, p99 < ${P99_LIMIT_MS}ms` : 'SLOW: 超出阈值');
   }
   process.exit(ok || !o.assert ? 0 : 1);

@@ -1,12 +1,14 @@
 /**
  * 各 kind 的 options 构造（design/engine.md §9.2–§9.3）：渲染和 AI 需要的全部数值与合法候选都由引擎算好，
- * 客户端不需要重新实现规则。M1 实现 TURN_MENU、BUY_LAND、UPGRADE_LAND；其余在各自里程碑补上。
+ * 客户端不需要重新实现规则。M1 实现 TURN_MENU、BUY_LAND、UPGRADE_LAND；M4 的决策见 decisions/economy.ts。
  */
 import { ITEM_IDS, isPassiveCard } from '../../data/tables/ids';
 import type { EngineMap } from '../core/mapCache';
+import { isMarketClosedDay } from '../rules/calendar';
 import { diceAllowed } from '../rules/movement';
 import { playerAt } from '../rules/payment';
 import { canBuyLand, canUpgradeLand, fortuneBonus, upgradedLevel } from '../rules/purchase';
+import { isLimitDown, isLimitUp, maxBuyShares, maxSellShares } from '../rules/stock';
 import { landTollPreview } from '../rules/toll';
 import {
   type BuyLandOptions,
@@ -18,7 +20,7 @@ import {
 import type { SeatIndex } from '../types/ids';
 import type { GameState } from '../types/state';
 
-function stockRows(s: GameState, seat: SeatIndex): StockRow[] {
+function stockRows(s: GameState, seat: SeatIndex, open: boolean): StockRow[] {
   const p = playerAt(s, seat);
   return s.stocks.map((st, i) => ({
     idx: st.idx,
@@ -26,24 +28,29 @@ function stockRows(s: GameState, seat: SeatIndex): StockRow[] {
     changePct10: st.prevCents > 0 ? Math.trunc(((st.priceCents - st.prevCents) * 1000) / st.prevCents) : 0,
     quota: p.quota[i] ?? 0,
     float: st.float,
-    // 涨跌停、可买卖量由 M4 的 rules/stock 计算；M1 不开放交易
-    limitUp: false,
-    limitDown: false,
+    limitUp: isLimitUp(st),
+    limitDown: isLimitDown(st),
     suspended: st.suspend > 0,
     shares: p.holdings[i]?.shares ?? 0,
     costCents: p.holdings[i]?.costCents ?? 0,
-    maxBuy: 0,
-    maxSell: 0,
+    maxBuy: maxBuyShares(s, seat, i, open),
+    maxSell: maxSellShares(s, seat, i, open),
     chairman: st.chairman,
   }));
 }
 
 export function buildTurnMenu(s: GameState, em: EngineMap, seat: SeatIndex): TurnMenuOptions {
-  void em;
   const p = playerAt(s, seat);
   const locked = p.st.stay !== 0 ? 'stay' : p.st.tortoise !== 0 ? 'tortoise' : null;
   const open = s.clock.marketOpen && s.econ.marketClosedDays === 0;
-  const reason = open ? null : s.econ.marketClosedDays > 0 ? 'halted' : s.clock.weekday === 0 ? 'sunday' : 'holiday';
+  const closedDay = isMarketClosedDay(s.clock.date, s.clock.weekday, em.def.holidays);
+  const reason = open
+    ? null
+    : s.econ.marketClosedDays > 0 || !closedDay
+      ? 'halted'
+      : s.clock.weekday === 0
+        ? 'sunday'
+        : 'holiday';
   return {
     dice: { allowed: diceAllowed(p.vehicle), current: p.diceCount, locked },
     // 卡片与道具的使用属于 M6：先列出手牌与背包，全部标记不可用
@@ -61,7 +68,7 @@ export function buildTurnMenu(s: GameState, em: EngineMap, seat: SeatIndex): Tur
       reason: 'noTarget',
       targets: { t: 'none' },
     })),
-    stock: { open, reason, rows: stockRows(s, seat), deposit: p.deposit },
+    stock: { open, reason, rows: stockRows(s, seat, open), deposit: p.deposit },
     board: { listings: [], mine: 0, canList: false, lotCaps: [] },
     canSurrender: false,
     timeMachine: { usable: false, anchorTurn: null },

@@ -1,11 +1,12 @@
 /**
- * createApp(deps)：组装 Fastify + Socket.IO + 房间管理（design/net.md §11.1）。
- * 引擎、AI 策略、时钟、调度器、日志都可以注入：集成测试注入 stubEngine / ManualScheduler / 缩短的计时。
- * 本里程碑持久化为内存实现（persistence 目录留到 M5）。
+ * createApp(deps)：组装 Fastify + Socket.IO + 房间管理 + 持久化（design/net.md §8、§11.1）。
+ * 引擎、AI 策略、时钟、调度器、日志、持久化都可以注入：集成测试注入 stubEngine / ManualScheduler / 缩短的计时 /
+ * 内存 SQLite。启动时从快照 + journal 恢复房间（restoreReport）；close() 默认刷快照与自动存档（优雅停机），
+ * close({flush:false}) 模拟崩溃（只剩逐条写入的 journal）。
  */
 import { randomBytes, randomInt } from 'node:crypto';
 import { getHeapStatistics } from 'node:v8';
-import { type AiPolicy, BasicAiPolicy } from '@rich4/shared/ai';
+import { type AiPolicy, BasicAiPolicy, OriginalAiPolicy } from '@rich4/shared/ai';
 import { createEngine, type EngineApi } from '@rich4/shared/engine';
 import { type RoomSettings, SAVE_IMPORT_MAX_BYTES } from '@rich4/shared/net';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance, LogController } from 'fastify';
@@ -13,18 +14,29 @@ import type { AppConfig } from './config';
 import type { MapCatalog } from './data/DataRegistry';
 import { AiDriver } from './game/AiDriver';
 import { DEFAULT_TIMING, type TimingOptions } from './game/Deadlines';
+import { EventLoopMonitor, registerAdmin } from './http/admin';
 import { registerHealth } from './http/health';
 import { registerMaps } from './http/maps';
+import { registerSavesHttp } from './http/saves';
 import { registerStatic } from './http/static';
 import { type Clock, RealScheduler, realClock, type Scheduler } from './infra/clock';
 import { createLogger, type Logger } from './infra/logger';
 import { type AppServer, attachIo, createIo, ioEmitter, isTrustedProxy } from './net/io';
 import { RateLimiter } from './net/rateLimit';
 import { SessionRegistry } from './net/sessions';
+import { BackupScheduler } from './persistence/backup';
+import { Signer } from './persistence/codec';
+import { MEMORY_DB, openPersistence, type Persistence, resolveHmacSecret } from './persistence/index';
+import { RoomPersister } from './persistence/RoomPersister';
+import { SaveService } from './persistence/SaveService';
+import { createBadWordFilter, loadBadWordFilter } from './rooms/chatFilter';
 import { DEFAULT_ROOM_TTLS, type RoomTtls } from './rooms/Room';
 import { RoomBroadcaster } from './rooms/RoomBroadcaster';
-import { RoomManager } from './rooms/RoomManager';
+import { type RestoreReport, RoomManager } from './rooms/RoomManager';
 import { RoomCodeAllocator } from './rooms/roomCode';
+
+/** 启动时恢复这么久之内更新过的房间（design/net.md §8.5 listActive(24h)） */
+export const RESTORE_MAX_AGE_MS = 24 * 60 * 60_000;
 
 export interface AppDeps {
   config: AppConfig;
@@ -44,6 +56,12 @@ export interface AppDeps {
   /** 新房间默认设置的覆盖（测试用：缩短断线宽限等） */
   roomDefaults?: Partial<Omit<RoomSettings, 'game'>>;
   seedHex?: () => string;
+  /** 注入持久化（测试用；调用方负责关闭）；缺省按 config.store / storePath 打开，close() 时关闭 */
+  persistence?: Persistence;
+  /** 聊天敏感词（覆盖 DATA_DIR/badwords.txt） */
+  badWords?: readonly string[];
+  /** 重启恢复的时间窗（默认 24 小时） */
+  restoreMaxAgeMs?: number;
 }
 
 export interface App {
@@ -54,33 +72,55 @@ export interface App {
   readonly catalog: MapCatalog;
   readonly log: Logger;
   readonly clock: Clock;
+  readonly persistence: Persistence;
+  readonly saves: SaveService;
+  /** 启动时恢复的房间 */
+  readonly restoreReport: readonly RestoreReport[];
   listen(port?: number, host?: string): Promise<{ port: number; url: string }>;
   isReady(): boolean;
-  /** 停机：readyz 转 503、通知客户端、暂停对局、关闭连接 */
+  /** 优雅停机：readyz 转 503、server:notice{shutdown}、刷快照与自动存档、关闭连接与数据库 */
   shutdown(reason: string): Promise<void>;
-  close(): Promise<void>;
+  /**
+   * 关闭：flush（默认 true）时给所有房间写快照并自动存档；flush=false 模拟崩溃，只保留逐条写入的 journal。
+   * 房间不会收到 room:closed（重启后恢复）。
+   */
+  close(o?: { flush?: boolean }): Promise<void>;
 }
 
-/** 按配置选择引擎与配套的 AI 策略：real = createEngine + BasicAiPolicy；stub = 测试用 stubEngine + 本地策略 */
+/** 真实引擎配套的电脑策略（architecture §5.11：SeatAiConfig.preset 经 resolveTraits 写入 aiTraits，策略按 traits 决策） */
+export function aiPolicyOf(kind: 'original' | 'basic' = 'original'): AiPolicy {
+  return kind === 'basic' ? BasicAiPolicy : OriginalAiPolicy;
+}
+
+/**
+ * 按配置选择引擎与配套的 AI 策略：real = createEngine + OriginalAiPolicy（RICH4_AI_POLICY=basic 时 BasicAiPolicy）；
+ * stub = 测试用 stubEngine + 本地策略。
+ * stub 只在源码模式（tsx / vitest）可用：build.mjs 把 ../test/* 标为 external，生产包不含任何测试代码，
+ * 在构建产物里选 stub 会得到明确的错误。
+ */
 export async function resolveEngine(
   kind: 'stub' | 'real',
   catalog: MapCatalog,
   log: Logger,
   devChecks = false,
+  aiPolicy: 'original' | 'basic' = 'original',
 ): Promise<{ engine: EngineApi | null; policy: AiPolicy }> {
   if (kind === 'stub') {
-    const [{ createStubEngine }, { localPolicy }] = await Promise.all([
-      import('../test/helpers/stubEngine'),
-      import('../test/helpers/localPolicy'),
-    ]);
+    let mods: [typeof import('../test/helpers/stubEngine'), typeof import('../test/helpers/localPolicy')];
+    try {
+      mods = await Promise.all([import('../test/helpers/stubEngine'), import('../test/helpers/localPolicy')]);
+    } catch (err) {
+      throw new Error(`RICH4_TEST_ENGINE=stub 只能在源码模式（tsx）下使用：${String(err)}`);
+    }
+    const [{ createStubEngine }, { localPolicy }] = mods;
     log.warn('RICH4_TEST_ENGINE=stub：使用 12 格 stubEngine（仅供联调与测试）');
     return { engine: createStubEngine({ registry: catalog.registry }), policy: localPolicy };
   }
   try {
-    return { engine: createEngine(catalog.registry, { devChecks }), policy: BasicAiPolicy };
+    return { engine: createEngine(catalog.registry, { devChecks }), policy: aiPolicyOf(aiPolicy) };
   } catch (err) {
     log.error({ err }, '真实引擎不可用：room:start 将返回 INTERNAL（可设 RICH4_TEST_ENGINE=stub 联调）');
-    return { engine: null, policy: BasicAiPolicy };
+    return { engine: null, policy: aiPolicyOf(aiPolicy) };
   }
 }
 
@@ -98,6 +138,33 @@ export async function createApp(deps: AppDeps): Promise<App> {
   const startedAt = Date.now();
   let ready = false;
 
+  // 持久化：房间快照与 journal、存档（design/net.md §8）
+  let roomsRef: RoomManager | null = null;
+  const ownsPersistence = deps.persistence === undefined;
+  const persistence = deps.persistence ?? openPersistence({ kind: config.store, location: config.storePath });
+  const signer = new Signer(resolveHmacSecret(config.saveHmacSecret, persistence, log));
+  const saves = new SaveService({
+    repo: persistence.saves,
+    signer,
+    engine: deps.engine,
+    catalog,
+    clock,
+    log: log.child({ mod: 'saves' }),
+    newId: () => `s_${randomBytes(9).toString('base64url')}`,
+    // rooms 在下面创建；闭包里延迟取用
+    inPlay: (id, code) => roomsRef?.isSaveInPlay(id, code) ?? false,
+  });
+  const persister = new RoomPersister({ store: persistence.rooms, scheduler, log: log.child({ mod: 'persist' }) });
+  const chatFilter = deps.badWords
+    ? createBadWordFilter(deps.badWords)
+    : (() => {
+        const f = loadBadWordFilter(config.badWordsPath);
+        if (f.count > 0) log.info({ words: f.count }, 'chat bad-word list loaded');
+        if (f.skipped.length > 0) log.warn({ skipped: f.skipped }, 'chat bad-word entries skipped');
+        return f.filter;
+      })();
+  const eventLoop = new EventLoopMonitor();
+
   const fastify = Fastify({
     loggerInstance: log as unknown as FastifyBaseLogger,
     logController: new LogController({ disableRequestLogging: true }),
@@ -105,8 +172,10 @@ export async function createApp(deps: AppDeps): Promise<App> {
     trustProxy: config.trustProxy ? (address: string) => isTrustedProxy(address) : false,
     bodyLimit: SAVE_IMPORT_MAX_BYTES,
   });
-  registerHealth(fastify, { isReady: () => ready, startedAt });
+  registerHealth(fastify, { isReady: () => ready && persistence.healthy(), startedAt });
   registerMaps(fastify, catalog);
+  const limiter = new RateLimiter({ scale: deps.rateLimitScale ?? 1 });
+  await registerSavesHttp(fastify, { saves, limiter, log });
   await registerStatic(fastify, { staticDir: config.staticDir, publicUrl: config.publicUrl });
 
   const io = createIo(fastify.server, { trustProxy: config.trustProxy, devCorsOrigin: config.devCorsOrigin });
@@ -114,7 +183,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   const broadcaster = new RoomBroadcaster(ioEmitter(io));
   const think = deps.aiThinkMs;
   const ai = new AiDriver({
-    policy: deps.aiPolicy ?? BasicAiPolicy,
+    policy: deps.aiPolicy ?? aiPolicyOf(config.aiPolicy),
     log: log.child({ mod: 'ai' }),
     ...(think ? { thinkMs: { normal: think, fast: think } } : {}),
   });
@@ -139,23 +208,62 @@ export async function createApp(deps: AppDeps): Promise<App> {
     ...(deps.roomDefaults ? { settingsOverrides: deps.roomDefaults } : {}),
     onMemberRemoved: (tokenHash, code) => sessions.clearRoom(tokenHash, code),
     busy: heapBusy,
+    persist: persister,
+    saves,
+    chatFilter,
   });
-  const limiter = new RateLimiter({ scale: deps.rateLimitScale ?? 1 });
+  roomsRef = rooms;
   attachIo(
     io,
-    { rooms, sessions, limiter, log, clock, testMode: config.testMode },
+    { rooms, sessions, limiter, log, clock, testMode: config.testMode, saves },
     { trustProxy: config.trustProxy, devCorsOrigin: config.devCorsOrigin },
   );
 
+  // 启动恢复：快照 + journal 尾部重放（epoch+1，全员断线，暂停）
+  const restoreReport = rooms.restore({
+    store: persistence.rooms,
+    maxAgeMs: deps.restoreMaxAgeMs ?? RESTORE_MAX_AGE_MS,
+    openSave: (id) => saves.open(null, id),
+    storeSave: (file, code, owners, verified) => saves.store(file, { kind: 'auto', roomCode: code, owners, verified }),
+  });
+
+  registerAdmin(fastify, {
+    token: config.adminToken,
+    stats: () => ({
+      uptimeMs: Date.now() - startedAt,
+      ready: ready && persistence.healthy(),
+      rooms: rooms.stats(),
+      connections: io.engine.clientsCount,
+      sessions: sessions.size,
+      memory: process.memoryUsage(),
+      eventLoopDelayMs: eventLoop.snapshot(),
+      persistence: { kind: persistence.kind, ...persister.stats, saves: persistence.saves.count() },
+    }),
+  });
+
+  const backups =
+    config.backupEnabled && persistence.db && persistence.location !== MEMORY_DB
+      ? new BackupScheduler({ db: persistence.db, dir: config.backupDir, keep: config.backupKeep, log })
+      : null;
+  backups?.start();
+  eventLoop.start();
+
   let closed = false;
-  const close = async (): Promise<void> => {
+  const close = async (o: { flush?: boolean } = {}): Promise<void> => {
     if (closed) return;
     closed = true;
     ready = false;
-    rooms.closeAll('server');
+    rooms.draining = true;
+    const flush = o.flush !== false;
+    // 同步挂起全部房间（此后不再有 action）：刷快照、自动存档；不发 room:closed，客户端重连后由重启恢复接上
+    rooms.suspendAll({ flush, autosave: flush });
+    persister.dispose();
+    eventLoop.stop();
     io.disconnectSockets(true);
     await new Promise<void>((r) => io.close(() => r()));
     await fastify.close().catch(() => {});
+    await backups?.stop();
+    if (ownsPersistence) persistence.close();
   };
 
   return {
@@ -166,25 +274,36 @@ export async function createApp(deps: AppDeps): Promise<App> {
     catalog,
     log,
     clock,
+    persistence,
+    saves,
+    restoreReport,
     async listen(port = config.port, host = config.host) {
       const addr = await fastify.listen({ port, host });
       ready = true;
       const a = fastify.server.address();
       const p = typeof a === 'object' && a ? a.port : port;
       log.info(
-        { addr, maps: catalog.list().map((m) => `${m.id}${m.playable ? '' : '(pending)'}`) },
+        {
+          addr,
+          maps: catalog.list().map((m) => `${m.id}${m.playable ? '' : '(pending)'}`),
+          store: `${persistence.kind}:${persistence.location}`,
+          restored: restoreReport.length,
+        },
         'rich4 server listening',
       );
       return { port: p, url: `http://127.0.0.1:${p}` };
     },
     isReady: () => ready,
     async shutdown(reason) {
+      if (closed) return;
       ready = false;
+      rooms.draining = true;
       io.emit('server:notice', { kind: 'shutdown', message: '服务器即将重启，请稍后自动重连', reconnectInMs: 5000 });
       log.info({ reason, rooms: rooms.size }, 'shutdown: notifying clients');
-      // M5：暂停所有对局、写快照与自动存档后再关闭
+      // 给 server:notice 一点时间送达，然后刷快照、自动存档、关库
       await new Promise((r) => setTimeout(r, 200));
-      await close();
+      await close({ flush: true });
+      log.info({ reason }, 'shutdown complete');
     },
     close,
   };

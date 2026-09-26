@@ -1,5 +1,7 @@
 import type { Big5StringIndex, PeFile } from '../pe/scan';
 import type { TableAnchors } from './anchors';
+import type { CodeIndex } from './code';
+import type { FateRow, MagicTables, NewsRow } from './events';
 
 /** exe 固定表抽取结果（.cache/extract/tables.<edition>.json，派生数据，不入库；data-pipeline.md §6.3） */
 
@@ -18,6 +20,19 @@ export const TABLE_IDS = [
   'lunar',
 ] as const;
 export type TableId = (typeof TABLE_IDS)[number];
+
+/** 新闻 / 命运 / 魔法屋的指针表与跳表（D2 第二部分；与固定表分开记录，定位失败不影响固定表） */
+export const EVENT_TABLE_IDS = [
+  'newsHandlers',
+  'newsCategories',
+  'fateHandlers',
+  'magicEffects',
+  'magicConditions',
+  'magicEffectJump',
+  'magicCondJump',
+] as const;
+export type EventTableId = (typeof EVENT_TABLE_IDS)[number];
+export type AnyTableId = TableId | EventTableId;
 
 export type CheckLevel = 'error' | 'warn' | 'info';
 
@@ -53,11 +68,13 @@ export interface LocateContext {
   edition: ExeEdition | 'unknown';
   anchors: TableAnchors;
   /** 已定位的表（后定位的表可以用「紧随某表」的签名） */
-  located: Partial<Record<TableId, number>>;
+  located: Partial<Record<AnyTableId, number>>;
+  /** 代码节指令索引（按需构建） */
+  code?: CodeIndex;
   /** 股票表推出的地图数（节日表按它分块） */
   maps?: number;
   /** 参考版本（v3.11）已定位的表，用于 xrefTransfer；本身就是参考版本时为空 */
-  ref?: { file: PeFile; located: Partial<Record<TableId, number>> } | undefined;
+  ref?: { file: PeFile; located: Partial<Record<AnyTableId, number>> } | undefined;
 }
 
 export interface CardRow {
@@ -187,7 +204,7 @@ export interface HolidayCode {
   eventTests: number[];
 }
 
-/** 农历表摘要（不输出逐日数据） */
+/** 农历表：摘要 + 逐日数据（派生数据，只写 .cache，供引擎代理做农历换算对照测试） */
 export interface LunarSummary {
   days: number;
   firstSolar: string;
@@ -197,6 +214,10 @@ export interface LunarSummary {
   /** 农历十二月出现过的最大日（节日表的「十二月三十一」能否命中） */
   maxDayMonth12: number;
   leapMonths: number;
+  /** 逐日 u32：农历 (年 << 16 | 月 << 8 | 日)，下标 0 = 公历 1998-01-01；闰月沿用月号 */
+  packed: number[];
+  /** 按农历月归并：该月初一的公历日期、农历年月、是否闰月、天数 */
+  months: { solarStart: string; year: number; month: number; leap: boolean; days: number }[];
 }
 
 export interface TableDigest {
@@ -205,6 +226,31 @@ export interface TableDigest {
   bytesSha256: string;
   /** 解析结果（去掉 hex 与指针值）的 sha256，用于跨版本比较内容 */
   contentSha256: string;
+}
+
+/** 常量锚点在本版本的读取结果（id → 值；供 shared 的 verify 测试对照） */
+export type ConstantValues = Record<string, { value: number | number[] | null; va: string | null; ok: boolean }>;
+
+/** 新闻 / 命运 / 魔法屋表的定位与函数入口 */
+export interface EventTablesInfo {
+  locate: Record<EventTableId, LocateInfo>;
+  newsHandlers: string[];
+  fateHandlers: string[];
+  magicEffectJump: string[];
+  magicCondJump: string[];
+  newsCategoryNames: string[];
+  /** 识别出的辅助函数入口（名称 → VA） */
+  helpers: Record<string, string | null>;
+}
+
+/** 视野投影表（V-E10）：8 个视角 */
+export interface ViewTables {
+  /** 29×29 相对格（dx, dy ∈ −14..14，行主序 dx 外层）→ 屏幕像素偏移 (x, y)，每视角一张（v3.11 0x46ccf0） */
+  cellScreen: { va: string; dirs: number; size: number; data: [number, number][][] };
+  /** 格内亚像素（x & 31, y & 31）的 2×2 投影矩阵 [a, b, c, d]：sx = (a·x + c·y) >> 5，sy = (b·x + d·y) >> 5（v3.11 0x474910） */
+  subcell: { va: string; data: [number, number, number, number][] };
+  /** 每视角的绘制顺序（相对格 (dx, dy)，−128 结束；v3.11 0x473610，每视角 0x260 字节） */
+  drawOrder: { va: string; data: [number, number][][] };
 }
 
 export interface ExtractedTables {
@@ -221,6 +267,13 @@ export interface ExtractedTables {
   setup: SetupTables;
   facilityLevels: { types: string[]; max: number[] };
   lunar: LunarSummary;
+  /** D2 第二部分：常量锚点读取值（抽取失败或缺参考版本时为 null） */
+  constants: ConstantValues | null;
+  eventTables: EventTablesInfo | null;
+  news: NewsRow[] | null;
+  fate: FateRow[] | null;
+  magic: MagicTables | null;
+  view: ViewTables | null;
   /** 定位与结构校验以外的事实核对（期望值来自调研文档） */
   facts: Check[];
 }

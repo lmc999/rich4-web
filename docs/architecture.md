@@ -558,7 +558,7 @@ export interface SaveSeat { index: SeatIndex; characterId: CharacterId; nickname
 | sundayBankClosed | false | true | V-R6 |
 | handFull | autoCheapest | choose | V-R5 |
 | blessingOnNews / deathGodDispellable / freeCardOnFines | false / true / false | true / false / true | V-R8、V-R12 |
-| stockSuspendDays / constructionChairmanLevels | 15 / 1 | 10 / 2 | V-R11、V-R19 |
+| stockSuspendDays / constructionChairmanLevels | 15 / 2（exe 调用两次，g_map §4.3） | 10 / 1（PTT「附送加盖一次」） | V-R11、V-R19 |
 | 联机适配（两个预设相同） | targetRange='window'(windowHalf 220)、timeMachine='global'、intOverflow='saturate'、endWhenNoHumans=true | 同左 | V-E10 |
 
 另外两条定论：
@@ -584,6 +584,7 @@ export interface SaveSeat { index: SeatIndex; characterId: CharacterId; nickname
 - **DEV-10**：美术、音频全部自制；角色名走 i18n。
 - **DEV-11**：AI 不使用特別融資，不做公布栏重新定价（这两块尚未解明）。
 - **DEV-12**：证据缺失的规则（在代码和数据中标 ⚑）先按标注的默认值实现，等待 VERIFY。
+- **DEV-13～15**（M4 新增，见 §18.1）：住旅馆 1 天也受阻 1 个回合 ⚑；百货公司每次进店最多 60 笔交易；农历覆盖到 2100 年。
 
 ---
 
@@ -647,6 +648,8 @@ RICH4_DATA_DIR=/data-rich4     # 只读：manifest.json 加 maps/*.map.json；�
 DEFAULT_MAP=taiwan             # 找不到时回退到 test
 SAVE_HMAC_SECRET=<≥32 字节>  TRUST_PROXY=1  LOG_LEVEL=info  MAX_ROOMS=500  ROOM_ABANDON_TTL_MIN=30
 ADMIN_TOKEN=<可选>  DEV_CORS_ORIGIN=<仅开发>  RICH4_TEST_MODE=0
+STORE=sqlite|json  BACKUP_ENABLED=1  BACKUP_KEEP=7     # M5（§18.3）；开发默认 DATA_DIR=.cache/data
+RICH4_AI_POLICY=original|basic  RICH4_TIMER_SCALE=<(0,1]，仅 RICH4_TEST_MODE=1 生效>   # §18.6
 ```
 
 ### 9.3 Docker、compose、Caddy
@@ -1029,3 +1032,82 @@ ADMIN_TOKEN=<可选>  DEV_CORS_ORIGIN=<仅开发>  RICH4_TEST_MODE=0
 - **view 入口**：`@rich4/shared/view` 导出 `applyPostPatch`、`foldPosts`、`publicWorld`、`diffPublic`，供前端 viewReducer 使用。
 - **测试编排**：根 `vitest.config.ts` 直接内联前端三个 project（定义移到 `apps/client/vitest.projects.ts`，与 `apps/client/vitest.config.ts` 共用），根目录的 `--project client-unit` 等原名可用（Vitest 5 会给容器配置的子 project 加前缀）；新增 `server-real` project，用真实引擎（createEngine + BasicAiPolicy）再跑一遍 server 集成测试，`server` project 仍默认 stubEngine。
 - **文档同步**：§5.3、engine.md 的默认总资金；data-pipeline §8.4 的 issue code；minigames-ai §9.10 的 `view.clock.turnNo`；net.md 的 SystemMsgKey 示例；VERIFY 的 V-R1/V-R2/V-R5/V-R15 记下暂定实现。
+
+## 18. M3b/M4/M5/M8a/D2b 实施记录与联调（2026-09-27）
+
+本轮并行完成 M3 第二部分（前端主循环与决策对话框）、M4（经济：引擎、数据、原版 AI）、M5（持久化、存档、社交）、M8 第一部分（三个小游戏 sim）、D2 第二部分（exe 常量与事件表），随后统一联调。以下只列与本文件、design/*.md 不一致的实现与原因；标 ⚑ 的是缺证据时的暂定默认，结论见 VERIFY.md；行为上有意与原版不同的已进 DEVIATIONS.md。
+
+### 18.1 M4 经济（引擎、数据、AI）
+
+- **版本与哈希**：ENGINE_VERSION 0.2.0；TABLES 新增 `facilities`、items 增加 `f7`（AI 凶狠度），tablesHash 因此变化（旧存档读档只告警）；STATE_SCHEMA_VERSION 不变（只在帧与 options 里加字段，zod 为宽松校验）。
+- **建设公司**：`constructionChairmanLevels` PROGRAM 2 / MANUAL 1（§7.1 已改；exe 调用两次，g_map §4.3）。目标 = 自己非连锁、未满 5 级的住宅 + 自己已建成、未到上限的设施；`canSkip=false` ⚑（V-R19）；没有目标时收 1000 × PI；工程费按付款方神明修正。
+- **住旅馆 / 出国**：住 n 天统一为失去 n 个回合（n=1 也写 0x80；原版写 n−1，n=1 等于不受阻）⚑，见 DEV-13、V-R20。航空出国 n 天 = n 个受阻回合 + 1 个走回棋盘的回合（与 V-R1 坐牢语义一致）。
+- **银行**：贷款额度 = netWorth − loan（沿用 BankCounterOptions 定义）；特别融资额度 = 其他在场玩家存款合计 − 已融资额（储备金不变量成立的前提），董事长易主不强制归还 ⚑；挤兑期间 ATM 只能存、柜台不放款 ⚑（r_stocks_time 说仍可存取，冲突，见 V-R21）；星期日休息（`sundayBankClosed`）不新增事件，复用 `BANK_REJECTED{reason:'sunday', days:0}`；月息只给贷款为 0 的玩家（V-E6）。
+- **研究所**：停在自己的研究所选与进行中相同的项目保留进度，不同项目作废旧项目（RESEARCH_CANCELLED）⚑（V-R22）。
+- **认购与企业收费**：只在企业的地产格（落点码 0）问认购，银行格、百货格（落点码 14/15）走各自服务不问；受主阻碍时不问。付款方神明修正（财神、穷神）对设施与企业收费全部生效（g_arbitration §2.c）；企业收费不适用地主受阻类免收，关押中的董事长照收。
+- **乐透**：无人中奖仍发 `LOTTERY_DRAW{winner:null, prize:0}`；无人购票不开奖、不发事件。
+- **百货公司**：引擎每笔交易后以新 decisionId 重发 SHOP；`ShopOptions.visit` 记录本次进店的交易，AI 据此推算；每次进店最多 60 笔（`SHOP_TRADE_LIMIT`，防刷）见 DEV-14。
+- **日推进**：`marketOpen` 挪到 DAY 的 `'market'` 阶段，全面停市从 1 减到 0 的那天仍休市；d15 分红按座位净额结算（见 §19）；节日判定读 `HolidayDef.weekday`（缺省回退 flagsRaw 16..23 位）。
+- **农历**：`data/calendar/lunar.ts` 用通行农历年信息表覆盖 1997..2100（exe 表只到 2020），与 exe 逐日数据对照一致；闰月沿用月号（同名节日会命中两次，与 exe 一致）；2100-02-29 按 03-01 换算。见 DEV-15。
+- **AI**：`OriginalAiPolicy`（id `original-v1`）用 satisfies 覆盖 23 种决策、返回前按 options 自检；本期覆盖经济决策，BAIL、拍卖、魔法屋、卡片与道具等委托 BasicAiPolicy（M6/M7）。月均盈余 = 累计盈余 ÷ (trunc(已过天数/30) + 1) ⚑；卖股打分按调研方向简化 ⚑（ai/stock.ts 头注释）；选股稳定排序（DEV-03）；AI 仍不用特別融資（DEV-11）。
+
+### 18.2 M3 第二部分：前端主循环、对话框与面板
+
+- **E2E 前端**用 `vite build && vite preview`（不用 dev server：HMR 整页刷新会让同一 token 建第二条连接，把第一条顶掉）；`app/services.ts` 在 HMR 时整页刷新，保证开发期只有一个 GameClient。
+- **演出**：骰子为 DOM 叠层（DiceOverlay），不是 Pixi DiceView；动画时钟由 GameClient 持有（rAF + 200ms 定时器兜底，单次最多推进 1 秒；嵌入式浏览器 rAF 被节流时仍按真实时间走）；PlayerActor.walk 用一条时间线驱动整条路径。
+- **EventPlayer**：一批开始播放时先收起上一批留下的决策与等待条；自动跳过的条件为队列 > 5 批或积压 > 15 秒（单独一批很长不跳）。
+- **TURN_MENU 分工**：平时由行动区直接掷骰与选骰子数；卡片 / 道具 / 股票 / 公布栏按钮展开回合菜单。非本人回合这些按钮打开 ui/panels 的只读面板（PanelHost）。
+- **放置**：DecisionLayer、EventLogPanel 放在 ui/hud（client.md 放在 decisions/、panels/）；昵称存在 `rich4.settings`（不是 `rich4.nickname`）；新增界面文案在 lobby.json、hud.json，事件日志在 events.json。
+- **节日文案**：键为 `events:holiday.<mapId>.h<slot>`；台湾 23 条节日名按日期、农历标志推定，10/31、11/12 统一写「纪念日」。
+- **对话框**：注册表用按 kind 映射的 satisfies（组件拿到收窄后的 options）；`DecisionProps` 增加泛型 K 与可选 `now`；`submit` 返回 Promise 且解析为 false / `{ok:false}` / reject 时解锁；存取款滑条用原生 range；商店、乐透机选先选中再确认；卡片类别配色是前端映射；多做了 BoardPanel（公布栏）；TileInfoPopover 锚点为视口坐标。
+- **测试钩子**：开发模式或 `?anim=instant` / `?test=1` 时暴露 `window.__rich4`（store、eventPlayer、board、renderer、client）。
+
+### 18.3 M5 持久化、存档读档、社交与观战
+
+- **表结构**：`room_journal` 主键改为 (code, epoch, seq)（rematch、读档后 seq 从 0 重新计）；`saves` 增加 `verified` 列（列表页不解码 blob；未验证的导入存档 sig 为空）。快照与 journal 策略在 `persistence/RoomPersister.ts`，另有 SaveService、backup、index、types。
+- **重启恢复**：seq 沿用快照 + journal 重放后的值，epoch + 1；进行中的对局一律暂停（原先房主暂停保持 host，否则 all_away，第一个真人回来自动继续）；引擎不可用时保留快照（skipped）；迁移失败、状态校验不过或地图缺失时转为存档 `auto:<code>`。关闭（close / shutdown）时不再发 `room:closed{reason:'server'}`。
+- **存档安全**：存档正被进行中的对局使用时，导出与另开房间读档返回 `SAVE_FORBIDDEN{reason:'gameInProgress'}`（存档含 state.secret）。存档在库里是明文 gzip，只签名不加密。
+- **读档座位**：owner 优先（可把占座真人让到观战、撤掉电脑）；其余真人先来先得坐进未认领的真人座位，坐不下转观战；存档里是真人、由电脑补上的座位只在服务器层代打（不改 state，读档后状态哈希与存档一致）；存档里是电脑、由真人认领的座位开局后提交 `SYS_SET_CONTROLLER{human}`。读档时房间设置整体取存档，chatTail 不回灌。
+- **配置**：生产缺 `SAVE_HMAC_SECRET` 抛 ConfigError，开发用存储 meta 里持久化的随机密钥；`DATA_DIR` 默认 `.cache/data`；新增 `STORE=sqlite|json`、`BACKUP_ENABLED`、`BACKUP_KEEP`；敏感词表为 `DATA_DIR/badwords.txt`。
+- **shared/net 补充**：`EMOTE_IDS` / `isEmoteId`、`ChatMessageSchema`、`sanitizeSaveName`、`SYSTEM_MSG_KEYS`（增加 `serverRestored`）、`TrusteeSettings` 类型再导出（前端从 net 取，不依赖 shared/ai）。表情校验在 Room 层（未知 id 返回 `BAD_REQUEST{unknownEmote}`）。
+
+### 18.4 M8 第一部分：三个原版小游戏的确定性 sim
+
+- state 用 `number[]` 等纯 JSON 值（设计稿为 TypedArray）；气球 `speedMode` 编码为 0 正常 / 1 ×2 / 2 ÷2。
+- ⚑ 喜从天降：财神行走按「frame 0..4 每拍 12px、frame 5 为决策拍」建模（转折点正好是 170/242/…/530）；进入 ending 时接物者停下、不再判定接住；初始接物者与光标 x = 320、初始 spawnFrame = 0；去掉只增减不读取的 bombs 计数；接到炸弹后等屏上掉落物落完才 over（分数在接到炸弹时冻结）。
+- 企鹅：`found[81]` 保留每格首次揭晓的结果；`validateInput` 只查格号 0..80（冰屋、无效格由 sim 忽略）。气球：冻结按伪代码先 `freeze--` 再判断移动（点中 ? 当拍起算实际停 19 step）；无可用跑道时不掷选道 rand（开关 `ROLL_LANE_WHEN_NONE`）；点空只发一次 miss fx。
+- Watcom rand 只输出状态的 16..30 位，只差 bit31 的两个种子玩法相同：引擎派发小游戏种子时不要依赖 bit31。
+
+### 18.5 D2 第二部分：exe 常量与事件表
+
+- `HolidayDef.weekday`（kind 2 必填、其他 kind 不带），validateMap 新增 `E_HOLIDAY_FIELD`；台湾 MapDef 重建（dataHash `3c2f31eb…a551`，sha256 `14ef91e8…6c10`）。
+- 工具链自写 IA-32 解码器（与 r2 指令边界 0 处不一致）；`anchors/constants.json` 155 个锚点，形状为 `{id, value, v206Value?, desc, loc, v311, v206, confirmed, verify, source}`（与 data-pipeline §6.4 示例不同）；没有 anchors/seeds.json（funcdiff 种子取自已定位的表与辅助函数调用点）；`exe diff --r2` 只用 r2 核对指令边界。
+- `docs/research/events-from-exe.md` §4 列出与 r_squares_events.md、engine.md 的 15 条出入（新闻 9、12、15、35；命运加持覆盖 33 条；命运 3、8、9、10、11、32 不加倍；命运 32 与魔法屋 0、8 全价折点券；罚金类命运的保险赔付；电脑借款不另设上限等）：M7 录入 news / fate / magic 表时以它为准。
+
+### 18.6 本轮联调与修复
+
+- **原版 AI 上线**：服务器默认策略改为 `OriginalAiPolicy`（`RICH4_AI_POLICY=basic` 可切回 BasicAiPolicy 对照）；`SeatAiConfig.preset` 经 `resolveTraits` 在开局写入 `aiTraits`（已有），托管设置经 `SYS_SET_AI_TRAITS` 覆盖；AiDriver 的 `makeAiContext` / `makeAiRng` 改为 shared/ai 的同一实现；server-real 集成测试与 E2E 的电脑座位也用原版 AI。
+- **测试计时**：`RICH4_TIMER_SCALE`（只在 `RICH4_TEST_MODE=1` 时生效，范围 (0, 1]）缩放 Deadlines.timerScale；生产恒为 1。
+- **对话框接通**：`/dev/decisions` 路由与首页入口；进入对局后空闲时预取全部对话框 chunk（避免第一次遇到某种决策时闪「加载中」）；GenericChoice 不再单独拆 chunk。
+- **回合菜单**：行动区的卡片 / 道具 / 股票 / 公布栏在本人回合直接打开对应子页（`TurnMenuSheetContext`），经快捷入口打开的子页关闭时整个回合菜单收起。EventPlayer 的「一批开始先收起旧决策」对同一座位重发的同种决策（TURN_MENU / SHOP / AUCTION_BID）例外：旧框保持锁定直到批尾换成新决策，否则每笔股票交易、商店交易后对话框与已打开的子页都会被卸载重建。
+- **经济演出**（`presentation/handlers/economy.ts`）：股票成交、认购、分红、乐透购票与开奖横幅、月结横幅、百货交易、企业收费（金币飞向董事长）、住旅馆、贷款到期提醒与强制还款、研发交付、董事长赠礼；金额一律按事件 post 飘字与闪动 HUD。日志：分红逐人列出金额（负数为反扣），状态天数带单位。
+- **显示修正**：两段式计数器（坐牢、住院、保险、拒绝往来……）统一显示 (c & 0x7f) + 1（与引擎 displayRemaining 一致；此前保险在待释放状态显示 128 天）；贷款徽标带千分位与到期日；地块名在日志与对话框统一按同名编号（`presentation/lotLabels.ts`）；商店卖道具显示精确卖回价 trunc(标价 × 数量 × 0.9)。
+- **首屏分包**：vite 的 game 分组不再递归收依赖（首屏不再静态依赖 game 与 pixi chunk）；`packages/shared` 声明 `"sideEffects": false`（首屏 index 从约 98 KB 降到约 68 KB gzip）。
+- **新增测试**：client-dom `ui/decisions/realEngine.dom.test.tsx`（真实引擎 options → 对话框 → intent → 引擎执行）；E2E `bank-stock.spec.ts`（银行存取款、贷款、股票买卖后 4 页面 HUD 与服务器快照一致）；server `test/unit/config.test.ts`。
+
+## 19. 审查修复记录（2026-09-27）
+
+逐条复核审查发现后的修复；与本文件或 design/*.md 的出入以本节为准。
+
+- **分红**（engine.md §11.4 已同步）：按 exe 0x42ba97 改为按座位净额结算——全部公司的应分金额先按座位合计，合计为正进存款、为负先存款后现金扣，扣不出来才破产；应分金额 = `trunc(本月盈余 × f32(持股 / T))`。15 日只发一个 DIVIDENDS（rows 带公司），多名股东同时破产时按座位顺序展开。DAY 帧的 d15 cursor 只区分「分红 / 开奖」两步。
+- **买无主设施** = 设施地价 × PI（exe 0x41a86b 不读等级）；此前多算了 等级 × rate0。
+- **地契到期** 与破产清算、mutate mode 1 共用 `rules/landMutation.releaseLot`：研究所进行中的研发一并作废，到期时给原业主发 RESEARCH_CANCELLED（新业主不继承旧研发）；mode 0 拆到低于项目等级时研发同样作废。
+- **百货公司**：SHOP 帧新增 `fullDeck: boolean | null`，进店时按 controller 定下，离店前不随 SYS_SET_CONTROLLER 变化（旧存档缺字段时回退 controller）。
+- **kind 2 节日**：照搬 exe 0x4521f0 的日期公式（w < 当月 1 日星期时落到星期日），台湾图不受影响。
+- **ENGINE_VERSION 未升**：以上都是规则修正，按 version.ts 的约定应升次版本；与并行里程碑的版本号一并由合并方决定。服务器重启恢复现在按 major.minor 判断能否重放 journal（`RoomManager.rulesVersion`）。
+- **存档**：读档 / 导入解压后 JSON 上限 2MB（`SAVE_DECODE_MAX_JSON_BYTES`），`state.engine` 必须是版本号，GameStateSchema 的公开字符串字段有界；由未验证存档读档开局的对局，其手动 / 自动 / 转存档一律不签名（RoomMetaV1 增加 `sourceVerified`）；存档不写观战者专属聊天；读档后断线宽限夹到 5..120 秒（测试模式除外）；兼容性提示 `SaveSummary.warnings`、`RoomView.loadedSave.warnings` 与 gameLoaded 的 `tablesMismatch` 参数下发；导入不再按 UTF-16 二次截断存档名。
+- **房间**：对局中踢人、离开立即写快照（座位归属与 journal 里的 SYS_SET_CONTROLLER 同时落盘）。
+- **聊天**：敏感词正则不再转义 '-'（u 模式非法转义曾让服务器无法启动），单个词失败只跳过并记日志；清洗额外去掉软连字符、CGJ、Hangul 填充符等，过滤时另在去掉全部 Default_Ignorable_Code_Point 的比对串上匹配（变体选择符、tag 字符插在词中间也能命中）。
+- **前端**：服务器主动断开（停机 / 重启）后按 `reconnectInMs` 自动重连；被顶替时请求立即返回 replaced，首页与单机页也挂接管遮罩；昵称变化且不在对局中时重连让握手带上新昵称；时钟只在连接打开时采样、连上后补采 3 次；决策提交锁同时看 `gameStore.submitting`；toast 各自计时；棋盘卸载时 EventPlayer skipAll、handler 的 board 改为实时取值，动画时钟帧回调互相隔离、rAF 先续订后推进，补间出错必 resolve，PlayerActor / Camera 销毁后不再写 Pixi 对象。
+- **E2E**：夹具 URL 加 `?test=1`（生产构建也开批尾对账，不一致走 console.error 判失败）；新增 `anim-unmount.spec.ts`（不带 anim=instant，行走中后退 / 前进）。
+

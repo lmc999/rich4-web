@@ -4,11 +4,12 @@
  *
  * 这里的辅助结构（TollQuote、FeeQuote、FrameData 等）是 M1 的起步定义，规则实现时可以按需细化。
  */
-import type { DecisionKind } from './decision';
+import type { DecisionKind, ShopTradeRecord } from './decision';
 import type {
   ActorRef,
   CardId,
   Cause,
+  CompanyLotId,
   FateId,
   ItemId,
   LotId,
@@ -77,13 +78,21 @@ export interface TollQuote {
 
 export type FeeKind = 'hotel' | 'mall' | 'gas' | 'company';
 
+/**
+ * FEE 帧的阶段：compute（报价、免收、转盘）→ free（免费卡，M6）→ scapegoat（嫁祸卡，M6）→ pay → after
+ * （住旅馆、航空出国、保险投保）→ subscribe（企业：现场认购）→ done
+ */
+export type FeeStage = 'compute' | 'free' | 'scapegoat' | 'pay' | 'after' | 'subscribe' | 'done';
+
 export interface FeeQuote {
   /** 企业格时为董事长；无董事长不收费 */
   owner: SeatIndex | null;
   amount: number;
-  /** 转盘结果（旅馆天数、购物中心倍数、航空、保险）；没有转盘为 null */
+  /** 转盘结果（旅馆天数、购物中心倍数、航空出国天数、保险投保天数）；没有转盘为 null */
   wheel: number | null;
   mods: TollMod[];
+  /** 企业格的行业码；设施为 null */
+  industry: number | null;
 }
 
 /** 本次付款允许询问的被动卡 */
@@ -132,7 +141,16 @@ export type Frame = FrameBase &
         stage: 'compute' | 'free' | 'scapegoat' | 'pay' | 'done';
         q: TollQuote | null;
       }
-    | { k: 'FEE'; payer: SeatIndex; lot: LotId; feeKind: FeeKind; stage: string; q: FeeQuote | null }
+    | {
+        k: 'FEE';
+        payer: SeatIndex;
+        lot: LotId;
+        feeKind: FeeKind;
+        /** 本次掷骰总步数（加油站、汽车 / 石油、门派按步数收费） */
+        steps: number;
+        stage: FeeStage;
+        q: FeeQuote | null;
+      }
     | {
         k: 'PAYX';
         payer: SeatIndex;
@@ -167,7 +185,24 @@ export type Frame = FrameBase &
         stage: string;
       }
     | { k: 'BANK'; seat: SeatIndex; mode: 'pass' | 'stop'; stage: 'atm' | 'counter' | 'done' }
-    | { k: 'SHOP'; seat: SeatIndex; shelf: CardId[]; stage: 'gift' | 'open' | 'done' }
+    | {
+        k: 'SHOP';
+        seat: SeatIndex;
+        /** 百货公司（落点格的 ref.lot）；董事长进店先得赠品 */
+        company: CompanyLotId | null;
+        /** 真人座位的货架（进店时抽定）；电脑座位面对整副牌堆，货架为空 */
+        shelf: CardId[];
+        /**
+         * 本次进店是否面对整副牌堆（进店 'gift' 阶段按当时的 controller 定下，之后不随 SYS_SET_CONTROLLER 改变，
+         * 保证已发出的 SHOP options 与 shelfIdx 的解释一致）；进店前为 null
+         */
+        fullDeck: boolean | null;
+        /** 进店时的点券（AI 推算预算用） */
+        entryPoints: number;
+        /** 本次进店已完成的交易（按顺序） */
+        trades: ShopTradeRecord[];
+        stage: 'gift' | 'open' | 'done';
+      }
     | {
         k: 'AUCTION';
         lot: LotId;

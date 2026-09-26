@@ -1,4 +1,7 @@
+import type { ConstantResult } from '../exe/constants';
+import { type FuncDiffReport, summarizeFuncDiff } from '../exe/funcdiff';
 import { EXPECT_DISPUTED_CARD_PRICES } from '../exe/locate';
+import type { R2Check } from '../exe/r2';
 import { stripHex } from '../exe/tables/common';
 import type { ExeEdition, ExtractedTables, HolidayRow, TableId } from '../exe/types';
 import type { FingerprintReport } from '../fingerprint/identify';
@@ -7,7 +10,7 @@ import { canonicalJson } from '../io/writeCanonicalJson';
 /**
  * docs/research/version-diff.md（入库，data-pipeline.md §6.5）：v2.06 与 v3.11 的差异结论。
  * 只写事实、计数、哈希与结论，不贴原始字节与整表数据；无时间戳，相同输入字节一致。
- * 代码级对比（funcdiff、常量锚点）属于 D2 第二部分，本报告先标为待办。
+ * §5 代码行为：常量锚点两版读取值、新闻/命运/魔法屋表定位、函数级对比（funcdiff）。
  */
 
 export type DiffStatus = 'same' | 'superset' | 'diff' | 'missing';
@@ -192,7 +195,38 @@ export interface VersionDiffInput {
   containers: ContainerInfo[];
   maps: MapDiffInfo[];
   strings: StringDiffInfo | null;
+  constants?: readonly ConstantResult[] | null;
+  funcdiff?: FuncDiffReport | null;
+  /** exe diff --r2：radare2 线性反汇编与本项目解码器的指令边界核对 */
+  r2?: readonly { edition: ExeEdition; check: R2Check }[] | null;
 }
+
+/**
+ * funcdiff 中「非表现层」数值差异的人工复核结论（按 v3.11 指令 VA）。没有列在这里的差异会在报告中标 ⚠️ 待复核。
+ */
+export const REVIEWED_DIFFS: Readonly<Record<string, string>> = {
+  '0x43c0cb': '拍卖对话框的地块图片编号（v3.11 多了资料片地图的图片分支），表现层',
+  '0x43c0ea': 'Panel.mkf 资源加载参数（v2.06 先按文件名打开 PANEL.MKF），表现层',
+  '0x43c23c': '拍卖对话框竞价者状态图编号，表现层',
+  '0x44db8c': 'Panel.mkf 资源加载参数，表现层',
+  '0x4315f8': 'Panel.mkf 资源加载参数，表现层',
+  '0x439c15': 'Panel.mkf 资源加载参数，表现层',
+  '0x44b6ea': 'Panel.mkf 资源加载参数，表现层',
+  '0x44b75a': '新闻图片资源号基数（0x1b9 vs 0x190，差 0x29 的资源号偏移），表现层',
+  '0x433839': 'Panel.mkf 资源加载参数，表现层',
+  '0x415638': 'Panel.mkf 资源加载参数，表现层',
+  '0x415251': 'Panel.mkf 资源加载参数，表现层',
+  '0x441953': 'Panel.mkf 资源加载参数，表现层',
+  '0x4366ca': '银行 AI 提示框参数错位（v2.06 多压一个串地址），表现层',
+  '0x43686d': '银行 AI 提示框显示时长 / 串参数错位，表现层',
+  '0x40b966': '座驾动画资源号（差 0x29），表现层',
+  '0x444c36': '台词表地址（v3.11 该地址恰好被当成可换算的串），表现层',
+  '0x440b2d': '设施类别对话框坐标（y 0x8c vs 0x82），表现层',
+  '0x440b51': '设施类别对话框坐标（y 0x7a vs 0x70），表现层',
+  '0x450463': '资源加载函数本身（按号 vs 按名）的参数，表现层',
+  '0x4504ce': '资源加载函数本身的参数，表现层',
+  '0x45051b': '资源加载函数本身的参数，表现层',
+};
 
 const code = (s: string | number) => `\`${s}\``;
 const row = (cells: readonly (string | number)[]) => `| ${cells.map(String).join(' | ')} |`;
@@ -278,7 +312,7 @@ export function renderVersionDiff(p: VersionDiffInput): string {
   L.push('');
   L.push(
     `> 由 ${code(p.command)} 生成，请勿手改。只写事实、计数、哈希与结论，不含原始字节与整表数据；` +
-      `逐项抽取结果在 ${code('.cache/extract/tables.<edition>.json')}（gitignore）。代码级对比（funcdiff、常量锚点）属于 D2 第二部分，见 §5。`,
+      `逐项抽取结果在 ${code('.cache/extract/tables.<edition>.json')}（gitignore）。代码级对比（常量锚点、funcdiff）见 §5。`,
   );
   L.push('');
 
@@ -391,7 +425,9 @@ export function renderVersionDiff(p: VersionDiffInput): string {
       `- 农历表：${a.lunar.days} 天（公历 ${a.lunar.firstSolar}..${a.lunar.lastSolar}，农历 ${a.lunar.firstLunar}..${a.lunar.lastLunar}，` +
         `闰月 ${a.lunar.leapMonths} 个）；超出 2020 年后原版查表越界。`,
     );
-    L.push(`- MapDef 的 ${code('flagsRaw')} = flags0 | 事件位 << 8 | 星期 << 16。`);
+    L.push(
+      `- MapDef：kind 2 写 ${code('weekday')}（0 = 星期日）；${code('flagsRaw')} = flags0 | 事件位 << 8 | 星期 << 16（兼容保留）。`,
+    );
   } else {
     L.push(`（只有 ${a ? 'v2.06' : b ? 'v3.11' : '零'} 个版本的抽取结果，无法对比）`);
   }
@@ -406,7 +442,75 @@ export function renderVersionDiff(p: VersionDiffInput): string {
     });
     L.push(`- xrefTransfer（v3.11 → v2.06，按引用点代码模式迁移）交叉核对：${xr.join('、')}。`);
   }
-  L.push('- 函数级 funcdiff、新闻/命运/魔法屋/小游戏/AI 常量锚点：⬜ 待 D2 第二部分（exe diff --r2）。');
+  if (a && b && a.eventTables && b.eventTables) {
+    const ev = Object.entries(a.eventTables.locate).map(([k, la]) => {
+      const lb = b.eventTables!.locate[k as keyof typeof b.eventTables.locate];
+      const xr = la.candidates.find((c) => c.method === 'xref');
+      return `${k} ${la.va}/${lb?.va ?? '—'}（v2.06 ${la.method}${xr?.accepted ? '，xref 迁移一致' : ''}）`;
+    });
+    L.push(
+      `- 新闻 / 命运 / 魔法屋表（v2.06/v3.11）：${ev.join('；')}。逐条参数见 ${code('docs/research/events-from-exe.md')}。`,
+    );
+  }
+  const cs = p.constants ?? null;
+  if (cs) {
+    const diff = cs.filter((r) => r.same === false);
+    const bad = cs.filter((r) => !r.v311.ok || (r.v206 !== null && !r.v206.ok));
+    L.push(
+      `- 常量锚点（${code('tools/extract/anchors/constants.json')}）：${cs.length} 个，v3.11 位置人工复核，v2.06 位置由指令迁移得到；` +
+        `两版值不同 ${diff.length} 个${diff.length > 0 ? `（${diff.map((r) => r.id).join('、')}）` : ''}，与期望不符 ${bad.length} 个。`,
+    );
+  }
+  const fdr = p.funcdiff ?? null;
+  if (fdr) {
+    const rate = fdr.seeds === 0 ? 0 : Math.round((fdr.paired / fdr.seeds) * 1000) / 10;
+    L.push(
+      `- 函数级对比：种子 ${fdr.seeds} 个（新闻 36、命运 49、魔法屋效果 12 与条件 12、辅助函数、常量所在函数），两版都能配对 ${fdr.paired} 个（${rate}%）；` +
+        `对齐位置上的调用扩散新增 ${fdr.propagated} 对，共比较 ${fdr.results.length} 个函数。`,
+    );
+    L.push('');
+    L.push(row(['系统', '函数', '相同', '只差常量', '结构不同', '最低相似度']));
+    L.push(row(['---', '---:', '---:', '---:', '---:', '---:']));
+    for (const x of summarizeFuncDiff(fdr))
+      L.push(row([x.system, x.functions, x.same, x.const, x.struct, x.minSimilarity]));
+    L.push('');
+    const presentation = fdr.results.reduce((s, x) => s + x.presentation, 0);
+    const other = fdr.results.flatMap((x) => x.diffs.map((d) => ({ fn: x, d })));
+    const seen = new Set<string>();
+    const uniq = other.filter(({ d }) => {
+      if (seen.has(d)) return false;
+      seen.add(d);
+      return true;
+    });
+    L.push(
+      `「只差常量」与「结构不同」中的数值差异：表现层 ${presentation} 条（资源号整体差 0x29、按名/按号加载 Panel.mkf 等，自动归类）；` +
+        `其余 ${uniq.length} 条逐条人工复核：`,
+    );
+    L.push('');
+    for (const { fn, d } of uniq) {
+      const va = d.split(' ')[0]!;
+      const note = REVIEWED_DIFFS[va];
+      L.push(`- ${note ? '✅' : '⚠️ 待复核'} ${fn.label}：${code(d)}${note ? `——${note}` : ''}`);
+    }
+    const layout = fdr.results.filter((x) => x.class === 'struct' && x.diffs.length === 0);
+    if (layout.length > 0) {
+      L.push(
+        `- 结构不同但对齐部分无数值差异 ${layout.length} 个（尾块复制 / 跳转布局 / v3.11 为资料片增加的分支）：` +
+          `${layout.map((x) => `${x.label}（${x.similarity}）`).join('、')}。`,
+      );
+    }
+  } else L.push('- 函数级对比：未运行（需要两个版本的 exe）。');
+  if (p.r2 && p.r2.length > 0) {
+    const parts = p.r2.map(({ edition, check }) =>
+      check.available && check.error === null
+        ? `${edition} ${check.insns} 条指令、边界不一致 ${check.mismatches}`
+        : `${edition} 未完成（${check.error ?? 'r2 不可用'}）`,
+    );
+    const ver = p.r2.find((x) => x.check.version)?.check.version ?? '';
+    L.push(
+      `- radare2 交叉核对（${ver}，线性反汇编 \`pD\` 与本项目 x86 解码器逐条比较指令起点）：${parts.join('；')}。`,
+    );
+  }
   L.push('');
 
   L.push('## 6. 字符串');
@@ -455,6 +559,16 @@ export function renderVersionDiff(p: VersionDiffInput): string {
         ? `规则相关的 exe 表差异：无。v3.11 相对 v2.06 只增加了地图 ${a.stocks.maps}..${b.stocks.maps - 1} 的股票与节日数据，不需要「v2.06 规则开关」。`
         : `规则相关的 exe 表差异：${ruleDiff.map((d) => d.label).join('、')}，可作为「v2.06 规则开关」候选。`,
     );
+    const cs2 = p.constants ?? null;
+    const fdr2 = p.funcdiff ?? null;
+    if (cs2 && fdr2) {
+      const unreviewed = fdr2.results.flatMap((x) => x.diffs).filter((d) => !REVIEWED_DIFFS[d.split(' ')[0]!]);
+      concl.push(
+        `代码行为：${cs2.length} 个规则常量两版${cs2.every((r) => r.same !== false) ? '全部相同' : '有不同（见 §5）'}；` +
+          `新闻 36、命运 37、魔法屋 12 × 12 的处理函数两版逐一配对，数值差异都属表现层${unreviewed.length > 0 ? `（另有 ${unreviewed.length} 条待复核）` : ''}。` +
+          '唯一的规则层代码差异是 v3.11 为资料片地图增加的分支（例如命运 33–36 只在原版地图组可行），对原版 4 张图没有影响。',
+      );
+    }
   }
   for (const c of concl) L.push(`- ${c}`);
   L.push('');

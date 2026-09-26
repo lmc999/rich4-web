@@ -6,6 +6,7 @@
  * @verify extract:items[id]（V-E1）
  */
 import type { Sourced, Src } from '../source';
+import type { Ferocity } from './cards';
 import { ITEM_IDS, ITEM_KEYS, type ItemId, isPoolItem, type ResearchProject } from './ids';
 
 export interface ItemDef extends Sourced {
@@ -19,6 +20,8 @@ export interface ItemDef extends Sourced {
   shopSellable: boolean;
   /** 研究所研发项目（9..13 对应 1..5），其余为 null */
   research: ResearchProject | null;
+  /** 电脑的凶狠度（exe 道具表 +7）：个性闸门 d = f7 − personality（design/minigames-ai.md §8.2、§9.6） */
+  f7: Ferocity;
 }
 
 const ITEM_TABLE_VA = 0x47fee2;
@@ -26,6 +29,8 @@ const ITEM_ROW_BYTES = 8;
 
 /** 下标 = 道具号 − 1 */
 const PRICES: readonly number[] = [15, 30, 25, 25, 80, 150, 100, 30, 30, 40, 95, 150, 250];
+/** 下标 = 道具号 − 1（@verify extract:tools[id].f7） */
+const F7: readonly Ferocity[] = [0, 1, 1, 1, 0, 0, 2, 0, 1, 2, 1, 2, 2];
 
 function itemSrc(id: ItemId): Src[] {
   return [
@@ -45,6 +50,7 @@ export const ITEMS: readonly ItemDef[] = Object.freeze(
       poolInit: pooled ? 10 : 0,
       shopSellable: pooled,
       research: pooled ? null : ((id - 8) as ResearchProject),
+      f7: F7[id - 1]!,
       src: itemSrc(id),
       confidence: pooled ? 'high' : 'medium',
     });

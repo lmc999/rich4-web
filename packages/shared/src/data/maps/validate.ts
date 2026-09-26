@@ -27,6 +27,7 @@ export type MapIssueCode =
   | 'E_TERRAIN_SHAPE'
   | 'E_COUNT_MISMATCH'
   | 'E_VIA_BROKEN'
+  | 'E_HOLIDAY_FIELD'
   | 'W_DIAGONAL_LINK'
   | 'W_VIA_LONG'
   | 'W_RENT_NONMONO'
@@ -56,6 +57,7 @@ export const MAP_ISSUE_CODES: readonly MapIssueCode[] = [
   'E_TERRAIN_SHAPE',
   'E_COUNT_MISMATCH',
   'E_VIA_BROKEN',
+  'E_HOLIDAY_FIELD',
   'W_DIAGONAL_LINK',
   'W_VIA_LONG',
   'W_RENT_NONMONO',
@@ -144,6 +146,7 @@ export function validateMap(def: MapDef, opts: ValidateMapOptions = {}): Validat
   checkHolds(ctx);
   checkCounts(ctx, opts.expect);
   checkNames(ctx);
+  checkHolidays(ctx);
 
   return { ok: !v.list.some((i) => i.severity === 'error'), issues: v.list };
 }
@@ -678,6 +681,32 @@ function checkCounts({ def, v }: Ctx, expect: Partial<MapCounts> | undefined): v
       v.add('E_COUNT_MISMATCH', `expect.${k}`, `expected ${want} ${k}, map has ${actual[k]}`);
     }
   }
+}
+
+/**
+ * 节日（VERIFY V-E5）：kind 0 公历、1 农历、2「该月第 day 个星期 weekday」。
+ * kind 2 必须有 weekday（0 = 星期日 … 6）且 day ∈ 1..5；其他 kind 不应带 weekday；lunar 标记须与 kind 1 一致。
+ */
+function checkHolidays({ def, v }: Ctx): void {
+  def.holidays.forEach((h, i) => {
+    const path = `holidays[${i}]`;
+    if (h.kind !== 0 && h.kind !== 1 && h.kind !== 2) {
+      v.add('E_HOLIDAY_FIELD', `${path}.kind`, `slot ${h.slot}: unknown holiday kind ${h.kind}`);
+      return;
+    }
+    if (h.kind === 2) {
+      if (h.weekday === undefined || !Number.isInteger(h.weekday) || h.weekday < 0 || h.weekday > 6) {
+        v.add('E_HOLIDAY_FIELD', `${path}.weekday`, `slot ${h.slot}: kind 2 needs weekday 0..6`);
+      }
+      if (h.day < 1 || h.day > 5)
+        v.add('E_HOLIDAY_FIELD', `${path}.day`, `slot ${h.slot}: kind 2 day (nth) must be 1..5`);
+    } else if (h.weekday !== undefined) {
+      v.add('E_HOLIDAY_FIELD', `${path}.weekday`, `slot ${h.slot}: weekday only applies to kind 2`);
+    }
+    if (h.lunar !== undefined && h.lunar !== (h.kind === 1)) {
+      v.add('E_HOLIDAY_FIELD', `${path}.lunar`, `slot ${h.slot}: lunar flag disagrees with kind ${h.kind}`);
+    }
+  });
 }
 
 function checkNames({ def, v }: Ctx): void {

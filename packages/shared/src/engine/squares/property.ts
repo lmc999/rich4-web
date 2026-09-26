@@ -3,7 +3,7 @@
  * - 无主：满足 canBuy（未梦游、无土地公 / 衰神 / 死神、现金 ≥ 价格）→ BUY_LAND；否则 INVEST_BLOCKED 或 CANNOT_AFFORD。
  * - 自己的：等级 < 5、非连锁店、现金足够 → UPGRADE_LAND（梦游中不问）。
  * - 别人的：TOLL 帧。
- * 设施（F）与企业（C）属于 M4，这里先做空处理。
+ * 设施（F）见 squares/facility.ts，企业（C）见 squares/company.ts。
  */
 import type { LotId } from '../../data/maps/types';
 import type { Ctx } from '../core/ctx';
@@ -11,14 +11,17 @@ import { EngineRuleError } from '../errors';
 import { addTenure } from '../rules/calendar';
 import { levelUpLand } from '../rules/landMutation';
 import { canBuyLand, canUpgradeLand, fortuneBonus, upgradedLevel } from '../rules/purchase';
-import type { SeatIndex } from '../types/ids';
+import type { CompanyLotId, FacilityLotId, SeatIndex } from '../types/ids';
+import { companySquare } from './company';
+import { facilitySquare } from './facility';
 import type { SquareHandler } from './index';
 
 export const propertySquare: SquareHandler = (ctx, sq) => {
   const lot = ctx.map.lotOfTile(sq.tile.id);
   if (lot === null) return;
   if (lot.startsWith('L')) landSquare(ctx, sq.seat, lot, sq.sleepwalk);
-  // TODO(M4)：设施（BUY_FACILITY / BUILD_FACILITY / UPGRADE_FACILITY / FEE）与企业格（COMPANY_FEE / SUBSCRIBE_SHARES）
+  else if (lot.startsWith('F')) facilitySquare(ctx, sq.seat, lot as FacilityLotId, sq.sleepwalk, sq.frame.steps);
+  else companySquare(ctx, sq.seat, lot as CompanyLotId, sq.frame.steps);
 };
 
 function landSquare(ctx: Ctx, seat: SeatIndex, lot: LotId, sleepwalk: boolean): void {

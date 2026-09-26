@@ -64,6 +64,7 @@ export function registerRoomHandlers(ctx: HandlerCtx, socket: AppSocket): void {
   });
 
   handle(ctx, socket, 'room:join', (p, s) => {
+    if (ctx.rooms.draining) return fail('SERVER_BUSY');
     if (!ctx.limiter.peekIp(s.ip, 'joinFail')) return fail('RATE_LIMITED');
     const room = ctx.rooms.get(p.code);
     if (!room) return joinFailed(ctx, s);
@@ -155,13 +156,13 @@ export function registerRoomHandlers(ctx: HandlerCtx, socket: AppSocket): void {
     'room:rematch',
     withRoom((room, s) => room.rematch(s.tokenHash)),
   );
-  // 存档读档与座位认领在 M5 实现；先给出明确的错误而不是让请求挂起
-  handle(ctx, socket, 'room:loadSave', (_p, s) => {
+  // 读档（房主，大厅）与认领读档后的座位（design/net.md §8.4）
+  handle(ctx, socket, 'room:loadSave', (p, s) => {
     const r = currentRoom(ctx, s);
-    return r.ok ? fail('SAVE_NOT_FOUND') : r;
+    return r.ok ? r.data.loadSave(s.tokenHash, p.saveId) : r;
   });
-  handle(ctx, socket, 'room:claimSeat', (_p, s) => {
+  handle(ctx, socket, 'room:claimSeat', (p, s) => {
     const r = currentRoom(ctx, s);
-    return r.ok ? fail('BAD_REQUEST', { reason: 'noLoadedSave' }) : r;
+    return r.ok ? r.data.claimSeat(s.tokenHash, p.seat) : r;
   });
 }

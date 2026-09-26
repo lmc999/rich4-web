@@ -179,6 +179,19 @@ export class BoardView {
     if (co) co.setChairman(s.owner);
   }
 
+  /** 地块、设施、企业的视图（动画用：建筑精灵、底板） */
+  footprint(id: string): LotView | FacilityView | CompanyView | undefined {
+    return this.lots.get(id) ?? this.facilities.get(id) ?? this.companies.get(id);
+  }
+
+  /** 地块矩形中心的屏幕坐标（world 本地像素） */
+  lotScreenPos(id: string): Pt | null {
+    const v = this.footprint(id);
+    if (!v) return null;
+    const r = v.rect;
+    return this.geometry.toScreen({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+  }
+
   clearLotStates(): void {
     for (const l of this.lots.values()) l.setState({ owner: null, level: 0 });
     for (const f of this.facilities.values()) f.setState({ owner: null, level: 0, facility: 'vacant' });

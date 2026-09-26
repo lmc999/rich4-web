@@ -3,10 +3,16 @@
  * - DateNum = y*10000 + m*100 + d。闰年只判能否被 4 整除（原版如此，2100 年也按闰年）。
  * - 星期以 1998-01-01 为星期四推算（0 = 星期日）。
  * - 地契到期日按月加、不夹日：1/31 + 1 个月 = 2/31，这一天永远不会等于真实日期，所以永不到期。
- * - 休市：星期日，或 MapDef.holidays 中标记 closed 的公历节日（农历节日 ⚑ 待 calendar/lunar，暂不判定）。
- * - 节日 kind（VERIFY V-E5）：0 公历 month/day；1 农历（暂不判定）；2 第 n 个星期 w：day = n，
- *   w 暂存在 flagsRaw 16..23 位（architecture §17.4，待 HolidayDef 增加 weekday 字段）。
+ * - 休市：星期日，或 MapDef.holidays 中标记 closed 的节日。
+ * - 节日 kind（VERIFY V-E5）：0 公历 month/day；1 农历 month/day（data/calendar/lunar 换算，闰月沿用月号，
+ *   与 exe 逐日农历表一致；农历十二月最多 30 日，所以「十二月三十一」永不命中，原版如此）；
+ *   2 第 n 个星期 w：day = n，w 取 HolidayDef.weekday，没有该字段时回退 flagsRaw 16..23 位（architecture §17.4）。
+ *     日期照搬 exe 0x4521f0 的算法：wd1 = 当月 1 日的星期，目标日 = ((w ≥ wd1 ? w : 7) − wd1) + 1 + 7(n−1)。
+ *     w < wd1 时原版丢掉了 w，算出的总是星期日（例如 2000 年 2 月「第 3 个星期一」落在 2/20 星期日）；
+ *     台湾图唯一的 kind 2 项 w = 0，不受影响（DEVIATIONS 不登记：这是复刻原版行为）。
+ * - 按表序取第一个命中项（原版各图农历项都排在公历项之后）。
  */
+import { type LunarDate, lunarOf } from '../../data/calendar/lunar';
 import type { HolidayDef } from '../../data/maps/types';
 import { TENURE_MONTHS } from '../../data/tables/setup';
 import type { DateNum, Tenure } from '../types/ids';
@@ -99,22 +105,40 @@ export function addTenure(date: DateNum, tenure: Tenure): DateNum {
   return packDate(Math.trunc(total / 12), (total % 12) + 1, d);
 }
 
-/** kind 2 节日的星期（0 = 星期日） */
+/** kind 2 节日的星期（0 = 星期日）：HolidayDef.weekday，缺省时回退 flagsRaw 16..23 位 */
 export function holidayWeekday(h: HolidayDef): number {
-  return (h.flagsRaw >> 16) & 0xff;
+  return typeof h.weekday === 'number' ? h.weekday : (h.flagsRaw >> 16) & 0xff;
 }
 
-/** 当天的公历节日（农历节日 lunar=true / kind 1 暂不判定 ⚑）；按表序取第一个命中项 */
+/** 农历节日（kind 1 或 lunar=true） */
+export function isLunarHoliday(h: HolidayDef): boolean {
+  return h.lunar === true || h.kind === 1;
+}
+
+/**
+ * kind 2「第 n 个星期 w」在当月的日期（exe 0x452316-0x45236f）：wd1 为当月 1 日的星期。
+ * 目标日 = ((w ≥ wd1 ? w : 7) − wd1) + 1 + 7(n−1)；w < wd1 时原版的公式落到星期日（见文件头）。
+ * 超出当月天数时不会与任何日期相等，等于不命中。
+ */
+export function nthWeekdayDay(wd1: number, w: number, n: number): number {
+  return (w >= wd1 ? w : 7) - wd1 + 1 + 7 * (n - 1);
+}
+
+/** 当天的节日（公历、农历、第 n 个星期 w）；按表序取第一个命中项 */
 export function holidayOn(date: DateNum, holidays: readonly HolidayDef[]): HolidayDef | null {
-  const { m, d } = unpackDate(date);
-  let wd = -1;
+  const { y, m, d } = unpackDate(date);
+  let wd1 = -1;
+  let lunar: LunarDate | null | undefined;
   for (const h of holidays) {
-    if (h.lunar === true || h.kind === 1 || h.month !== m) continue;
+    if (isLunarHoliday(h)) {
+      if (lunar === undefined) lunar = lunarOf(date);
+      if (lunar !== null && lunar.month === h.month && lunar.day === h.day) return h;
+      continue;
+    }
+    if (h.month !== m) continue;
     if (h.kind === 2) {
-      // 第 n 个星期 w：当月第 trunc((d-1)/7)+1 个同星期日
-      if (Math.trunc((d - 1) / 7) + 1 !== h.day) continue;
-      if (wd < 0) wd = weekdayOf(date);
-      if (wd === holidayWeekday(h)) return h;
+      if (wd1 < 0) wd1 = weekdayOf(packDate(y, m, 1));
+      if (nthWeekdayDay(wd1, holidayWeekday(h), h.day) === d) return h;
       continue;
     }
     if (h.day === d) return h;

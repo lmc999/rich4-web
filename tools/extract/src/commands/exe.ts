@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ExitCode, type ExtractContext, ExtractError } from '../context';
+import { CodeIndex } from '../exe/code';
+import { loadConstantAnchors, resolveConstants } from '../exe/constants';
 import {
   EDITIONS,
   EXE_PATHS,
@@ -10,7 +12,10 @@ import {
   readExe,
   tablesCachePath,
 } from '../exe/extract';
+import { buildFuncSeeds, funcDiff } from '../exe/funcdiff';
+import { stringMapping } from '../exe/insnTransfer';
 import { LocateError } from '../exe/locate';
+import { type R2Check, r2LinearCheck } from '../exe/r2';
 import type { Check, ExeEdition, ExtractedTables } from '../exe/types';
 import type { FingerprintReport } from '../fingerprint/identify';
 import { sha256Hex } from '../io/hash';
@@ -22,6 +27,7 @@ import type { MapDataRaw } from '../map/rawTypes';
 import { RAW_SOURCES } from '../map/sources';
 import { MkfArchive } from '../mkf/container';
 import { Big5StringIndex, PeFile } from '../pe/scan';
+import { renderEventsDoc } from '../report/eventsDoc';
 import { ICON, renderTable } from '../report/table';
 import { type ContainerInfo, type MapDiffInfo, renderVersionDiff, type StringDiffInfo } from '../report/versionDiff';
 import { compareRules, loadManualTables, type RulesReport } from '../verify/rulesAgainstExe';
@@ -32,6 +38,9 @@ export interface ExeArgs {
   edition?: string | undefined;
   json?: boolean | undefined;
   verbose?: boolean | undefined;
+  /** exe diff：另用 radare2 线性反汇编核对指令边界（可选） */
+  r2?: boolean | undefined;
+  'r2-timeout'?: string | undefined;
 }
 
 export const EXE_DIFF_COMMAND = 'npm run extract -- exe diff';
@@ -229,21 +238,63 @@ export async function cmdExeDiff(ctx: ExtractContext, v: ExeArgs): Promise<numbe
   const exeA = await readExe(ctx, 'v206');
   const exeB = await readExe(ctx, 'v311');
   const strings = exeA && exeB ? stringDiff(exeA.bytes, exeB.bytes) : null;
+  // 代码级：常量锚点（两版）与函数级对比
+  let constants: ReturnType<typeof resolveConstants> | null = null;
+  let fdr: ReturnType<typeof funcDiff> | null = null;
+  if (exeA && exeB) {
+    const pa = new PeFile(exeB.bytes, exeB.rel);
+    const pb = new PeFile(exeA.bytes, exeA.rel);
+    const ca = CodeIndex.build(pa);
+    const cb = CodeIndex.build(pb);
+    const m = stringMapping(pa, pb);
+    constants = resolveConstants(loadConstantAnchors(), ca, cb, { translate: m.translate });
+    const seeds = buildFuncSeeds(
+      ca,
+      cb,
+      b,
+      a,
+      constants.map((c) => ({ id: c.id, v311: c.v311.va, v206: c.v206?.va ?? null })),
+    );
+    fdr = funcDiff(ca, cb, seeds, { translate: m.translate, dstStrings: m.targets, depth: 1 });
+  }
+  let r2: { edition: ExeEdition; check: R2Check }[] | null = null;
+  if (v.r2 && exeA && exeB) {
+    const timeout = v['r2-timeout'] ? Number(v['r2-timeout']) * 1000 : 120_000;
+    r2 = [];
+    for (const x of [exeA, exeB]) {
+      const check = await r2LinearCheck(path.join(ctx.srcDir, x.rel), new PeFile(x.bytes, x.rel), timeout);
+      r2.push({ edition: x.edition, check });
+      ctx.log.out(
+        check.available && check.error === null
+          ? `  r2 核对 ${x.edition}：${check.insns} 条指令，边界不一致 ${check.mismatches}`
+          : `  ${ICON.warn} r2 不可用或失败（${check.error ?? '未知'}）`,
+      );
+    }
+  }
   const md = renderVersionDiff({
-    command: EXE_DIFF_COMMAND,
+    command: v.r2 ? `${EXE_DIFF_COMMAND} --r2` : EXE_DIFF_COMMAND,
     exes: res,
     fingerprint: await readFingerprint(ctx),
     containers,
     maps,
     strings,
+    constants,
+    funcdiff: fdr,
+    r2,
   });
   const out = await safeWriteFile(ctx, path.join(ctx.root, 'docs', 'research', 'version-diff.md'), md);
+  if (constants && fdr) {
+    const ev = renderEventsDoc({ command: EXE_DIFF_COMMAND, v311: b, v206: a, constants, funcdiff: fdr.results });
+    const evOut = await safeWriteFile(ctx, path.join(ctx.root, 'docs', 'research', 'events-from-exe.md'), ev);
+    ctx.log.out(`→ ${ctx.displayPath(evOut)}`);
+  }
   await writeCanonicalJson(ctx, ctx.cachePath('version-diff.json'), {
     schema: 'rich4.version-diff/1',
     containers,
     maps,
     strings,
     digests: { v206: a.digests, v311: b.digests },
+    funcdiff: fdr,
   });
   if (v.json) ctx.log.out(JSON.stringify({ containers, maps, strings }, null, 2));
   for (const m of maps) {

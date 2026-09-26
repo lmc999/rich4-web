@@ -19,8 +19,18 @@ async function main(): Promise<void> {
   const log = createLogger({ level: config.logLevel, pretty: config.logPretty });
   if (config.testMode) log.warn('RICH4_TEST_MODE=1：debug:act 已开启，不要在生产环境使用');
   const catalog = await loadMapCatalog({ dataDir: config.rich4DataDir, defaultMap: config.defaultMap, log });
-  const { engine, policy } = await resolveEngine(config.testEngine, catalog, log, config.testMode);
-  const app = await createApp({ config, catalog, engine, aiPolicy: policy, log });
+  const { engine, policy } = await resolveEngine(config.testEngine, catalog, log, config.testMode, config.aiPolicy);
+  log.info({ policy: policy.id }, 'ai policy');
+  if (config.timerScale !== 1)
+    log.warn({ timerScale: config.timerScale }, 'RICH4_TIMER_SCALE：决策计时已缩放（仅测试）');
+  const app = await createApp({
+    config,
+    catalog,
+    engine,
+    aiPolicy: policy,
+    log,
+    ...(config.timerScale !== 1 ? { timing: { timerScale: config.timerScale } } : {}),
+  });
   await app.listen();
   installShutdown(app, log);
 }

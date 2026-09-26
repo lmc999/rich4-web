@@ -7,6 +7,7 @@ import type { AnimClock } from '../anim/AnimClock';
 import { hopArc, linear } from '../anim/easing';
 import { tweenValue } from '../anim/tween';
 import type { BoardGeometry } from '../board/BoardGeometry';
+import { HOP_MS } from '../fx/timings';
 import { DepthBias, depthOfCell, depthOfMove } from '../iso/depth';
 import { dirOfViewStep, facingOf, type IsoDir, type Pt } from '../iso/projection';
 import { INK, PLAYER_COLORS, PLAYER_MARKS } from '../procedural/building/styles';
@@ -84,6 +85,8 @@ export class PlayerActor {
   private pose: Pose = 'idle0';
   private offset: Pt = { x: 0, y: 0 };
   private walking = false;
+  /** destroy 之后：仍挂在共享动画时钟上的补间（walk / hop）不再写已销毁的 Pixi 对象 */
+  private dead = false;
   private idleT = 0;
   private offFrame: () => void;
 
@@ -164,6 +167,7 @@ export class PlayerActor {
 
   /** 直接放到某格（sync / skip 用） */
   teleport(tile: TileId): void {
+    if (this.dead) return;
     const c = this.geo.tileCell(tile);
     this._tile = tile;
     this.pos = { x: c.x + 0.5, y: c.y + 0.5 };
@@ -190,6 +194,7 @@ export class PlayerActor {
 
   /** 旋转或偏移变化后重新计算屏幕位置与朝向 */
   relayout(): void {
+    if (this.dead) return;
     const s = this.geo.toScreen(this.pos);
     this.root.position.set(s.x + this.offset.x, s.y + this.offset.y);
     this.body.position.set(0, -this.hopY);
@@ -205,7 +210,7 @@ export class PlayerActor {
     return tweenValue(
       0,
       1,
-      260,
+      HOP_MS,
       (t) => {
         this.hopY = hopArc(t) * HOP_PX * 1.2;
         this.relayout();
@@ -217,7 +222,11 @@ export class PlayerActor {
     });
   }
 
-  /** 沿路径逐格行走；path[0] 为当前格。中止时立即落到终点并 resolve */
+  /**
+   * 沿路径逐格行走；path[0] 为当前格。中止时立即落到终点并 resolve。
+   * 整条路径用一条时间线（总时长 = 游戏步数 × stepMs）驱动，子段按 share 切分：
+   * 不会因为每个子段各自等帧而累积误差，实际时长与 shared/view/pacing 的预算一致。
+   */
   async walk(path: readonly TileId[], o: WalkOptions = {}): Promise<void> {
     if (path.length === 0) return;
     const last = path[path.length - 1]!;
@@ -225,50 +234,84 @@ export class PlayerActor {
     if (path.length === 1) return;
     const stepMs = o.stepMs ?? STEP_MS;
     const steps = planWalk(this.geo, path);
+    if (steps.length === 0) {
+      this.teleport(last);
+      return;
+    }
+    // 每个子段在总时间线上的起止（以「游戏步」为单位）
+    const starts: number[] = [];
+    let acc = 0;
+    for (const st of steps) {
+      starts.push(acc);
+      acc += st.share;
+    }
+    const total = acc;
     this.walking = true;
+    let cur = -1;
     let frame = 0;
+    const enter = (i: number): void => {
+      const st = steps[i]!;
+      const va = this.geo.viewCell(st.from);
+      const vb = this.geo.viewCell(st.to);
+      this.dir = dirOfViewStep(vb.x - va.x, vb.y - va.y);
+      this.pose = (['walk0', 'walk1', 'walk2', 'walk3'] as const)[frame++ % 4]!;
+      this.applyFrames();
+      this.root.zIndex = depthOfMove(va, vb, DepthBias.Actor) + this.seat * 0.01;
+    };
+    const arrive = (i: number): void => {
+      const st = steps[i]!;
+      if (!st.arrive) return;
+      this._tile = path[st.pathIndex]!;
+      o.onStep?.(this._tile, st.pathIndex);
+    };
     try {
-      for (const st of steps) {
-        if (o.signal?.aborted) break;
-        const va = this.geo.viewCell(st.from);
-        const vb = this.geo.viewCell(st.to);
-        this.dir = dirOfViewStep(vb.x - va.x, vb.y - va.y);
-        this.pose = (['walk0', 'walk1', 'walk2', 'walk3'] as const)[frame++ % 4]!;
-        this.applyFrames();
-        this.root.zIndex = depthOfMove(va, vb, DepthBias.Actor) + this.seat * 0.01;
-        const a = { x: st.from.x + 0.5, y: st.from.y + 0.5 };
-        const b = { x: st.to.x + 0.5, y: st.to.y + 0.5 };
-        await tweenValue(
-          0,
-          1,
-          stepMs * st.share,
-          (t) => {
-            this.pos = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-            const arc = hopArc(t);
-            this.hopY = arc * HOP_PX * Math.min(1, st.share * 1.6);
-            this.body.scale.set(1 - 0.05 * arc, 1 + 0.07 * arc);
-            this.relayout();
-          },
-          { clock: this.clock, signal: o.signal, ease: linear },
-        );
-        if (o.signal?.aborted) break;
-        if (st.arrive) {
-          this._tile = path[st.pathIndex]!;
-          o.onStep?.(this._tile, st.pathIndex);
-        }
-      }
+      await tweenValue(
+        0,
+        total,
+        total * stepMs,
+        (x) => {
+          if (this.dead) return;
+          // 找到 x 所在的子段；跨过的子段依次「到达」
+          let i = cur < 0 ? 0 : cur;
+          while (i < steps.length - 1 && x >= starts[i]! + steps[i]!.share) i++;
+          if (i !== cur) {
+            for (let k = Math.max(0, cur); k < i; k++) arrive(k);
+            cur = i;
+            enter(i);
+          }
+          const st = steps[i]!;
+          const t = Math.min(1, Math.max(0, (x - starts[i]!) / st.share));
+          const a = { x: st.from.x + 0.5, y: st.from.y + 0.5 };
+          const b = { x: st.to.x + 0.5, y: st.to.y + 0.5 };
+          this.pos = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+          const arc = hopArc(t);
+          this.hopY = arc * HOP_PX * Math.min(1, st.share * 1.6);
+          this.body.scale.set(1 - 0.05 * arc, 1 + 0.07 * arc);
+          this.relayout();
+        },
+        { clock: this.clock, signal: o.signal, ease: linear },
+      );
+      if (!o.signal?.aborted && cur >= 0) arrive(cur);
     } finally {
       this.walking = false;
       this.pose = 'idle0';
-      this.body.scale.set(1, 1);
       this.hopY = 0;
-      // 正常走完或被中止，都以终点格收尾（中止 = 跳过动画直达终态）
-      this.teleport(last);
-      this.applyFrames();
+      if (!this.dead) {
+        this.body.scale.set(1, 1);
+        // 正常走完或被中止，都以终点格收尾（中止 = 跳过动画直达终态）
+        this.teleport(last);
+        this.applyFrames();
+      }
     }
   }
 
+  get destroyed(): boolean {
+    return this.dead;
+  }
+
   destroy(): void {
+    if (this.dead) return;
+    this.dead = true;
     this.offFrame();
     this.root.destroy({ children: true });
   }
@@ -289,6 +332,7 @@ export class PlayerActor {
   }
 
   private applyFrames(): void {
+    if (this.dead) return;
     const f = facingOf(this.dir);
     const facing: Facing = f.facing;
     const flip = f.mirror ? -1 : 1;

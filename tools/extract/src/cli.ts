@@ -3,6 +3,7 @@ import { readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { cmdExeConstants, cmdVerifyConstants } from './commands/constants';
 import { cmdExeDiff, cmdExeTables, cmdVerifyTables } from './commands/exe';
 import { cmdMapBuild, cmdOverridesSchema, cmdPack } from './commands/mapBuild';
 import { type ContextOptions, ExitCode, ExtractContext, ExtractError, type Logger } from './context';
@@ -33,10 +34,14 @@ const USAGE = `用法: rich4-extract <命令> [选项]
   map raw --map <gm> [--sources auto|all|<id,…>] [--dump-bin]
                                                      解析地图结构 → .cache/extract/raw/<source>/map<gm>.raw.json
   map diff --map <gm>                                多来源逐字段比较 → .cache/extract/diff/map<gm>.json
-  exe tables [--edition v206|v311|all] [--verbose]   定位并解析 exe 固定表 → .cache/extract/tables.<edition>.json
-  exe diff                                           两版表/地图/字符串对比 → docs/research/version-diff.md
-  verify [--samples] [--tables] [--map 0] [--sources auto|all|<id,…>]
-                                                     台湾样本校验；--tables 手录规则表与 exe 对照（都不加 = 两者都跑）
+  exe tables [--edition v206|v311|all] [--verbose]   定位并解析 exe 固定表、常量、新闻/命运/魔法屋 → .cache/extract/tables.<edition>.json
+  exe constants [--write-anchors] [--verbose]        两版解析 anchors/constants.json → .cache/extract/constants.json
+                                                     （--write-anchors 把迁移得到的 v2.06 VA 写回 anchors）
+  exe diff [--r2] [--r2-timeout 120]                 两版表/地图/字符串/函数对比 → docs/research/version-diff.md、events-from-exe.md
+                                                     （--r2 另用 radare2 线性反汇编核对指令边界，可选）
+  verify [--samples] [--tables] [--constants] [--map 0] [--sources auto|all|<id,…>]
+                                                     台湾样本；--tables 手录规则表与 exe 对照；--constants 常量锚点两版核对
+                                                     （都不加 = 三者都跑）
   map build --map taiwan [--overrides <file>] [--strict4] [--preview] [--strict]
                                                      语义层 + 几何归一化 → .cache/extract/maps/taiwan.map.json，
                                                      并写 docs/research/provenance-summary.md（--preview 另写 .cache/extract/preview/taiwan.svg）
@@ -56,8 +61,12 @@ const OPTIONS = {
   json: { type: 'boolean' },
   'allow-unknown': { type: 'boolean' },
   'dump-bin': { type: 'boolean' },
+  'write-anchors': { type: 'boolean' },
+  r2: { type: 'boolean' },
+  'r2-timeout': { type: 'string' },
   samples: { type: 'boolean' },
   tables: { type: 'boolean' },
+  constants: { type: 'boolean' },
   edition: { type: 'string' },
   overrides: { type: 'string' },
   out: { type: 'string' },
@@ -329,10 +338,11 @@ async function cmdMapDiff(ctx: ExtractContext, v: Values): Promise<number> {
 // ───────────────────────── verify --samples ─────────────────────────
 
 async function cmdVerify(ctx: ExtractContext, v: Values): Promise<number> {
-  const both = !v.samples && !v.tables;
+  const all = !v.samples && !v.tables && !v.constants;
   let exit: number = ExitCode.OK;
-  if (v.samples || both) exit = Math.max(exit, await cmdVerifySamples(ctx, v));
-  if (v.tables || both) exit = Math.max(exit, await cmdVerifyTables(ctx, v));
+  if (v.samples || all) exit = Math.max(exit, await cmdVerifySamples(ctx, v));
+  if (v.tables || all) exit = Math.max(exit, await cmdVerifyTables(ctx, v));
+  if (v.constants || all) exit = Math.max(exit, await cmdVerifyConstants(ctx, v));
   return exit;
 }
 
@@ -417,6 +427,7 @@ export async function main(argv: readonly string[], opts: MainOptions = {}): Pro
     if (pos[0] === 'verify') return await cmdVerify(ctx, v);
     if (cmd === 'exe tables') return await cmdExeTables(ctx, v);
     if (cmd === 'exe diff') return await cmdExeDiff(ctx, v);
+    if (cmd === 'exe constants') return await cmdExeConstants(ctx, v);
     if (cmd === 'map build') return await cmdMapBuild(ctx, v);
     if (pos[0] === 'pack') return await cmdPack(ctx, v);
     if (cmd === 'overrides schema') return await cmdOverridesSchema(ctx);

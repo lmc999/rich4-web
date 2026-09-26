@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { main } from '../../src/cli';
 import { ExitCode, realpathLoose } from '../../src/context';
+import { CONSTANTS_FILE } from '../../src/exe/constants';
 import { buildSynthExe } from '../helpers/buildExe';
 import { buildMapResource, taiwanLikeSpec } from '../helpers/buildMapResource';
 import { buildMkf } from '../helpers/buildMkf';
@@ -128,5 +129,42 @@ describe('CLI exe tables / exe diff / verify --tables（合成 exe）', () => {
   it('exe diff：缺一个版本 → exit 2', async () => {
     writeExes({ v206: false });
     expect(await run('exe', 'diff')).toBe(ExitCode.MISSING_INPUT);
+  });
+
+  it('exe diff 同时写 events-from-exe.md；缺代码行为数据时 §5 注明未运行的部分', async () => {
+    writeExes();
+    expect(await run('exe', 'diff')).toBe(ExitCode.OK);
+    const ev = readFileSync(at('docs', 'research', 'events-from-exe.md'), 'utf8');
+    expect(ev).toContain('## 1. 新闻（36 条）');
+    expect(ev).toContain('## 4. 与 r_squares_events.md / engine.md 的出入');
+    const md = readFileSync(at('docs', 'research', 'version-diff.md'), 'utf8');
+    expect(md).toContain('常量锚点');
+    expect(md).toContain('函数级对比');
+  });
+});
+
+describe('CLI exe constants / verify --constants', () => {
+  it('没有 exe → exit 2', async () => {
+    expect(await run('verify', '--constants')).toBe(ExitCode.MISSING_INPUT);
+    expect(await run('exe', 'constants')).toBe(ExitCode.MISSING_INPUT);
+  });
+
+  it('合成 exe 上锚点解析不到 → exit 1，并写报告；--write-anchors 不改入库文件', async () => {
+    writeExes();
+    const before = readFileSync(CONSTANTS_FILE, 'utf8');
+    expect(await run('verify', '--constants')).toBe(ExitCode.STRUCTURE);
+    const rep = JSON.parse(readFileSync(at('.cache', 'extract', 'verify', 'constants.json'), 'utf8'));
+    expect(rep.editions).toEqual(['v206', 'v311']);
+    expect(rep.failed.length).toBeGreaterThan(100);
+    expect(out.join('\n')).toContain('常量锚点核对失败');
+    expect(await run('exe', 'constants', '--write-anchors')).toBe(ExitCode.STRUCTURE);
+    expect(out.join('\n')).toContain('anchors 无需更新');
+    expect(readFileSync(CONSTANTS_FILE, 'utf8')).toBe(before);
+    expect(existsSync(at('.cache', 'extract', 'constants.json'))).toBe(true);
+  });
+
+  it('--write-anchors 需要两个版本', async () => {
+    writeExes({ v206: false });
+    expect(await run('exe', 'constants', '--write-anchors')).toBe(ExitCode.MISSING_INPUT);
   });
 });

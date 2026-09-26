@@ -49,6 +49,9 @@ export const MINIGAME_GRACE_MS = 5000;
 export const AFK_TIMEOUT_STREAK = 2;
 /** 断线宽限默认值（RoomSettings.reconnectGraceSec） */
 export const DEFAULT_RECONNECT_GRACE_S = 15;
+/** 房间设置里断线宽限的取值范围（客户端补丁与读档后的设置都按它夹取；测试模式例外） */
+export const RECONNECT_GRACE_MIN_S = 5;
+export const RECONNECT_GRACE_MAX_S = 120;
 /** 全员离线多久后自动存档并回收房间 */
 export const ROOM_ABANDON_TTL_MIN = 30;
 

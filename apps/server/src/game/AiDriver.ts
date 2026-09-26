@@ -8,7 +8,14 @@
  * - decide 抛异常，或 intent 不能通过 PlayerIntentSchema / ALLOWED_INTENTS，就退回 defaultIntent（fallback=true）。
  * 本文件不得引入 node:* 与 socket.io。
  */
-import type { AiContext, AiPolicy, AiRng } from '@rich4/shared/ai';
+import {
+  type AiContext,
+  type AiPolicy,
+  type AiRng,
+  aiRngFromSeed,
+  type MakeAiContextParams,
+  makeAiContext as sharedMakeAiContext,
+} from '@rich4/shared/ai';
 import type { MapIndex } from '@rich4/shared/data';
 import {
   type GameState,
@@ -16,42 +23,15 @@ import {
   type PendingDecision,
   type PlayerIntent,
   PlayerIntentSchema,
-  type SeatIndex,
 } from '@rich4/shared/engine';
 import { AI_ANIM_SCALE, AI_THINK_MS, type AiPace, type YourDecision } from '@rich4/shared/net';
-import { createWatcomState, fnv1a32, mix32, watcomInt, watcomRand, watcomScale } from '@rich4/shared/util';
 import { type DecisionForYou, type GameView, type HandVisibility, projectState } from '@rich4/shared/view';
 import type { Logger } from '../infra/logger';
 import { animDelayMs, type TimingOptions } from './Deadlines';
 
-export function makeAiRng(seed: number): AiRng {
-  const s = createWatcomState(seed);
-  return {
-    next15: () => watcomRand(s),
-    mod: (n) => watcomInt(s, n),
-    bit: () => (watcomRand(s) & 1) as 0 | 1,
-    scale: (n) => watcomScale(s, n),
-  };
-}
-
-export function makeAiContext(p: {
-  aiSeed: number;
-  seat: SeatIndex;
-  decisionId: string;
-  turnNo: number;
-  traits: AiContext['traits'];
-  map: MapIndex;
-  handVisibility: HandVisibility;
-}): AiContext {
-  return {
-    seat: p.seat,
-    traits: p.traits,
-    rng: makeAiRng(mix32(p.aiSeed, p.seat, fnv1a32(p.decisionId))),
-    turnRng: (salt) => makeAiRng(mix32(p.aiSeed, p.seat, p.turnNo, fnv1a32(salt))),
-    map: p.map,
-    handVisibility: p.handVisibility,
-  };
-}
+/** AI 随机数与上下文的派生方式由 shared/ai 统一提供（模拟脚本、测试与服务器共用同一实现） */
+export const makeAiRng: (seed: number) => AiRng = aiRngFromSeed;
+export const makeAiContext: (p: MakeAiContextParams) => AiContext = sharedMakeAiContext;
 
 /** 兜底策略：永远返回 defaultIntent（真实策略未注入时使用） */
 export const defaultIntentPolicy: AiPolicy = Object.freeze({

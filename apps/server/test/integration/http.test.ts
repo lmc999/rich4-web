@@ -20,6 +20,36 @@ describe('integration/http', () => {
     srv = null;
   });
 
+  it('/readyz 在数据库不可用时 503', async () => {
+    srv = await startTestServer();
+    expect((await srv.app.fastify.inject('/readyz')).statusCode).toBe(200);
+    srv.app.persistence.close();
+    expect((await srv.app.fastify.inject('/readyz')).statusCode).toBe(503);
+    expect((await srv.app.fastify.inject('/healthz')).statusCode).toBe(200);
+  });
+
+  it('/admin/stats：未配置 ADMIN_TOKEN 时 404；Bearer 不对 401；正确时返回房间、连接、内存与事件循环延迟', async () => {
+    srv = await startTestServer();
+    expect((await srv.app.fastify.inject('/admin/stats')).statusCode).toBe(404);
+    await srv.close();
+    srv = await startTestServer({ adminToken: 'admin-secret-token' });
+    const f = srv.app.fastify;
+    expect((await f.inject('/admin/stats')).statusCode).toBe(401);
+    expect((await f.inject({ url: '/admin/stats', headers: { authorization: 'Bearer wrong' } })).statusCode).toBe(401);
+    const res = await f.inject({ url: '/admin/stats', headers: { authorization: 'Bearer admin-secret-token' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
+    const body = res.json() as Record<string, unknown>;
+    expect(body).toMatchObject({
+      ready: true,
+      rooms: { rooms: 0, playing: 0, members: 0 },
+      connections: 0,
+      persistence: { kind: 'sqlite', journal: 0, snapshots: 0, errors: 0, saves: 0 },
+    });
+    expect(body.memory).toMatchObject({ rss: expect.any(Number), heapUsed: expect.any(Number) });
+    expect(body.eventLoopDelayMs).toMatchObject({ p99: expect.any(Number), windowMs: 60_000 });
+  });
+
   it('/api/maps 列出 fixture；/api/maps/:id?h= 命中时长缓存，h 不符 404', async () => {
     srv = await startTestServer();
     const f = srv.app.fastify;

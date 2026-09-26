@@ -26,7 +26,7 @@ describe('createGame（design/engine.md §5）', () => {
     const { state: s, events } = newGame({ players: ['human', 'ai', 'human', 'ai'] });
     expect(events.map((e) => e.type)).toEqual(['GAME_STARTED', 'TURN_STARTED', 'PARACHUTE']);
     expect(s.v).toBe(1);
-    expect(s.engine).toBe('0.1.0');
+    expect(s.engine).toBe('0.2.0');
     expect(s.dataRef).toEqual({
       mapId: 'test',
       mapHash: fixtureRegistry.getMap('test').def.meta.dataHash,
@@ -130,13 +130,21 @@ describe('applyAction 的校验与契约（architecture §5.2、§5.5）', () =>
     ).toBe('BAD_ACTION');
   });
 
-  it('ROLL{dice} 不得超过交通工具上限；M1 未开放的菜单操作抛 NOT_USABLE，投降抛 NOT_ALLOWED', () => {
+  it('ROLL{dice} 不得超过交通工具上限；尚未开放的菜单操作（M6/M7）抛 NOT_USABLE，投降抛 NOT_ALLOWED', () => {
     expect(ruleOf(() => engine.applyAction(state, { type: 'ROLL', dice: 2, seat: 0, decisionId: d.id }))).toBe(
       'OUT_OF_RANGE',
     );
     expect(
-      ruleOf(() => engine.applyAction(state, { type: 'STOCK_BUY', stock: 0, shares: 10, seat: 0, decisionId: d.id })),
+      ruleOf(() => engine.applyAction(state, { type: 'BOARD_DELIST', listingId: 1, seat: 0, decisionId: d.id })),
     ).toBe('NOT_USABLE');
+    // M4：股票买卖可用；超过可买量抛 OUT_OF_RANGE
+    const buy = engine.applyAction(state, { type: 'STOCK_BUY', stock: 0, shares: 10, seat: 0, decisionId: d.id });
+    expect(buy.events.map((e) => e.type)).toContain('STOCK_TRADED');
+    expect(
+      ruleOf(() =>
+        engine.applyAction(state, { type: 'STOCK_BUY', stock: 0, shares: 1_000_000, seat: 0, decisionId: d.id }),
+      ),
+    ).toBe('OUT_OF_RANGE');
     expect(ruleOf(() => engine.applyAction(state, { type: 'SURRENDER', seat: 0, decisionId: d.id }))).toBe(
       'NOT_ALLOWED',
     );

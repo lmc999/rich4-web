@@ -17,6 +17,7 @@ import {
 import type { Socket } from 'socket.io';
 import type { Clock } from '../infra/clock';
 import type { Logger } from '../infra/logger';
+import type { SaveService } from '../persistence/SaveService';
 import type { RoomManager } from '../rooms/RoomManager';
 import { bucketOf, type RateLimiter } from './rateLimit';
 import type { Session, SessionRegistry } from './sessions';
@@ -37,6 +38,8 @@ export interface HandlerCtx {
   log: Logger;
   clock: Clock;
   testMode: boolean;
+  /** 存档服务（saves:list / saves:delete）；null 表示持久化不可用 */
+  saves: SaveService | null;
 }
 
 export type Handler<E extends C2SEventName> = (

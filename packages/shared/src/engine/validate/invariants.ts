@@ -11,6 +11,8 @@
  * 7 每格至多 1 个物件；每对神明搭档至多 1 个在场；附身的神明与玩家的 god 字段一致
  * 8 坐牢 / 住院中的玩家位于对应关押格
  * 9 进行中时 pending 非空、每个 pending 的 frameId 都在栈中、每座位至多 1 个；ROOT 在栈底且只有一个
+ * 10 经济（M4，进行中时）：董事长与持股一致（严格最多、平手保留现任）；乐透号码只属于在场座位；
+ *    贷款 ≥ 0 且有贷款 ⇔ 有到期日；融资 ≥ 0；研发只挂在已建成、等级 ≥ 项目的研究所上
  */
 import { CARDS } from '../../data/tables/cards';
 import { ECON } from '../../data/tables/economy';
@@ -19,6 +21,7 @@ import { VEHICLE_ITEM } from '../../data/tables/setup';
 import { decisionNumber } from '../core/ids';
 import type { EngineMap } from '../core/mapCache';
 import { FACILITY_LEVEL_CAP } from '../rules/landMutation';
+import { chairmanFor } from '../rules/stock';
 import type { GameState } from '../types/state';
 
 function pathText(path: readonly (string | number)[]): string {
@@ -188,6 +191,29 @@ export function checkInvariants(s: GameState, em: EngineMap): string[] {
     if (p.st.jail !== 0 && p.node !== idx.jailHold) out.push(`seat ${p.seat} is jailed but not at ${idx.jailHold}`);
     if (p.st.hospital !== 0 && p.node !== idx.hospitalHold) {
       out.push(`seat ${p.seat} is hospitalized but not at ${idx.hospitalHold}`);
+    }
+  }
+
+  // 10 经济
+  if (s.status === 'playing') {
+    s.stocks.forEach((st, i) => {
+      const want = chairmanFor(s.players, i, st.chairman);
+      if (want !== st.chairman) out.push(`stock ${i}: chairman ${st.chairman}, want ${want}`);
+    });
+    s.lottery.owners.forEach((o, i) => {
+      if (o !== null && !aliveSeats.has(o)) out.push(`lottery number ${i + 1} owned by ${o} who is out`);
+    });
+  }
+  for (const p of s.players) {
+    if (p.loan < 0) out.push(`seat ${p.seat}: negative loan ${p.loan}`);
+    if (p.alive && p.loan > 0 !== (p.loanDue !== 0)) out.push(`seat ${p.seat}: loan ${p.loan} with due ${p.loanDue}`);
+    if (p.finance < 0) out.push(`seat ${p.seat}: negative finance ${p.finance}`);
+  }
+  for (const f of s.facilities) {
+    const r = f.research;
+    if (r === null) continue;
+    if (f.type !== 'lab' || f.level < r.project || f.owner === null) {
+      out.push(`${f.id}: research ${r.project} on ${f.type} level ${f.level}`);
     }
   }
 

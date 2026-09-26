@@ -184,3 +184,27 @@ describe('Camera 动画（AnimClock 驱动）', () => {
     expect(cam.center.x).toBe(300);
   });
 });
+
+describe('Camera.dispose', () => {
+  it('棋盘销毁后共享时钟上的镜头补间不再写 target（target 已销毁时写入会抛错）', async () => {
+    const { cam, clock, target } = setup();
+    const errors: unknown[] = [];
+    clock.onError = (e) => errors.push(e);
+    let settled = false;
+    void cam.zoomTo(2, 600).then(() => {
+      settled = true;
+    });
+    clock.advance(16);
+    cam.dispose();
+    const boom = () => {
+      throw new TypeError("Cannot read properties of null (reading 'set')");
+    };
+    target.scale.set = boom;
+    target.position.set = boom;
+    for (let i = 0; i < 50; i++) clock.advance(16);
+    for (let k = 0; k < 6; k++) await Promise.resolve();
+    expect(errors).toEqual([]);
+    expect(settled).toBe(true);
+    await expect(cam.panTo({ x: 1, y: 1 }, 300)).resolves.toBeUndefined();
+  });
+});

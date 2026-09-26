@@ -43,6 +43,32 @@ describe('planWalk', () => {
   });
 });
 
+describe('PlayerActor 销毁', () => {
+  it('行走中销毁：共享时钟继续推进不抛错，中止后 walk 正常结束', async () => {
+    const { clock, actor } = setup();
+    const errors: unknown[] = [];
+    clock.onError = (e) => errors.push(e);
+    actor.teleport(8);
+    const ac = new AbortController();
+    let done = false;
+    void actor.walk([8, 9, 10, 11], { signal: ac.signal }).then(() => {
+      done = true;
+    });
+    clock.advance(16);
+    actor.destroy();
+    expect(actor.destroyed).toBe(true);
+    for (let i = 0; i < 5; i++) clock.advance(16);
+    ac.abort();
+    for (let k = 0; k < 6; k++) await Promise.resolve();
+    expect(done).toBe(true);
+    expect(errors).toEqual([]);
+    // 重复 destroy 无害；销毁后的 teleport / setPose 是空操作
+    actor.destroy();
+    actor.teleport(9);
+    actor.setPose('walk1');
+  });
+});
+
 describe('PlayerActor.walk', () => {
   it('逐格行走：onStep 按顺序回调、终点在格中心、深度随格更新', async () => {
     const { clock, actor, geo } = setup();
@@ -74,6 +100,26 @@ describe('PlayerActor.walk', () => {
     await run(clock, actor.walk([21, 22, 23, 24], { onStep: (t) => void seen.push(t) }));
     expect(seen).toEqual([22, 23, 24]);
     expect(actor.tile).toBe(24);
+  });
+
+  it('时长与预算一致：经过 via 连接格、帧间隔很粗时也不会逐段累积误差', async () => {
+    const { clock, actor } = setup();
+    actor.teleport(21);
+    const seen: number[] = [];
+    let done = false;
+    const p = actor.walk([21, 22, 23, 24], { onStep: (t) => void seen.push(t) }).then(() => {
+      done = true;
+    });
+    let real = 0;
+    while (!done && real < 5000) {
+      clock.advance(100);
+      real += 100;
+      for (let k = 0; k < 6; k++) await Promise.resolve();
+    }
+    await p;
+    expect(seen).toEqual([22, 23, 24]);
+    // 3 步 × 180ms = 540ms：粗帧下最多多出一帧
+    expect(real).toBeLessThanOrEqual(3 * STEP_MS + 100);
   });
 
   it('中止：立即落到终点并 resolve', async () => {

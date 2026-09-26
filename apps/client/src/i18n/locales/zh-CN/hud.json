@@ -1,0 +1,303 @@
+{
+  "top": {
+    "turn": "第 {{n}} 回合",
+    "market": "股市行情",
+    "suspended": "停牌",
+    "spectating": "观战中",
+    "room": "房间",
+    "log": "日志",
+    "chat": "聊天",
+    "menu": "菜单"
+  },
+  "stat": {
+    "cash": "现金",
+    "deposit": "存款",
+    "points": "点券"
+  },
+  "chips": {
+    "you": "你",
+    "out": "出局",
+    "offline": "离线",
+    "autopilot": "托管"
+  },
+  "vehicle": {
+    "walk": "🚶 步行",
+    "moto": "🛵 机车",
+    "car": "🚗 汽车",
+    "engineer": "🚜 工程车"
+  },
+  "days": "{{n}} 天",
+  "status": {
+    "jail": "坐牢 {{n}} 天",
+    "hospital": "住院 {{n}} 天",
+    "hotel": "住旅馆 {{n}} 天",
+    "away": "不在场 {{n}} 天",
+    "hibernate": "冬眠 {{n}} 天",
+    "sleepwalk": "梦游 {{n}}",
+    "stay": "停留 {{n}}",
+    "tortoise": "乌龟 {{n}}",
+    "bankReject": "拒绝往来 {{n}} 天",
+    "insurance": "保险 {{n}} 天",
+    "bomb": "💣 {{n}} 步",
+    "loan": "贷款 {{n}}（{{due}} 到期）"
+  },
+  "out": {
+    "bankrupt": "已破产",
+    "surrender": "已投降"
+  },
+  "mini": {
+    "title": "小地图",
+    "owner": "{{n}}P 所有",
+    "unowned": "无主"
+  },
+  "action": {
+    "cards": "卡片",
+    "items": "道具",
+    "stock": "股票",
+    "info": "查看",
+    "autopilot": "托管",
+    "autopilotOn": "托管中",
+    "focus": "回到当前玩家",
+    "speed": "动画速度",
+    "skip": "跳过动画",
+    "diceCount": "骰子数",
+    "diceN": "{{n}} 颗骰子",
+    "roll": "掷骰（{{n}} 颗）",
+    "locked": {
+      "stay": "停留（原地结算）",
+      "tortoise": "乌龟（走 1 步）",
+      "sleepwalk": "梦游（自动前进）"
+    }
+  },
+  "waiting": {
+    "text": "等待 {{who}} {{action}}…",
+    "textAi": "{{who}} 正在思考：{{action}}…",
+    "secs": "{{n}} 秒",
+    "kind": {
+      "TURN_MENU": "行动",
+      "BANK_ATM": "使用提款机",
+      "BANK_COUNTER": "在银行柜台办理业务",
+      "BUY_LAND": "选择是否购买 {{lot}}",
+      "UPGRADE_LAND": "选择是否加盖 {{lot}}",
+      "BUY_FACILITY": "选择是否购买 {{lot}}",
+      "BUILD_FACILITY": "选择在 {{lot}} 兴建什么",
+      "UPGRADE_FACILITY": "选择是否扩建 {{lot}}",
+      "FACILITY_TYPE": "选择 {{lot}} 的设施类型",
+      "RESEARCH": "选择研发项目",
+      "SHOP": "在百货公司购物",
+      "LOTTERY": "挑选乐透号码",
+      "BAIL": "考虑保释",
+      "MINIGAME": "准备小游戏",
+      "MAGIC_CAST": "在魔法屋施法",
+      "CONSTRUCTION_PICK": "挑选要加盖的地",
+      "SUBSCRIBE_SHARES": "考虑认购股票",
+      "USE_FREE_CARD": "考虑使用免费卡",
+      "SCAPEGOAT": "考虑嫁祸给谁",
+      "AUCTION_BID": "出价",
+      "BIRTHDAY_PICK": "挑选生日礼物",
+      "DISCARD_CARD": "选择丢弃的卡片",
+      "DEATH_GOD_TARGET": "选择死神的目标"
+    }
+  },
+  "decision": {
+    "collapse": "收起回合菜单"
+  },
+  "dice": {
+    "sum": "共 {{n}} 步"
+  },
+  "panel": {
+    "cards": "卡片",
+    "items": "道具",
+    "stock": "股市行情",
+    "info": "玩家与地产"
+  },
+  "log": {
+    "title": "事件记录",
+    "empty": "还没有事件"
+  },
+  "chat": {
+    "title": "聊天",
+    "placeholder": "说点什么…",
+    "send": "发送",
+    "emote": "表情",
+    "disabled": "观战聊天已关闭",
+    "tooFast": "说话太快了，稍等一下",
+    "spectatorTag": "观战"
+  },
+  "emotes": {
+    "smile": "微笑",
+    "laugh": "大笑",
+    "cry": "哭哭",
+    "angry": "生气",
+    "shock": "吓到了",
+    "cool": "酷",
+    "love": "喜欢",
+    "sweat": "流汗",
+    "think": "思考",
+    "sleepy": "犯困",
+    "thumbsUp": "点赞",
+    "clap": "鼓掌",
+    "money": "发财",
+    "broke": "破财",
+    "bomb": "炸弹",
+    "lucky": "好运"
+  },
+  "spectators": {
+    "title": "观战",
+    "none": "暂无观战者",
+    "you": "你",
+    "kick": "请出",
+    "disabled": "已关闭"
+  },
+  "system": {
+    "playerJoined": "{{nickname}} 加入了房间（{{seatNo}}P）",
+    "playerLeft": "{{nickname}} 离开了房间",
+    "spectatorJoined": "{{nickname}} 进来观战",
+    "spectatorLeft": "{{nickname}} 离开了观战",
+    "hostChanged": "{{nickname}} 成为房主",
+    "autopilotOn": "{{nickname}} 进入托管（{{reason}}）",
+    "autopilotOff": "{{nickname}} 解除托管",
+    "disconnected": "{{nickname}} 断线了",
+    "reconnected": "{{nickname}} 重新连上了",
+    "kicked": "{{nickname}} 被请出房间",
+    "timeoutDefault": "{{seatNo}}P 超时，已由电脑代为决定",
+    "gamePaused": "对局暂停（{{reason}}）",
+    "gameResumed": "对局继续",
+    "gameSaved": "已存档",
+    "gameLoaded": "已读取存档「{{name}}」",
+    "aiPaused": "{{seatNo}}P 的电脑连续出错，对局已暂停",
+    "internalError": "对局内部错误，房间已暂停，请房主稍后继续",
+    "serverRestored": "服务器已重启并恢复本房间，等待玩家回来"
+  },
+  "systemReason": {
+    "manual": "手动",
+    "afk": "连续超时",
+    "disconnect": "断线",
+    "left": "离开",
+    "host": "房主暂停",
+    "all_away": "全员离线"
+  },
+  "toast": {
+    "stale": "已超时，电脑代为决定"
+  },
+  "error": {
+    "BAD_HANDSHAKE": "连接参数无效，请刷新页面",
+    "PROTOCOL_MISMATCH": "客户端版本过旧，请刷新页面",
+    "BAD_REQUEST": "请求格式不正确",
+    "RATE_LIMITED": "操作太频繁，请稍后再试",
+    "SERVER_BUSY": "服务器繁忙，请稍后再试",
+    "INTERNAL": "服务器内部错误",
+    "ROOM_NOT_FOUND": "房间不存在或已关闭",
+    "ROOM_FULL": "房间已满",
+    "ROOM_IN_GAME": "对局已开始，只能观战",
+    "ALREADY_IN_ROOM": "你已在另一个进行中的房间里，请先离开",
+    "NOT_IN_ROOM": "你不在这个房间里",
+    "NOT_HOST": "只有房主可以这样做",
+    "NOT_A_PLAYER": "观战者不能进行此操作",
+    "SEAT_TAKEN": "座位已被占用",
+    "CHARACTER_TAKEN": "角色已被其他人选择",
+    "NOT_ALL_READY": "还有玩家没有准备",
+    "NOT_ENOUGH_PLAYERS": "至少需要 2 名参与者",
+    "SPECTATORS_DISABLED": "房间不允许观战",
+    "MAP_UNAVAILABLE": "地图不可用",
+    "GAME_PAUSED": "对局已暂停",
+    "GAME_OVER": "对局已结束",
+    "NOT_YOUR_DECISION": "现在不是你的决策",
+    "STALE_DECISION": "决策已失效（可能已超时）",
+    "INVALID_ACTION": "操作不合法",
+    "MINIGAME_INVALID": "小游戏数据无效",
+    "MINIGAME_TOO_EARLY": "小游戏提交过早",
+    "MINIGAME_TOO_LATE": "小游戏已超时",
+    "SAVE_NOT_FOUND": "存档不存在",
+    "SAVE_INCOMPATIBLE": "存档与当前版本或地图不兼容",
+    "SAVE_FORBIDDEN": "你无权读取这个存档",
+    "CHAT_DISABLED": "聊天已关闭"
+  },
+  "errorReason": {
+    "timeout": "请求超时，请检查网络",
+    "disconnected": "连接已断开",
+    "replaced": "已在其他页面打开，请在本页选择「在这里继续」"
+  },
+  "board": {
+    "waiting": "等待对局数据…",
+    "loadingMap": "正在加载地图…",
+    "error": "棋盘加载失败：{{reason}}",
+    "contextLost": "图形重建中…",
+    "rotateLeft": "向左旋转",
+    "rotateRight": "向右旋转"
+  },
+  "paused": {
+    "title": "对局已暂停",
+    "host": "房主暂停了对局",
+    "all_away": "所有玩家都离线了"
+  },
+  "over": {
+    "title": "游戏结束",
+    "winner": "{{who}} 获胜",
+    "noWinner": "没有赢家",
+    "rematch": "再来一局",
+    "leave": "离开房间",
+    "reason": {
+      "timeLimit": "游戏时间到",
+      "wealthTarget": "资产达到目标",
+      "lastStanding": "只剩一人",
+      "noHumansLeft": "真人玩家全部出局"
+    }
+  },
+  "menu": {
+    "title": "系统菜单",
+    "pause": "暂停对局",
+    "resume": "继续对局",
+    "settings": "设置",
+    "leave": "离开房间"
+  },
+  "saves": {
+    "save": "存档",
+    "saved": "已存档",
+    "namePlaceholder": "存档名称",
+    "hostOnly": "只有房主可以存档和读档",
+    "list": "服务器存档",
+    "empty": "还没有存档",
+    "unofficial": "非官方存档",
+    "incompatible": "不兼容",
+    "tablesMismatch": "数据版本不同",
+    "tablesMismatchNote": "（存档的数据版本与服务器不同，个别数值可能有出入）",
+    "auto": "自动",
+    "day": "第 {{n}} 天",
+    "load": "读取",
+    "loaded": "已读取存档，请玩家重新入座",
+    "delete": "删除"
+  },
+  "settings": {
+    "title": "设置",
+    "nickname": "昵称",
+    "speed": "动画速度",
+    "autoFollow": "镜头自动跟随当前玩家",
+    "muted": "静音",
+    "volume": "主音量",
+    "quality": "画质",
+    "qualities": {
+      "auto": "自动",
+      "high": "高",
+      "mid": "中",
+      "low": "低"
+    },
+    "colorBlind": "色弱模式（强化玩家形状标记）",
+    "leftHanded": "左手模式（行动区放左侧）",
+    "audioLater": "音效与背景音乐将在后续版本加入。"
+  },
+  "reconnect": {
+    "title": "连接中断，正在重连…",
+    "titleN": "连接中断，正在重连（第 {{n}} 次）…",
+    "autopilot": "断线超过 15 秒后，你的角色会由电脑托管；重连后自动恢复。",
+    "replacedTitle": "已在其他页面打开",
+    "replacedBody": "同一身份在另一个标签页或设备上登录了，这个页面已断开。",
+    "reclaim": "在这里继续",
+    "fatalTitle": "无法连接",
+    "reload": "刷新页面"
+  },
+  "rotate": {
+    "title": "请把手机横过来",
+    "body": "对局画面只支持横屏，旋转设备后继续。"
+  }
+}

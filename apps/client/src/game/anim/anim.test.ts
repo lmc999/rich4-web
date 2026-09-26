@@ -5,6 +5,87 @@ import { tween, tweenValue } from './tween';
 
 const flush = () => new Promise<void>((r) => setTimeout(r, 0));
 
+describe('AnimClock / tween：帧回调出错不拖垮时钟', () => {
+  it('抛错的帧回调只注销自己并报告；其他回调与到期的 wait 照常执行', async () => {
+    const c = new AnimClock();
+    const errors: unknown[] = [];
+    c.onError = (e) => errors.push(e);
+    let ok = 0;
+    c.onFrame(() => {
+      throw new TypeError("Cannot read properties of null (reading 'set')");
+    });
+    c.onFrame(() => {
+      ok++;
+    });
+    let waited = false;
+    void c.wait(10).then(() => {
+      waited = true;
+    });
+    expect(() => c.advance(16)).not.toThrow();
+    await flush();
+    expect(waited).toBe(true);
+    expect(errors).toHaveLength(1);
+    expect(c.activeFrames).toBe(1);
+    c.advance(16);
+    expect(ok).toBe(2);
+    expect(errors).toHaveLength(1);
+  });
+
+  it('补间写入抛错（目标已销毁）：补间结束并 resolve，等待者不会挂起', async () => {
+    const c = new AnimClock();
+    c.onError = () => {};
+    let destroyed = false;
+    let settled = false;
+    void tweenValue(
+      0,
+      1,
+      100,
+      () => {
+        if (destroyed) throw new Error('missing frame tangtang/walk3/back');
+      },
+      { clock: c },
+    ).then(() => {
+      settled = true;
+    });
+    c.advance(16);
+    destroyed = true;
+    c.advance(16);
+    await flush();
+    expect(settled).toBe(true);
+    expect(c.activeFrames).toBe(0);
+  });
+
+  it('中止时写终值抛错也照样 resolve', async () => {
+    const c = new AnimClock();
+    const ac = new AbortController();
+    let settled = false;
+    let destroyed = false;
+    const errSpy = console.error;
+    console.error = () => {};
+    try {
+      void tweenValue(
+        0,
+        1,
+        100,
+        () => {
+          if (destroyed) throw new Error('destroyed');
+        },
+        { clock: c, signal: ac.signal },
+      ).then(() => {
+        settled = true;
+      });
+      c.advance(16);
+      destroyed = true;
+      ac.abort();
+      await flush();
+    } finally {
+      console.error = errSpy;
+    }
+    expect(settled).toBe(true);
+    expect(c.activeFrames).toBe(0);
+  });
+});
+
 describe('AnimClock', () => {
   it('wait 在时钟推进到期后 resolve，按到期先后', async () => {
     const c = new AnimClock();

@@ -2,9 +2,11 @@
  * 集成测试用服务器（design/net.md §11.1）：真实 Fastify + Socket.IO，监听 127.0.0.1 随机端口。
  * 默认：fixture 地图、stubEngine（RICH4_TEST_ENGINE=real 时换真实引擎）、计时缩到 2%、不等动画、
  * AI 思考 0ms、断线宽限 0.3 秒、测试模式（debug:act 可用）。manual=true 时注入 ManualScheduler。
+ * 持久化默认内存 SQLite；给 dataDir 时用该目录下的 rich4.db（重启恢复测试用同一目录再起一个 app）。不做定时备份。
  */
+import { join } from 'node:path';
 import type { AiPolicy } from '@rich4/shared/ai';
-import { BasicAiPolicy } from '@rich4/shared/ai';
+import { OriginalAiPolicy } from '@rich4/shared/ai';
 import { createEngine, type EngineApi } from '@rich4/shared/engine';
 import type { RoomSettings } from '@rich4/shared/net';
 import { type App, createApp } from '../../src/app';
@@ -36,6 +38,14 @@ export interface TestServerOptions {
   catalog?: MapCatalog;
   /** 打开日志（调试用） */
   verbose?: boolean;
+  /** 数据目录：rich4.db（或 JSON 存储的 store/）放在这里；缺省为内存 SQLite */
+  dataDir?: string;
+  store?: 'sqlite' | 'json';
+  /** 聊天敏感词 */
+  badWords?: readonly string[];
+  adminToken?: string;
+  /** 固定的存档签名密钥（跨 app 实例验签） */
+  hmacSecret?: string;
 }
 
 export interface TestServer {
@@ -44,8 +54,11 @@ export interface TestServer {
   sched: ManualScheduler | null;
   engine: EngineApi;
   engineKind: TestEngineKind;
-  close(): Promise<void>;
+  close(o?: { flush?: boolean }): Promise<void>;
 }
+
+/** 测试用固定 HMAC 密钥（≥32 字节） */
+export const TEST_HMAC_SECRET = 'rich4-test-hmac-secret-0123456789abcdef';
 
 export async function startTestServer(o: TestServerOptions = {}): Promise<TestServer> {
   const engineKind = o.engine ?? testEngineKind();
@@ -54,7 +67,7 @@ export async function startTestServer(o: TestServerOptions = {}): Promise<TestSe
     engineKind === 'real'
       ? createEngine(catalog.registry, { devChecks: true })
       : createStubEngine({ registry: catalog.registry });
-  const policy = o.policy ?? (engineKind === 'real' ? BasicAiPolicy : localPolicy);
+  const policy = o.policy ?? (engineKind === 'real' ? OriginalAiPolicy : localPolicy);
   const config = {
     ...loadConfig({
       PORT: '0',
@@ -65,6 +78,17 @@ export async function startTestServer(o: TestServerOptions = {}): Promise<TestSe
     }),
     rich4DataDir: null,
     staticDir: null,
+    backupEnabled: false,
+    saveHmacSecret: o.hmacSecret ?? TEST_HMAC_SECRET,
+    adminToken: o.adminToken ?? null,
+    ...(o.dataDir
+      ? {
+          dataDir: o.dataDir,
+          store: o.store ?? 'sqlite',
+          storePath: o.store === 'json' ? join(o.dataDir, 'store') : join(o.dataDir, 'rich4.db'),
+          badWordsPath: join(o.dataDir, 'badwords.txt'),
+        }
+      : { store: 'sqlite' as const, storePath: ':memory:', badWordsPath: '/nonexistent/badwords.txt' }),
   };
   const sched = o.manual ? new ManualScheduler({ autoRunZero: true }) : null;
   const app = await createApp({
@@ -79,7 +103,8 @@ export async function startTestServer(o: TestServerOptions = {}): Promise<TestSe
     rateLimitScale: o.rateLimitScale ?? 1,
     roomDefaults: { reconnectGraceSec: 0.3, ...o.roomDefaults },
     ...(o.roomTtls ? { roomTtls: o.roomTtls } : {}),
+    ...(o.badWords ? { badWords: o.badWords } : {}),
   });
   const { url } = await app.listen(0, '127.0.0.1');
-  return { url, app, sched, engine, engineKind, close: () => app.close() };
+  return { url, app, sched, engine, engineKind, close: (c) => app.close(c) };
 }

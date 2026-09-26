@@ -77,3 +77,8 @@ export const SAVE_NAME_MAX = 40;
 export const MAX_MANUAL_SAVES_PER_OWNER = 20;
 /** POST /api/saves/import 请求体上限 */
 export const SAVE_IMPORT_MAX_BYTES = 2 * 1024 * 1024;
+/**
+ * 读档 / 导入时解压后 JSON 的上限：gzip 压缩比极高，2MB 的请求体上限挡不住膨胀；
+ * 一个 GameState 约 50–150KB（时光机锚点另算），留足余量
+ */
+export const SAVE_DECODE_MAX_JSON_BYTES = 2 * 1024 * 1024;

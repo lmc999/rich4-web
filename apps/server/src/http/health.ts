@@ -1,5 +1,5 @@
 /**
- * /healthz：事件循环在跑就 200；/readyz：不在停机中才 200（M5 再加数据库检查）。
+ * /healthz：事件循环在跑就 200；/readyz：数据库正常且不在停机中才 200（isReady 由 app 组合两者）。
  */
 import type { FastifyInstance } from 'fastify';
 

@@ -12,6 +12,8 @@ import { diffExeTables } from '../../src/report/versionDiff';
 
 const ctx = new ExtractContext({ logger: { out: () => {}, err: () => {} } });
 const available = ['Game/rich4.exe', 'MultiverseJourney/rich4.exe'].every((p) => existsSync(path.join(ctx.srcDir, p)));
+/** 抽取含第二阶段（常量、新闻/命运/魔法屋）约数秒 */
+const T = { timeout: 120_000 };
 
 describe.skipIf(!available)('exe 固定表（本机原版 exe）', () => {
   let cached: Partial<Record<ExeEdition, ExtractedTables>> | null = null;
@@ -20,7 +22,7 @@ describe.skipIf(!available)('exe 固定表（本机原版 exe）', () => {
     return cached as Record<ExeEdition, ExtractedTables>;
   };
 
-  it('两版都是已登记的 Steam exe；每张表唯一定位，v3.11 与参考 VA 一致，v2.06 的 xref 与签名一致', async () => {
+  it('两版都是已登记的 Steam exe；每张表唯一定位，v3.11 与参考 VA 一致，v2.06 的 xref 与签名一致', T, async () => {
     const { v206, v311 } = await both();
     expect(v311.exe.knownFileId).toBe('steam.mj.exe');
     expect(v206.exe.knownFileId).toBe('steam.game.exe');
@@ -41,7 +43,7 @@ describe.skipIf(!available)('exe 固定表（本机原版 exe）', () => {
   });
 
   for (const ed of ['v206', 'v311'] as const) {
-    it(`${ed}：卡表 30 项、初始张数和 100；道具前 8 种价格；角色现金比例；台湾股票样本；事实核对全过`, async () => {
+    it(`${ed}：卡表 30 项、初始张数和 100；道具前 8 种价格；角色现金比例；台湾股票样本；事实核对全过`, T, async () => {
       const t = (await both())[ed];
       expect(t.cards).toHaveLength(30);
       expect(t.cards.reduce((s, c) => s + c.initCount, 0)).toBe(100);
@@ -57,23 +59,27 @@ describe.skipIf(!available)('exe 固定表（本机原版 exe）', () => {
     });
   }
 
-  it('版本对比：v2.06 4 张图、v3.11 8 张图；卡/道具/角色/开局/设施/农历一致；共有地图的股票一致、节日只差图片资源号', async () => {
-    const { v206, v311 } = await both();
-    expect(v206.stocks.maps).toBe(4);
-    expect(v311.stocks.maps).toBe(8);
-    const d = diffExeTables(v206, v311);
-    const status = Object.fromEntries(d.map((x) => [x.table, x.status]));
-    expect(status).toEqual({
-      cards: 'same',
-      tools: 'same',
-      characters: 'same',
-      stocks: 'superset',
-      holidays: 'superset',
-      setup: 'same',
-      facilityLevels: 'same',
-      lunar: 'same',
-    });
-    expect(canonicalJson(stocksForMap(v206, 0))).toBe(canonicalJson(stocksForMap(v311, 0)));
-    expect(canonicalJson(holidaysForMap(v206, 0))).toBe(canonicalJson(holidaysForMap(v311, 0)));
-  });
+  it(
+    '版本对比：v2.06 4 张图、v3.11 8 张图；卡/道具/角色/开局/设施/农历一致；共有地图的股票一致、节日只差图片资源号',
+    T,
+    async () => {
+      const { v206, v311 } = await both();
+      expect(v206.stocks.maps).toBe(4);
+      expect(v311.stocks.maps).toBe(8);
+      const d = diffExeTables(v206, v311);
+      const status = Object.fromEntries(d.map((x) => [x.table, x.status]));
+      expect(status).toEqual({
+        cards: 'same',
+        tools: 'same',
+        characters: 'same',
+        stocks: 'superset',
+        holidays: 'superset',
+        setup: 'same',
+        facilityLevels: 'same',
+        lunar: 'same',
+      });
+      expect(canonicalJson(stocksForMap(v206, 0))).toBe(canonicalJson(stocksForMap(v311, 0)));
+      expect(canonicalJson(holidaysForMap(v206, 0))).toBe(canonicalJson(holidaysForMap(v311, 0)));
+    },
+  );
 });

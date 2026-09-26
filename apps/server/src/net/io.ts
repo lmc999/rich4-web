@@ -26,6 +26,7 @@ import { registerDebugHandlers } from './handlers/debug';
 import { registerGameHandlers } from './handlers/game';
 import { registerLobbyHandlers } from './handlers/lobby';
 import { registerRoomHandlers } from './handlers/room';
+import { registerSavesHandlers } from './handlers/saves';
 import { registerTimeHandlers } from './handlers/time';
 
 // biome-ignore lint/complexity/noBannedTypes: Socket.IO 的 InterServerEvents 占位
@@ -154,6 +155,7 @@ export function attachIo(io: AppServer, ctx: HandlerCtx, o: IoOptions): void {
     registerRoomHandlers(ctx, socket);
     registerGameHandlers(ctx, socket);
     registerChatHandlers(ctx, socket);
+    registerSavesHandlers(ctx, socket);
     registerTimeHandlers(ctx, socket);
     if (ctx.testMode) registerDebugHandlers(ctx, socket);
 

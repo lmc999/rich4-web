@@ -1,43 +1,86 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { memoryLocation } from 'wouter/memory-location';
+import { useRoomStore } from '../store/roomStore';
+import { makeTestClient } from '../test/fakeTransport';
+import { roomView } from '../test/roomFixtures';
 import { App } from './App';
+import { ClientProvider } from './services';
 
 // 开发页含 Pixi（jsdom 无 WebGL），路由测试只验证懒加载分发到正确的组件
 vi.mock('../dev/MapPreview', () => ({ default: () => <div data-testid="dev-map-mock">map</div> }));
 vi.mock('../dev/Gallery', () => ({ default: () => <div data-testid="dev-gallery-mock">gallery</div> }));
+vi.mock('../ui/decisions/DevDecisions', () => ({
+  default: () => <div data-testid="dev-decisions-mock">decisions</div>,
+}));
 
-function renderAt(path: string) {
+function renderAt(path: string, setup?: (t: ReturnType<typeof makeTestClient>) => void) {
   const loc = memoryLocation({ path, record: true });
-  const utils = render(<App hook={loc.hook} />);
-  return { ...utils, loc };
+  const t = makeTestClient();
+  setup?.(t);
+  const utils = render(
+    <ClientProvider client={t.client}>
+      <App hook={loc.hook} />
+    </ClientProvider>,
+  );
+  return { ...utils, loc, ...t };
 }
 
-describe('路由与占位页', () => {
-  it('/ 首页：标题、单机入口、开发页入口；建房与加入暂不可用', () => {
+afterEach(() => {
+  useRoomStore.getState().clear();
+});
+
+describe('路由', () => {
+  it('/ 首页：标题、昵称、建房、加入、单机、设置、开发页入口', () => {
     renderAt('/');
     expect(screen.getByTestId('screen-home')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('大富翁4 联机版');
-    expect(screen.getByRole('button', { name: '创建房间' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '输入房间号加入' })).toBeDisabled();
+    expect(screen.getByTestId('home-nickname')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '创建房间' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '输入房间号加入' })).toBeEnabled();
     expect(screen.getByRole('link', { name: '单机对战电脑' })).toHaveAttribute('href', '/solo');
     expect(screen.getByRole('link', { name: '地图预览' })).toHaveAttribute('href', '/dev/map');
     expect(screen.getByRole('link', { name: '美术画廊' })).toHaveAttribute('href', '/dev/gallery');
+    expect(screen.getByRole('link', { name: '对话框样板' })).toHaveAttribute('href', '/dev/decisions');
   });
 
-  it('/r/:code 房间占位页显示房间号（大写）', () => {
-    renderAt('/r/abc123');
-    expect(screen.getByTestId('screen-room')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('房间 ABC123');
+  it('输入房间号加入：校验 6 位数字后跳到 /r/:code；观战带 ?watch=1', async () => {
+    const { loc } = renderAt('/');
+    await userEvent.click(screen.getByTestId('home-join-open'));
+    await userEvent.type(screen.getByTestId('home-join-code'), '12a34');
+    await userEvent.click(screen.getByTestId('home-join'));
+    expect(screen.getByTestId('home-error')).toHaveTextContent('6 位数字');
+    await userEvent.type(screen.getByTestId('home-join-code'), '56');
+    await userEvent.click(screen.getByTestId('home-watch'));
+    expect(loc.history?.at(-1)).toBe('/r/123456?watch=1');
   });
 
-  it('/solo 单机占位页可回到首页', async () => {
-    const { loc } = renderAt('/solo');
-    expect(screen.getByTestId('screen-solo')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('link', { name: '回到首页' }));
-    expect(loc.history?.at(-1)).toBe('/');
-    expect(await screen.findByTestId('screen-home')).toBeInTheDocument();
+  it('/r/:code 进房：发 room:join，收到 room:state 后显示房间大厅', async () => {
+    const { transport } = renderAt('/r/654321');
+    await waitFor(() => expect(transport.payloads('room:join')).toEqual([{ code: '654321', role: 'player' }]));
+    transport.push('room:state', roomView({ code: '654321' }));
+    expect(await screen.findByTestId('screen-room')).toHaveAttribute('data-phase', 'lobby');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('房间 654321');
+  });
+
+  it('/r/:code 房间不存在：显示错误并可回首页', async () => {
+    renderAt('/r/111111', (t) =>
+      t.transport.respond('room:join', () => ({ ok: false, error: { code: 'ROOM_NOT_FOUND', message: 'x' } })),
+    );
+    expect(await screen.findByTestId('room-error')).toHaveTextContent('房间不存在或已关闭');
+  });
+
+  it('/r/:code 房间号非法', async () => {
+    renderAt('/r/abc');
+    expect(await screen.findByTestId('room-error')).toHaveTextContent('房间号无效');
+  });
+
+  it('/solo：建私密房、补 3 个电脑、开局后进入 /r/<code>', async () => {
+    const { loc, transport } = renderAt('/solo');
+    await waitFor(() => expect(loc.history?.at(-1)).toBe('/r/123456'));
+    expect(transport.payloads('room:setSeatAi')).toHaveLength(3);
+    expect(transport.payloads('room:start')).toHaveLength(1);
   });
 
   it('未知路径显示 404', () => {
@@ -54,5 +97,10 @@ describe('路由与占位页', () => {
   it('/dev/gallery', async () => {
     renderAt('/dev/gallery');
     expect(await screen.findByTestId('dev-gallery-mock')).toBeInTheDocument();
+  });
+
+  it('/dev/decisions 懒加载到对话框样板页', async () => {
+    renderAt('/dev/decisions');
+    expect(await screen.findByTestId('dev-decisions-mock')).toBeInTheDocument();
   });
 });

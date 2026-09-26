@@ -94,6 +94,16 @@ describe('握手与文本清洗', () => {
     expect(sanitizeNickname('​‌')).toBe('');
   });
 
+  it('去掉从不需要显示的不可见格式字符；保留 emoji 需要的变体选择符与 tag 字符', () => {
+    for (const cp of [0xad, 0x34f, 0x61c, 0x115f, 0x1160, 0x17b4, 0x180e, 0x3164, 0xffa0, 0xfff0, 0x1bca0, 0x1d173]) {
+      expect(sanitizeChatText(`a${String.fromCodePoint(cp)}b`), cp.toString(16)).toBe('ab');
+    }
+    expect(sanitizeNickname('\u3164\u3164')).toBe('');
+    expect(sanitizeChatText('\u2764\uFE0F')).toBe('\u2764\uFE0F');
+    const england = '\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}';
+    expect(sanitizeChatText(england)).toBe(england);
+  });
+
   it('sanitizeChatText：换行变空格，截到 200 字', () => {
     expect(sanitizeChatText('你好\n世界')).toBe('你好 世界');
     expect(Array.from(sanitizeChatText('字'.repeat(300))).length).toBe(200);

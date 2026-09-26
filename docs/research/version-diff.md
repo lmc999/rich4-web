@@ -1,6 +1,6 @@
 # 大富翁4 v2.06 与 v3.11 差异报告
 
-> 由 `npm run extract -- exe diff` 生成，请勿手改。只写事实、计数、哈希与结论，不含原始字节与整表数据；逐项抽取结果在 `.cache/extract/tables.<edition>.json`（gitignore）。代码级对比（funcdiff、常量锚点）属于 D2 第二部分，见 §5。
+> 由 `npm run extract -- exe diff --r2` 生成，请勿手改。只写事实、计数、哈希与结论，不含原始字节与整表数据；逐项抽取结果在 `.cache/extract/tables.<edition>.json`（gitignore）。代码级对比（常量锚点、funcdiff）见 §5。
 
 ## 1. 输入指纹
 
@@ -87,12 +87,57 @@
 - 两版字段用法相同（引用次数 v2.06 [2,1,4,3,1,4,1,0,1,0,2,0]，v3.11 [2,1,4,3,1,4,1,0,1,0,2,0]）。
 - 农历：农历表十二月最大日 30，以下项永不命中：0/16（12/31）、1/11（12/31）（原版瑕疵，保留原数据）。
 - 农历表：8401 天（公历 1998-01-01..2020-12-31，农历 1997-12-03..2020-11-17，闰月 9 个）；超出 2020 年后原版查表越界。
-- MapDef 的 `flagsRaw` = flags0 | 事件位 << 8 | 星期 << 16。
+- MapDef：kind 2 写 `weekday`（0 = 星期日）；`flagsRaw` = flags0 | 事件位 << 8 | 星期 << 16（兼容保留）。
 
 ## 5. 代码行为
 
 - xrefTransfer（v3.11 → v2.06，按引用点代码模式迁移）交叉核对：cards ✅、tools ✅、characters ✅、stocks ✅、holidays ✅、setupFunds ✅、setupDays ✅、setupWealth ✅、facilityLevels ✅、lunar —。
-- 函数级 funcdiff、新闻/命运/魔法屋/小游戏/AI 常量锚点：⬜ 待 D2 第二部分（exe diff --r2）。
+- 新闻 / 命运 / 魔法屋表（v2.06/v3.11）：newsHandlers 0x473c48/0x475e24（v2.06 signature，xref 迁移一致）；newsCategories 0x473cd8/0x475eb4（v2.06 signature，xref 迁移一致）；fateHandlers 0x473d14/0x475ef0（v2.06 signature，xref 迁移一致）；magicEffects 0x47354c/0x475718（v2.06 signature，xref 迁移一致）；magicConditions 0x4734ec/0x4756b8（v2.06 signature，xref 迁移一致）；magicEffectJump 0x431063/0x431c7a（v2.06 signature，xref 迁移一致）；magicCondJump 0x430bfb/0x431812（v2.06 signature，xref 迁移一致）。逐条参数见 `docs/research/events-from-exe.md`。
+- 常量锚点（`tools/extract/anchors/constants.json`）：155 个，v3.11 位置人工复核，v2.06 位置由指令迁移得到；两版值不同 0 个，与期望不符 0 个。
+- 函数级对比：种子 162 个（新闻 36、命运 49、魔法屋效果 12 与条件 12、辅助函数、常量所在函数），两版都能配对 162 个（100%）；对齐位置上的调用扩散新增 126 对，共比较 261 个函数。
+
+| 系统 | 函数 | 相同 | 只差常量 | 结构不同 | 最低相似度 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ai | 3 | 2 | 0 | 1 | 0.793 |
+| ai·callee | 4 | 3 | 0 | 1 | 0.371 |
+| fate | 50 | 50 | 0 | 0 | 1 |
+| fate·callee | 8 | 5 | 1 | 2 | 0.897 |
+| helper | 26 | 21 | 3 | 2 | 0.845 |
+| helper·callee | 35 | 28 | 3 | 4 | 0.653 |
+| magic | 27 | 23 | 2 | 2 | 0.895 |
+| magic·callee | 6 | 4 | 1 | 1 | 0.998 |
+| minigame | 7 | 5 | 0 | 2 | 0.836 |
+| minigame·callee | 8 | 8 | 0 | 0 | 1 |
+| news | 37 | 26 | 5 | 6 | 0.626 |
+| news·callee | 24 | 24 | 0 | 0 | 1 |
+| rules | 12 | 8 | 0 | 4 | 0.823 |
+| rules·callee | 14 | 12 | 1 | 1 | 0.847 |
+
+「只差常量」与「结构不同」中的数值差异：表现层 50 条（资源号整体差 0x29、按名/按号加载 Panel.mkf 等，自动归类）；其余 21 条逐条人工复核：
+
+- ✅ auction：`0x43c0cb mov dword [0x48c490], 0x1 → 0x43ae7a mov dword [0x48920c], 0x33`——拍卖对话框的地块图片编号（v3.11 多了资料片地图的图片分支），表现层
+- ✅ auction：`0x43c0ea push 0x1a → 0x43aeb0 push 0x0`——Panel.mkf 资源加载参数（v2.06 先按文件名打开 PANEL.MKF），表现层
+- ✅ auction：`0x43c23c mov word [eax*4 + 0x48c436], 0x7 → 0x43afc3 mov word [eax*4 + 0x4891ae], 0x6`——拍卖对话框竞价者状态图编号，表现层
+- ✅ fateDraw：`0x44db8c push 0x42 → 0x44c4b8 push 0x0`——Panel.mkf 资源加载参数，表现层
+- ✅ lottery.numbers 所在函数：`0x4315f8 push 0xc → 0x4309e8 push 0x0`——Panel.mkf 资源加载参数，表现层
+- ✅ bank.interestPreview 所在函数：`0x439c15 push 0x19 → 0x438c17 push 0x0`——Panel.mkf 资源加载参数，表现层
+- ✅ news.deck 所在函数：`0x44b6ea push 0x42 → 0x44a18b push 0x0`——Panel.mkf 资源加载参数，表现层
+- ✅ news.deck 所在函数：`0x44b75a lea edi, [ebx + 0x1b9] → 0x44a200 lea edi, [ebx + 0x190]`——新闻图片资源号基数（0x1b9 vs 0x190，差 0x29 的资源号偏移），表现层
+- ✅ ai.magic.condPick 所在函数：`0x433839 push 0x12 → 0x432bf0 push 0x0`——Panel.mkf 资源加载参数，表现层
+- ✅ minigame.humanOnly 所在函数：`0x415638 push 0x4e → 0x414f68 push 0x0`——Panel.mkf 资源加载参数，表现层
+- ✅ minigame.skipMod 所在函数：`0x415251 push 0x4e → 0x414b9e push 0x0`——Panel.mkf 资源加载参数，表现层
+- ✅ ai.bank.lendGateMod 所在函数：`0x4366ca push 0x2 → 0x435906 push 0x17`——银行 AI 提示框参数错位（v2.06 多压一个串地址），表现层
+- ✅ ai.bank.lendGateMod 所在函数：`0x43686d push 0x5dc → 0x435aa8 push 0x462b03`——银行 AI 提示框显示时长 / 串参数错位，表现层
+- ✅ fateHandlers[5] → 0x44192a：`0x441953 push 0xb → 0x4405c6 push 0x0`——Panel.mkf 资源加载参数，表现层
+- ✅ fateHandlers[10] → 0x40b93b：`0x40b966 add edi, 0x80 → 0x40b450 add edi, 0x57`——座驾动画资源号（差 0x29），表现层
+- ✅ cardCheck → 0x444bb2：`0x444c36 mov edi, dword [eax + 0x48128a] → 0x443815 mov edi, dword [eax + 0x47e56a]`——台词表地址（v3.11 该地址恰好被当成可换算的串），表现层
+- ✅ upgradeLot → 0x440aac：`0x440b2d push 0x8c → 0x43f790 push 0x82`——设施类别对话框坐标（y 0x8c vs 0x82），表现层
+- ✅ upgradeLot → 0x440aac：`0x440b51 push 0x7a → 0x43f7b4 push 0x70`——设施类别对话框坐标（y 0x7a vs 0x70），表现层
+- ✅ ai.bank.lendGateMod 所在函数 → 0x450441：`0x450463 push 0x0 → 0x44eb37 push 0x80`——资源加载函数本身（按号 vs 按名）的参数，表现层
+- ✅ ai.bank.lendGateMod 所在函数 → 0x450441：`0x4504ce push 0x0 → 0x44ebce push 0x4`——资源加载函数本身的参数，表现层
+- ✅ ai.bank.lendGateMod 所在函数 → 0x450441：`0x45051b push 0x3 → 0x44ebee push 0x0`——资源加载函数本身的参数，表现层
+- 结构不同但对齐部分无数值差异 15 个（尾块复制 / 跳转布局 / v3.11 为资料片增加的分支）：newsHandlers[23]（0.933）、newsHandlers[31]（0.808）、newsHandlers[32]（0.808）、newsHandlers[33]（0.687）、newsHandlers[34]（0.626）、magicEffectJump[6]（0.983）、bomb.fuse 所在函数（0.995）、god.respawnDistX 所在函数（0.823）、fateHandlers[2] → 0x440cac（0.899）、auction → 0x454176（0.909）、auction → 0x454240（0.883）、fateDraw → 0x44bb4b（0.653）、setLoanDue → 0x4523d5（0.933）、bomb.fuse 所在函数 → 0x4379c9（0.847）、ai.magic.condPick 所在函数 → 0x431caa（0.998）。
+- radare2 交叉核对（radare2 6.2.0 +0 abi:132 @ darwin-arm_64，线性反汇编 `pD` 与本项目 x86 解码器逐条比较指令起点）：v206 116902 条指令、边界不一致 0；v311 117537 条指令、边界不一致 0。
 
 ## 6. 字符串
 
@@ -107,3 +152,4 @@
 - 股票：v2.06 4 张图、v3.11 8 张图，共有部分逐项一致；台湾 12 支与调研样本全部吻合，价格都是整数分。
 - 节日：共有地图的规则字段一致，只有图片资源号不同。台湾 24 项中 1 项停用；农历「十二月三十一」在 exe 农历表中永不命中。
 - 规则相关的 exe 表差异：无。v3.11 相对 v2.06 只增加了地图 4..7 的股票与节日数据，不需要「v2.06 规则开关」。
+- 代码行为：155 个规则常量两版全部相同；新闻 36、命运 37、魔法屋 12 × 12 的处理函数两版逐一配对，数值差异都属表现层。唯一的规则层代码差异是 v3.11 为资料片地图增加的分支（例如命运 33–36 只在原版地图组可行），对原版 4 张图没有影响。

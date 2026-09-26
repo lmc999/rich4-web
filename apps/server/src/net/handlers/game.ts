@@ -1,6 +1,6 @@
 /**
  * game:* 处理器（design/net.md §6.2；architecture §5.8）。seat 只从 session 取。
- * 小游戏裁判（M8）与存档（M5）尚未实现：对应事件返回明确的错误码，不让请求挂起。
+ * 小游戏裁判（M8）尚未实现：对应事件返回明确的错误码，不让请求挂起。game:save 见 Room.saveGame。
  */
 import { fail } from '@rich4/shared/net';
 import { type AppSocket, type HandlerCtx, handle } from '../guard';
@@ -23,11 +23,9 @@ export function registerGameHandlers(ctx: HandlerCtx, socket: AppSocket): void {
     const r = currentRoom(ctx, s);
     return r.ok ? r.data.resync(s.tokenHash, sock.id) : r;
   });
-  handle(ctx, socket, 'game:save', (_p, s) => {
+  handle(ctx, socket, 'game:save', (p, s) => {
     const r = currentRoom(ctx, s);
-    if (!r.ok) return r;
-    if (r.data.hostToken !== s.tokenHash) return fail('NOT_HOST');
-    return fail('INTERNAL', { reason: 'persistenceUnavailable' });
+    return r.ok ? r.data.saveGame(s.tokenHash, p.name) : r;
   });
   handle(ctx, socket, 'game:minigameInput', (_p, s) => {
     const r = currentRoom(ctx, s);

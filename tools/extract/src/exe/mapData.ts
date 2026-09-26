@@ -9,7 +9,7 @@ import type { ExtractedTables, HolidayRow } from './types';
  * - 股票名去掉排版空格（「台 積 電」→「台積電」），zh-CN 由 build 的 StringTable 经 opencc 转换；
  * - initPriceCents = f32 价格 × 100，必须是整数；volatility 取 f32 的最短十进制，volatilityF32 保留位型；
  * - 节日：空槽不输出；bit7「停用」项原版查找时直接跳过，也不输出（slot 保留原下标，所以会有空缺）；
- *   flagsRaw = flags0 | event << 8 | weekday << 16（HolidayDef 没有星期字段，kind 2 的星期放在 16..23 位）。
+ *   kind 2（该月第 n 个星期几）写 weekday；flagsRaw = flags0 | event << 8 | weekday << 16 仍保留星期位以兼容旧读法。
  */
 
 export type MapStockInput = { stock: Omit<StockDef, 'nameKey'>; name: string };
@@ -70,6 +70,7 @@ export function holidaysForMap(t: ExtractedTables, gm: number): MapHolidays {
       month: r.month,
       day: r.day,
       kind: r.kind,
+      ...(r.kind === 2 ? { weekday: r.weekday } : {}),
       flagsRaw: holidayFlagsRaw(r),
       closed: r.closed,
       giveCard: r.giveCard,

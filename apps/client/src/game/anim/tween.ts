@@ -32,21 +32,38 @@ export function tweenValue(
   return new Promise<void>((resolve) => {
     const start = o.clock.now();
     let done = false;
-    const end = (): void => {
+    /** 结束（到点、中止或出错）：无论写终值是否抛错都 resolve，等待者不会永远挂起 */
+    const end = (writeFinal: boolean): void => {
       if (done) return;
       done = true;
       off();
       o.signal?.removeEventListener('abort', onAbort);
-      finish();
-      resolve();
+      try {
+        if (writeFinal) finish();
+      } finally {
+        resolve();
+      }
     };
-    const onAbort = (): void => end();
+    const onAbort = (): void => {
+      try {
+        end(true);
+      } catch (err) {
+        // 中止时写终值失败（目标已销毁）：补间已结束并 resolve，这里只报告
+        console.error('[tween] abort finish failed', err);
+      }
+    };
     const off = o.clock.onFrame((now) => {
-      if (o.clock.instant) return end();
+      if (o.clock.instant) return end(true);
       const p = Math.min(1, (now - start) / ms);
-      if (p >= 1) return end();
-      apply(from + (to - from) * ease(p), p);
-      o.onUpdate?.(p);
+      if (p >= 1) return end(true);
+      try {
+        apply(from + (to - from) * ease(p), p);
+        o.onUpdate?.(p);
+      } catch (err) {
+        // 写入失败（目标已销毁）：结束补间并 resolve，错误交给 AnimClock 报告
+        end(false);
+        throw err;
+      }
     });
     o.signal?.addEventListener('abort', onAbort, { once: true });
   });

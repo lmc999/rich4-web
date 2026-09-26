@@ -12,11 +12,510 @@
     "backHome": "回到首页",
     "comingSoon": "施工中"
   },
+  "cmp": {
+    "close": "关闭",
+    "max": "最大",
+    "countdown": {
+      "aria": "剩余 {{n}} 秒",
+      "unlimited": "不限时"
+    },
+    "stepper": {
+      "dec": "减少",
+      "inc": "增加",
+      "decBy": "减少 {{n}}",
+      "incBy": "增加 {{n}}"
+    },
+    "slider": {
+      "quarter": "¼",
+      "half": "一半",
+      "all": "全部"
+    },
+    "unit": {
+      "yuan": "元",
+      "points": "点",
+      "shares": "股"
+    }
+  },
+  "dlg": {
+    "common": {
+      "waiting": "等待 {{name}} 做决定…",
+      "sent": "已提交，等待服务器确认…",
+      "expired": "时间到，将按默认选项处理",
+      "back": "返回",
+      "cancel": "取消",
+      "cash": "现金",
+      "deposit": "存款",
+      "points": "点券",
+      "levelN": "{{n}} 级",
+      "notEnoughCash": "现金不足",
+      "unowned": "无主"
+    },
+    "kind": {
+      "TURN_MENU": "行动",
+      "BANK_ATM": "银行 ATM",
+      "BANK_COUNTER": "银行柜台",
+      "BUY_LAND": "购买土地",
+      "UPGRADE_LAND": "加盖房屋",
+      "BUY_FACILITY": "购买设施地",
+      "BUILD_FACILITY": "兴建设施",
+      "UPGRADE_FACILITY": "设施升级",
+      "FACILITY_TYPE": "选择设施种类",
+      "RESEARCH": "研究所",
+      "SHOP": "百货公司",
+      "LOTTERY": "乐透",
+      "BAIL": "保释",
+      "MINIGAME": "小游戏",
+      "MAGIC_CAST": "魔法屋",
+      "CONSTRUCTION_PICK": "建设公司",
+      "SUBSCRIBE_SHARES": "认购股票",
+      "USE_FREE_CARD": "免费卡",
+      "SCAPEGOAT": "嫁祸卡",
+      "AUCTION_BID": "拍卖",
+      "BIRTHDAY_PICK": "生日礼物",
+      "DISCARD_CARD": "丢弃卡片",
+      "DEATH_GOD_TARGET": "死神附身"
+    },
+    "intent": {
+      "CONFIRM": "确定",
+      "DECLINE": "放弃",
+      "SKIP": "跳过",
+      "LEAVE": "离开",
+      "PASS": "这轮不加价",
+      "QUIT": "退出竞拍",
+      "MINIGAME_DECLINE": "不玩了",
+      "ROLL": "掷骰子"
+    },
+    "generic": {
+      "default": "按默认处理",
+      "body": "这个决策暂时没有专用界面，请从下面选择。"
+    },
+    "turn": {
+      "title": "轮到你了",
+      "subtitle": "本回合已操作 {{used}}/{{limit}} 次",
+      "dice": "骰子数",
+      "diceN": "{{n}} 颗骰子",
+      "roll": "掷 {{n}} 颗骰子",
+      "go": "出发",
+      "cards": "卡片",
+      "items": "道具",
+      "stock": "股市",
+      "board": "公布栏",
+      "surrender": "投降",
+      "usable": "可用 {{n}}/{{total}}",
+      "marketOpen": "开市中",
+      "listings": "{{n}} 件挂牌",
+      "pickTarget": "选择目标",
+      "surrenderTitle": "确定投降？",
+      "surrenderConfirm": "投降",
+      "surrenderBody": "{{name}} 投降后将退出本局，所有地产会被收回。这个操作不能撤销。",
+      "locked": {
+        "stay": "停留中：这回合原地不动",
+        "tortoise": "乌龟状态：这回合只走一步",
+        "sleepwalk": "梦游中：自动掷骰"
+      }
+    },
+    "target": {
+      "title": "使用 {{name}}",
+      "use": "使用 {{name}}",
+      "none": "这张卡不需要选择目标，确认后立即生效。",
+      "auto": "将自动选择视野内最近的神明。",
+      "noCandidates": "视野内没有可选目标。",
+      "self": "（自己）",
+      "facilityType": "选择设施种类",
+      "underfoot": "作用于脚下的「{{name}}」。",
+      "pairFrom": "用脚下的「{{name}}」与下面选中的地交换：",
+      "anyNode": "目标地点",
+      "dice": "点数",
+      "robWhat": "抢走哪一样？",
+      "tpSource": "要传送谁（什么）？",
+      "tpDest": "传送到哪里？",
+      "house": "{{name}} 上的房屋",
+      "boardHint": "也可以直接点棋盘上高亮的位置。"
+    },
+    "buyLot": {
+      "titleLand": "购买土地",
+      "titleFacility": "购买设施地",
+      "price": "地价",
+      "cashAfter": "购买后现金",
+      "tollAfter": "买下后的过路费",
+      "facilityType": "设施",
+      "level": "等级",
+      "street": "同街地产",
+      "fortuneBonus": "福神附身：买下后多送 1 级！",
+      "confirm": "购买",
+      "decline": "不买"
+    },
+    "upgrade": {
+      "title": "加盖房屋",
+      "cashAfter": "加盖后现金",
+      "cost": "加盖费用",
+      "toll": "过路费",
+      "facility": "设施",
+      "cap": "等级上限",
+      "now": "现在",
+      "next": "加盖后",
+      "bonus": "福神附身：这次多盖 1 级！",
+      "confirm": "加盖",
+      "decline": "不盖"
+    },
+    "facility": {
+      "titleBuild": "兴建设施",
+      "titleFree": "免费兴建设施",
+      "cost": "兴建费用",
+      "types": "设施种类",
+      "freeNote": "这次兴建不用花钱，选一种设施吧。",
+      "cap": "最高 {{n}} 级",
+      "fee": "收费",
+      "pickFirst": "先选一种设施",
+      "build": "兴建{{name}}",
+      "choose": "就盖{{name}}",
+      "decline": "不建",
+      "desc": {
+        "park": "绿化市容，不收费。",
+        "hotel": "停下的人要住宿付费，最高 5 级。",
+        "mall": "停下的人要购物付费，最高 5 级。",
+        "gas": "停下的人要加油付费。",
+        "lab": "研发高科技道具，最高 5 级。"
+      }
+    },
+    "research": {
+      "title": "研究所",
+      "current": "正在研发「{{item}}」，还剩 {{days}} 天。",
+      "none": "目前没有研发项目。",
+      "days": "{{n}} 天完成",
+      "free": "研发不收费，完成后道具直接送到背包。",
+      "switchWarn": "改选其他项目会放弃目前的研发进度。",
+      "confirm": "开始研发",
+      "skip": "维持现状"
+    },
+    "shop": {
+      "title": "百货公司",
+      "hand": "手牌 {{n}}/{{max}}",
+      "handFull": "手牌已满（{{max}} 张），不能再买卡。",
+      "fullDeck": "电脑座位：可以挑选牌堆里剩下的任何卡。",
+      "emptyShelf": "货架上没有卡片了。",
+      "shelf": "货架",
+      "items": "道具",
+      "stock": "库存 {{n}}",
+      "qty": "数量",
+      "buyFor": "买下",
+      "sellFor": "卖出",
+      "sellValue": "回收",
+      "unitValue": "每个",
+      "sellCards": "卖出卡片",
+      "sellItems": "卖出道具",
+      "noCards": "没有可卖的卡片。",
+      "noItems": "没有可卖的道具。",
+      "tabBuyCard": "买卡片",
+      "tabBuyItem": "买道具",
+      "tabSellCard": "卖卡片",
+      "tabSellItem": "卖道具",
+      "leave": "离开",
+      "tradeLimit": "本次进店的交易次数已用完，只能离开。"
+    },
+    "lottery": {
+      "title": "乐透彩券",
+      "pool": "奖池",
+      "price": "每张",
+      "mine": "我已买 {{n}} 张",
+      "numbers": "号码",
+      "ballFree": "{{n}} 号",
+      "ballSold": "{{n}} 号（{{name}} 已买）",
+      "quick": "机选",
+      "pickFirst": "先选一个号码",
+      "buy": "买 {{n}} 号",
+      "rule": "每月 15 日开奖，中奖者独得整个奖池。",
+      "skip": "不买"
+    },
+    "bail": {
+      "titleJail": "监狱",
+      "titleHospital": "医院",
+      "inmatesJail": "在押的玩家",
+      "inmatesHospital": "住院的玩家",
+      "noInmates": "现在没有人。",
+      "remaining": "还有 {{n}} 天",
+      "bailFor": "保释",
+      "hireFor": "雇用",
+      "villains": "可以雇用的恶人",
+      "villainAway": "已经出门了",
+      "villainDesc": {
+        "thief": "偷走别人的点券与路面道具。",
+        "robber": "到银行抢别人的存款，还会顺手偷卡。",
+        "thug": "向别人的地产收保护费。",
+        "spy": "窃取公司盈余与过路费。"
+      },
+      "skip": "离开"
+    },
+    "minigame": {
+      "subtitle": "游乐园小游戏",
+      "startsIn": "秒后开始",
+      "maxScore": "最高分",
+      "noMax": "不限",
+      "reward": "奖励",
+      "rewardText": "按得分换点券",
+      "ready": "准备好了吗？",
+      "started": "游戏已经开始",
+      "decline": "不玩了"
+    },
+    "magic": {
+      "title": "魔法屋",
+      "condition": "女巫选中了「{{cond}}」的玩家：",
+      "includesMe": "名单里有你自己，小心选择！",
+      "pickFirst": "先选一种魔法",
+      "cast": "施放「{{name}}」"
+    },
+    "construction": {
+      "title": "建设公司",
+      "chairman": "你是董事长：免费加盖 {{n}} 级！",
+      "levels": "请建设公司加盖 {{n}} 级，工程费付给公司（现金不够时从存款扣）。",
+      "rent": "租金 {{rent}}",
+      "free": "免费",
+      "none": "没有可以加盖的地产。",
+      "pickFirst": "选一块要加盖的地",
+      "confirm": "加盖 {{name}}",
+      "skip": "不需要"
+    },
+    "subscribe": {
+      "title": "认购股票",
+      "unitPrice": "认购价（每股）",
+      "reserved": "公司保留股",
+      "max": "本次最多",
+      "shares": "认购股数",
+      "total": "合计",
+      "note": "现场认购只收现金，本次造访最多认购 1000 股。",
+      "confirm": "认购 {{n}} 股",
+      "skip": "不认购"
+    },
+    "passive": {
+      "freeTitle": "使用免费卡？",
+      "useFree": "使用免费卡",
+      "pay": "照付",
+      "scapegoatTitle": "使用嫁祸卡？",
+      "noScapegoat": "认了",
+      "pickFirst": "选一个倒霉鬼",
+      "scapegoatTo": "嫁祸给 {{name}}",
+      "ctx": {
+        "toll": "要付 {{lot}} 的过路费 {{amount}} 元。",
+        "fee": "要付 {{lot}} 的设施费 {{amount}} 元。",
+        "taxAudit": "被查税，要缴 {{amount}} 元。",
+        "fine": "要缴罚款 {{amount}} 元。",
+        "frame": "你被陷害了！",
+        "sleepwalk": "你被下了梦游咒！",
+        "confine": "你要被关起来了！"
+      },
+      "ctxDays": {
+        "frame": "你被陷害了，要坐牢 {{days}} 天！",
+        "sleepwalk": "你被下了梦游咒，要梦游 {{days}} 天！",
+        "confine": "你要被关 {{days}} 天！"
+      }
+    },
+    "auction": {
+      "title": "拍卖",
+      "startPrice": "起拍价",
+      "current": "目前出价",
+      "noLeader": "还没有人出价",
+      "seller": "卖方",
+      "noSeller": "无（公开拍卖）",
+      "start": "起拍价",
+      "bids": "加价",
+      "bidStart": "按起拍价出价",
+      "bidTo": "出价到 {{price}} 元",
+      "pass": "这轮不加价",
+      "quit": "退出竞拍",
+      "rule": "有人加价后，选择「这轮不加价」的人可以再次出价；退出后不能再回来。"
+    },
+    "birthday": {
+      "title": "生日快乐！",
+      "body": "每位有卡的玩家都要送你一张卡，从他们的手牌里挑吧。",
+      "none": "大家都没有卡片。",
+      "confirm": "收下礼物"
+    },
+    "discard": {
+      "title": "手牌满了",
+      "incoming": "新得到：",
+      "hand": "手牌",
+      "pickFirst": "选一张要丢掉的卡",
+      "confirm": "丢掉 {{name}}"
+    },
+    "deathGod": {
+      "title": "死神附身",
+      "body": "你已经投降。选一位对手，让死神附身在他身上。",
+      "pickFirst": "选择一位对手",
+      "confirm": "送给 {{name}}"
+    },
+    "bank": {
+      "atmTitle": "银行 ATM",
+      "counterTitle": "银行柜台",
+      "pass": "路过银行",
+      "stop": "停在银行",
+      "op": "业务",
+      "amount": "金额",
+      "deposit": "存款",
+      "withdraw": "取款",
+      "doDeposit": "存入",
+      "doWithdraw": "取出",
+      "noCash": "身上没有现金",
+      "noDeposit": "没有存款",
+      "bankRun": "挤兑期间只能存款",
+      "shortfall": "取款后若银行准备金不足，差额由董事长 {{name}} 垫付。",
+      "skip": "不办了",
+      "leave": "离开柜台",
+      "loan": "贷款",
+      "repay": "还款",
+      "finance": "特别融资",
+      "loanNow": "目前贷款",
+      "due": "到期日",
+      "duePreview": "新借款 {{date}} 到期",
+      "limit": "可贷额度",
+      "financeNow": "融资余额",
+      "financeLimit": "融资上限",
+      "noLimit": "没有额度",
+      "noLoan": "没有贷款",
+      "noMoney": "没有钱可以还",
+      "loanBlocked": {
+        "bankRun": "挤兑期间停止放款",
+        "rejected": "你被银行拒绝往来",
+        "sunday": "星期日银行休息"
+      },
+      "do": {
+        "loan": "借",
+        "repay": "还",
+        "finance": "融资"
+      },
+      "hint": {
+        "loan": "借款进存款；贷款期间存款不计利息。到期未还会被强制扣款。",
+        "repay": "先扣存款、再扣现金；还清后到期日清零。",
+        "finance": "董事长特权：无利息、无期限，额度是其他玩家的存款合计。"
+      }
+    }
+  },
+  "pnl": {
+    "inventory": {
+      "title": "背包",
+      "points": "点券",
+      "cardCount": "{{n}} 张卡",
+      "cards": "卡片",
+      "items": "道具",
+      "cardsUsable": "卡片 {{n}}/{{total}}",
+      "itemsUsable": "道具 {{n}}/{{total}}",
+      "noCards": "没有卡片",
+      "noItems": "没有道具",
+      "hidden": "手牌不公开（{{n}} 张）",
+      "vehicle": "正在使用：{{name}}",
+      "anchor": "可回到第 {{n}} 回合"
+    },
+    "stock": {
+      "title": "股市",
+      "open": "开市中",
+      "closed": {
+        "sunday": "星期日休市",
+        "holiday": "节日休市",
+        "halted": "全面停市"
+      },
+      "totalValue": "持股市值",
+      "deposit": "存款",
+      "name": "股票",
+      "price": "现价",
+      "change": "涨跌",
+      "trend": "{{n}} 日走势",
+      "trendOf": "{{name}} 走势",
+      "shares": "持股",
+      "avg": "均价",
+      "pnl": "盈亏",
+      "chairman": "董事长",
+      "side": "买卖",
+      "buy": "买入",
+      "sell": "卖出",
+      "qty": "股数",
+      "maxBuy": "最多可买 {{n}} 股",
+      "maxSell": "最多可卖 {{n}} 股",
+      "amount": "金额",
+      "depositAfter": "交易后存款",
+      "doBuy": "买入 {{n}} 股",
+      "doSell": "卖出 {{n}} 股",
+      "noFee": "买入从存款扣款、卖出进存款，没有手续费。",
+      "readOnly": "只能在自己回合的行动阶段交易。",
+      "cannotBuy": "现在不能买（额度或存款不足）",
+      "cannotSell": "没有可卖的股票"
+    },
+    "bank": {
+      "title": "银行",
+      "cash": "现金",
+      "deposit": "存款",
+      "loan": "贷款",
+      "finance": "特别融资",
+      "interest": "每月 1 日计息（月息 10%，有贷款时不计），下次 {{date}}",
+      "loanDue": "贷款 {{date}} 到期，有贷款时存款不计息",
+      "bankRun": "银行挤兑中，还有 {{n}} 天：停止放款、只能存款",
+      "rejected": "被银行拒绝往来，还有 {{n}} 天"
+    },
+    "player": {
+      "title": "{{name}} 的资料",
+      "ai": "电脑",
+      "out": {
+        "bankrupt": "已破产",
+        "surrender": "已投降"
+      },
+      "stockValue": "股票市值",
+      "netWorth": "总资产",
+      "cards": "卡片 {{n}} 张",
+      "items": "道具 {{n}} 个",
+      "lots": "地产 {{n}} 处（房屋 {{houses}} 层）",
+      "days": "{{n}} 天",
+      "alliance": "与 {{name}} 同盟 {{n}} 天",
+      "bomb": "炸弹 {{n}} 步",
+      "insurance": "保险 {{n}} 天"
+    },
+    "property": {
+      "title": "地产一览",
+      "filter": "地主",
+      "all": "全部",
+      "unowned": "无主",
+      "count": "共 {{n}} 处",
+      "name": "名称",
+      "kind": "种类",
+      "level": "等级",
+      "owner": "地主",
+      "landPrice": "地价",
+      "toll": "过路费",
+      "mark": "标记",
+      "tenure": "地契到期",
+      "markRaise": "涨价",
+      "markSeal": "查封"
+    },
+    "tile": {
+      "title": "格子信息",
+      "facility": "设施",
+      "price": "标价",
+      "beggar": "乞丐（{{name}}）"
+    },
+    "board": {
+      "title": "公布栏",
+      "empty": "目前没有挂牌。",
+      "seller": "卖家",
+      "asset": "物品",
+      "price": "价格",
+      "buy": "买下",
+      "delist": "撤下",
+      "list": "我要挂牌（已挂 {{n}} 件）",
+      "cannotList": "现在不能挂牌。",
+      "kind": "类型",
+      "kindLot": "地产",
+      "kindStock": "股票",
+      "kindCard": "卡片",
+      "kindItem": "道具",
+      "shares": "股数",
+      "qty": "数量",
+      "cap": "上限 {{cap}} 元",
+      "doList": "挂牌"
+    }
+  },
   "nav": {
     "home": "首页",
     "solo": "单机",
     "devMap": "地图预览",
-    "devGallery": "美术画廊"
+    "devGallery": "美术画廊",
+    "devDecisions": "对话框样板"
   },
   "home": {
     "title": "大富翁4 联机版",
@@ -79,6 +578,19 @@
       "front": "正面",
       "back": "背面",
       "mirrored": "镜像"
+    },
+    "decisions": {
+      "title": "决策对话框预览",
+      "isMine": "我的决策（取消勾选为只读等待态）",
+      "limit": "时限",
+      "expired": "已超时",
+      "nack": "提交后模拟 nack（0.6 秒后解锁）",
+      "only": "只看",
+      "all": "全部 23 种",
+      "reset": "重新发牌",
+      "log": "提交记录",
+      "highlight": "棋盘高亮（BoardBridge）",
+      "panels": "信息面板"
     }
   },
   "board": {

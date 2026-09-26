@@ -73,6 +73,44 @@ export const TableAnchorsSchema = z.strictObject({
       source: z.string(),
     }),
   }),
+  /** 新闻 / 命运 / 魔法屋（D2 第二部分）：签名文本只取标题的几个字（包含匹配） */
+  events: z.strictObject({
+    newsHandlers: z.strictObject({
+      count: z.literal(36),
+      headlines: z.array(z.string()).length(2),
+      hint: Hint,
+      source: z.string(),
+    }),
+    newsCategories: z.strictObject({
+      names: z.literal(6),
+      follows: z.literal('newsHandlers'),
+      hint: Hint,
+      source: z.string(),
+    }),
+    fateHandlers: z.strictObject({
+      count: z.literal(49),
+      base: z.literal(37),
+      headlines: z.array(z.string()).length(2),
+      hint: Hint,
+      source: z.string(),
+    }),
+    magicEffects: z.strictObject({
+      count: z.literal(12),
+      stride: z.literal(16),
+      nameOffset: z.literal(12),
+      names: z.array(z.string()).length(2),
+      hint: Hint,
+      source: z.string(),
+    }),
+    magicConditions: z.strictObject({
+      count: z.literal(12),
+      names: z.array(z.string()).length(2),
+      hint: Hint,
+      source: z.string(),
+    }),
+    magicEffectJump: z.strictObject({ count: z.literal(12), hint: Hint, source: z.string() }),
+    magicCondJump: z.strictObject({ count: z.literal(12), hint: Hint, source: z.string() }),
+  }),
 });
 
 export type TableAnchors = z.infer<typeof TableAnchorsSchema>;

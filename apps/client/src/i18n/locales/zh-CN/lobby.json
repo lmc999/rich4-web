@@ -1,0 +1,176 @@
+{
+  "home": {
+    "title": "大富翁4 联机版",
+    "tagline": "4 人联机 · 服务器权威 · 美术自制致敬风格",
+    "nickname": "你的昵称",
+    "nickEmpty": "请先填写昵称（1–12 个字）",
+    "createRoom": "创建房间",
+    "joinRoom": "输入房间号加入",
+    "codePlaceholder": "6 位房间号",
+    "codeInvalid": "房间号是 6 位数字",
+    "join": "加入",
+    "watch": "观战",
+    "solo": "单机对战电脑",
+    "settings": "设置",
+    "devMap": "地图预览",
+    "devGallery": "美术画廊",
+    "devDecisions": "对话框样板"
+  },
+  "closed": {
+    "dissolved": "房间 {{code}} 已被房主解散",
+    "kicked": "你已被房主请出房间 {{code}}",
+    "idle": "房间 {{code}} 已关闭（长时间无人）",
+    "server": "服务器维护，房间 {{code}} 已关闭"
+  },
+  "create": {
+    "title": "创建房间",
+    "submit": "创建",
+    "creating": "正在创建…",
+    "quick": "快速局（1 年 / 10 倍）"
+  },
+  "settings": {
+    "map": "地图",
+    "fund": "总资金",
+    "fundValue": "{{n}} 万",
+    "vehicle": "行进方式",
+    "tenure": "地契",
+    "timeLimit": "游戏时间",
+    "win": "胜利条件",
+    "rules": "规则",
+    "minigames": "小游戏",
+    "timer": "决策计时",
+    "visibility": "房间",
+    "spectators": "允许观战",
+    "aiCount": "电脑补位",
+    "aiCountValue": "{{n}} 个",
+    "aiPreset": "电脑个性"
+  },
+  "maps": {
+    "taiwan": "台湾",
+    "test": "测试小图",
+    "test-allkinds": "测试图（全部落点）"
+  },
+  "vehicle": {
+    "walk": "步行",
+    "moto": "机车",
+    "car": "汽车"
+  },
+  "tenure": {
+    "unlimited": "永久",
+    "2y": "2 年",
+    "1y": "1 年",
+    "6m": "6 个月",
+    "3m": "3 个月",
+    "1m": "1 个月"
+  },
+  "timeLimit": {
+    "0": "无限",
+    "730": "2 年",
+    "365": "1 年",
+    "182": "半年",
+    "91": "3 个月",
+    "30": "1 个月"
+  },
+  "win": {
+    "none": "破产淘汰",
+    "multiple": "资产达到 {{n}} 倍"
+  },
+  "rules": {
+    "program": "原版程序",
+    "manual": "说明书",
+    "custom": "自定义"
+  },
+  "minigames": {
+    "play": "亲自玩",
+    "skip": "跳过（直接结算）"
+  },
+  "timer": {
+    "fast": "快（减半）",
+    "normal": "普通",
+    "slow": "慢（加倍）",
+    "off": "不限时"
+  },
+  "visibility": {
+    "private": "私密（凭房间号）",
+    "public": "公开（大厅可见）"
+  },
+  "aiPreset": {
+    "character": "按角色（原版）",
+    "gentle": "乖宝宝 · 简单",
+    "normal": "普通人 · 普通",
+    "cunning": "大老奸 · 困难"
+  },
+  "yes": "是",
+  "no": "否",
+  "phase": {
+    "lobby": "等待中",
+    "playing": "对局中",
+    "paused": "暂停",
+    "ended": "已结束"
+  },
+  "public": {
+    "title": "公开房间",
+    "refresh": "刷新",
+    "empty": "暂时没有公开房间",
+    "join": "加入",
+    "watch": "观战"
+  },
+  "room": {
+    "title": "房间 {{code}}",
+    "entering": "正在进入房间 {{code}}…",
+    "invalidCode": "房间号无效",
+    "spectating": "观战中",
+    "fellBackToSpectator": "房间已满或已开局，你已作为观战者加入",
+    "ready": "准备",
+    "unready": "取消准备",
+    "start": "开始游戏",
+    "startHint": "至少 2 名参与者、其他真人都准备后才能开始",
+    "toSpectator": "改为观战",
+    "leave": "离开房间",
+    "dissolve": "解散房间",
+    "settings": "房间设置",
+    "editSettings": "修改设置",
+    "saveSettings": "保存",
+    "cancel": "取消",
+    "loadSave": "读取存档"
+  },
+  "seat": {
+    "label": "{{n}}P",
+    "host": "房主",
+    "you": "你",
+    "empty": "空位",
+    "ai": "电脑",
+    "noCharacter": "未选角色",
+    "randomCharacter": "开局随机角色",
+    "offline": "离线",
+    "ready": "已准备",
+    "notReady": "未准备",
+    "addAi": "补电脑",
+    "removeAi": "移除电脑",
+    "take": "坐这里",
+    "kick": "踢出",
+    "makeHost": "转让房主"
+  },
+  "picker": {
+    "title": "选择角色",
+    "prev": "上一个",
+    "next": "下一个",
+    "select": "选这个",
+    "selected": "已选择",
+    "taken": "已被 {{n}}P 选走"
+  },
+  "invite": {
+    "code": "房间号",
+    "link": "邀请链接",
+    "copy": "复制链接",
+    "copyWatch": "复制观战链接",
+    "copied": "已复制到剪贴板",
+    "copyFailed": "复制失败，请手动复制",
+    "qr": "二维码",
+    "qrAlt": "邀请二维码"
+  },
+  "solo": {
+    "title": "单机对战",
+    "starting": "正在准备单机对局（补 3 个电脑）…"
+  }
+}

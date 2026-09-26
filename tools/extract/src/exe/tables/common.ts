@@ -1,6 +1,6 @@
 import { toHex } from '../../bin/reader';
 import { hexVa, normalizeText, type PeFile } from '../../pe/scan';
-import type { Check, CheckLevel, LocateContext, TableId } from '../types';
+import type { AnyTableId, Check, CheckLevel, LocateContext } from '../types';
 
 export const chk = (id: string, level: CheckLevel, ok: boolean, detail: string): Check => ({ id, level, ok, detail });
 
@@ -69,7 +69,7 @@ export function stripHex<T extends object>(rows: readonly T[]): Omit<T, 'hex'>[]
 
 /** 每张表的定位/校验/解析规格（locate.ts 统一调度） */
 export interface TableSpec<R> {
-  id: TableId;
+  id: AnyTableId;
   /** xrefTransfer 时视作本表的字节跨度 */
   xrefSpan: number;
   hint(ctx: LocateContext): number | null;

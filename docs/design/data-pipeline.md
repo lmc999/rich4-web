@@ -531,7 +531,8 @@ export type MapIssueCode =
   | 'E_TILE_REF_MISMATCH' | 'E_STREET_NAME' | 'E_RENT_SHAPE' | 'E_PRICE_RANGE' | 'E_UNREACHABLE'
   | 'E_HOLD_MISSING' | 'E_TERRAIN_SHAPE' | 'E_COUNT_MISMATCH' | 'E_VIA_BROKEN'
   | 'W_DIAGONAL_LINK' | 'W_VIA_LONG' | 'W_RENT_NONMONO' | 'W_DEADEND' | 'W_NAME_EMPTY' | 'W_LINK_ONEWAY'
-  | 'W_COMPANY_REMOTE_FRONT';   // architecture §16.2；以 validate.ts 的 MAP_ISSUE_CODES 为准
+  | 'W_COMPANY_REMOTE_FRONT'    // architecture §16.2
+  | 'E_HOLIDAY_FIELD';          // architecture §18.5；以 validate.ts 的 MAP_ISSUE_CODES 为准
 export interface MapIssue { code: MapIssueCode; severity: 'error' | 'warn'; path: string; msg: string; tiles?: number[]; cells?: Cell[] }
 export function validateMap(map: MapDef, opts?: { strict4?: boolean; expect?: Partial<MapCounts> }): { ok: boolean; issues: MapIssue[] };
 ```
@@ -542,6 +543,7 @@ export function validateMap(map: MapDef, opts?: { strict4?: boolean; expect?: Pa
 - 同一街道内名称相同；rent 有 6 项且都 ≥ 0（不单调只报 warn）；设施的 rateWindow 有 6 项。
 - 所有可走格在无向图上连通；有死路时报 warn（原版遇死路会原路返回）。
 - 关押格存在；terrain 是 h 行、每行 w 字符；计数与 `expect` 一致。
+- 节日：kind 2（第 n 个星期 w）必须带 0..6 的 `weekday` 且 day 为 1..5，其他 kind 不带 `weekday`；`lunar` 标记与 kind 一致（`E_HOLIDAY_FIELD`）。
 - `strict4` 模式下出现对角 link 即为 error，否则只报 warn。
 
 ---

@@ -135,6 +135,7 @@ export const HolidayDefSchema = z.strictObject({
   month: int().min(1).max(12),
   day: int().min(1).max(31),
   kind: int(),
+  weekday: int().min(0).max(6).optional(),
   flagsRaw: int(),
   closed: z.boolean().optional(),
   giveCard: z.boolean().optional(),

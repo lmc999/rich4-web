@@ -42,7 +42,7 @@ export interface RuleConfig {
   freeCardOnFines: boolean;
   /** 个股停牌天数（V-R11） */
   stockSuspendDays: 15 | 10;
-  /** 建设公司董事长加盖级数（V-R19） */
+  /** 建设公司董事长免费加盖级数：program = 2（exe 0x41aae8 / 0x41aafc 调用两次，g_map §4.3 裁决）；manual = 1（V-R19） */
   constructionChairmanLevels: 1 | 2;
   /** 卡片、道具目标范围：window = 以使用者为中心的方窗；global = 全图（DEV-04） */
   targetRange: 'window' | 'global';
@@ -79,7 +79,7 @@ export const PROGRAM_RULES: Readonly<RuleConfig> = Object.freeze({
   deathGodDispellable: true,
   freeCardOnFines: false,
   stockSuspendDays: 15,
-  constructionChairmanLevels: 1,
+  constructionChairmanLevels: 2,
   ...ONLINE_ADAPT,
 });
 
@@ -97,7 +97,7 @@ export const MANUAL_RULES: Readonly<RuleConfig> = Object.freeze({
   deathGodDispellable: false,
   freeCardOnFines: true,
   stockSuspendDays: 10,
-  constructionChairmanLevels: 2,
+  constructionChairmanLevels: 1,
   ...ONLINE_ADAPT,
 });
 

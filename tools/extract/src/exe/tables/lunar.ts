@@ -36,24 +36,10 @@ export function countLunarDays(file: PeFile, va: number): number {
   return n;
 }
 
-export function summarizeLunar(file: PeFile, va: number): LunarSummary {
-  const days = countLunarDays(file, va);
-  const fmt = (v: number) => {
-    const { y, m, d } = unpack(v);
-    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-  };
-  let maxDay12 = 0;
-  let leapMonths = 0;
-  let prevM = 0;
-  for (let i = 0; i < days; i++) {
-    const { m, d } = unpack(file.u32(va + i * 4));
-    if (m === 12) maxDay12 = Math.max(maxDay12, d);
-    if (d === 1 && m === prevM) leapMonths++;
-    prevM = m;
-  }
-  // 1998-01-01 起 days 天后的公历日期（只做整数日历推算）
+/** 1998-01-01 起第 n 天的公历日期（只做整数日历推算；公历闰年按格里历） */
+export function solarOf(n: number): string {
   let y = 1998;
-  let rest = days - 1;
+  let rest = n;
   const leap = (yy: number) => (yy % 4 === 0 && yy % 100 !== 0) || yy % 400 === 0;
   while (rest >= (leap(y) ? 366 : 365)) {
     rest -= leap(y) ? 366 : 365;
@@ -65,14 +51,39 @@ export function summarizeLunar(file: PeFile, va: number): LunarSummary {
     rest -= mdays[mo]!;
     mo++;
   }
+  return `${y}-${String(mo + 1).padStart(2, '0')}-${String(rest + 1).padStart(2, '0')}`;
+}
+
+export function summarizeLunar(file: PeFile, va: number): LunarSummary {
+  const days = countLunarDays(file, va);
+  const fmt = (v: number) => {
+    const { y, m, d } = unpack(v);
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  };
+  const packed = Array.from({ length: days }, (_, i) => file.u32(va + i * 4));
+  let maxDay12 = 0;
+  let leapMonths = 0;
+  let prevM = 0;
+  const months: LunarSummary['months'] = [];
+  for (let i = 0; i < days; i++) {
+    const { y, m, d } = unpack(packed[i]!);
+    if (m === 12) maxDay12 = Math.max(maxDay12, d);
+    const leap = d === 1 && m === prevM;
+    if (leap) leapMonths++;
+    if (d === 1 || i === 0) months.push({ solarStart: solarOf(i), year: y, month: m, leap, days: 0 });
+    months[months.length - 1]!.days++;
+    prevM = m;
+  }
   return {
     days,
     firstSolar: '1998-01-01',
-    lastSolar: `${y}-${String(mo + 1).padStart(2, '0')}-${String(rest + 1).padStart(2, '0')}`,
-    firstLunar: fmt(file.u32(va)),
-    lastLunar: fmt(file.u32(va + (days - 1) * 4)),
+    lastSolar: solarOf(days - 1),
+    firstLunar: fmt(packed[0]!),
+    lastLunar: fmt(packed[days - 1]!),
     maxDayMonth12: maxDay12,
     leapMonths,
+    packed,
+    months,
   };
 }
 

@@ -6,60 +6,201 @@
     "cards": {
       "count": 30,
       "stride": 8,
-      "names": ["均富卡", "均貧卡"],
-      "hint": { "v311": "0x47fdf2", "v206": "0x47d552" },
+      "names": [
+        "均富卡",
+        "均貧卡"
+      ],
+      "hint": {
+        "v311": "0x47fdf2",
+        "v206": "0x47d552"
+      },
       "source": "mytbk asm/rich4_card_table.c；nurockplayer（MJ 文件偏移 0x7e3f2，Game 0x7c152）"
     },
     "tools": {
       "count": 13,
       "stride": 8,
-      "names": ["機器娃娃", "路障"],
+      "names": [
+        "機器娃娃",
+        "路障"
+      ],
       "follows": "cards",
-      "hint": { "v311": "0x47fee2", "v206": "0x47d642" },
+      "hint": {
+        "v311": "0x47fee2",
+        "v206": "0x47d642"
+      },
       "source": "mytbk asm/rich4_tool_table.c；卡表 + 240"
     },
     "holidays": {
       "perMap": 24,
       "stride": 12,
       "follows": "tools",
-      "hint": { "v311": "0x47ff4a" },
+      "hint": {
+        "v311": "0x47ff4a"
+      },
       "source": "道具表 + 104；v3.11 查找函数 0x4521f0、休市判定 0x4523d5、节日事件 0x452444"
     },
     "characters": {
       "count": 12,
       "stride": 104,
-      "names": ["約翰喬", "沙隆巴斯"],
-      "hint": { "v311": "0x47e80c" },
+      "names": [
+        "約翰喬",
+        "沙隆巴斯"
+      ],
+      "hint": {
+        "v311": "0x47e80c"
+      },
       "source": "mytbk 玩家结构 0x68；nurockplayer calendar-and-setup.md"
     },
     "stocks": {
       "perMap": 12,
       "stride": 36,
-      "names": ["中國信託", "臺灣人壽"],
-      "hint": { "v311": "0x47f072", "v206": "0x47ce92" },
+      "names": [
+        "中國信託",
+        "臺灣人壽"
+      ],
+      "hint": {
+        "v311": "0x47f072",
+        "v206": "0x47ce92"
+      },
       "source": "oama packages/data/src/stocks.ts；nurockplayer parse_stock_groups；g_map.md"
     },
     "setup": {
-      "funds": [300000, 200000, 100000, 50000, 30000, 10000],
-      "days": [0, 730, 365, 182, 91, 30],
-      "wealthMultipliers": [0, 100, 50, 10, 5, 3],
+      "funds": [
+        300000,
+        200000,
+        100000,
+        50000,
+        30000,
+        10000
+      ],
+      "days": [
+        0,
+        730,
+        365,
+        182,
+        91,
+        30
+      ],
+      "wealthMultipliers": [
+        0,
+        100,
+        50,
+        10,
+        5,
+        3
+      ],
       "hint": {
-        "v311": { "funds": "0x46cb94", "days": "0x46cbe8", "wealthMultipliers": "0x46cc00" },
-        "v206": { "funds": "0x46aa40", "days": "0x46aa94", "wealthMultipliers": "0x46aaac" }
+        "v311": {
+          "funds": "0x46cb94",
+          "days": "0x46cbe8",
+          "wealthMultipliers": "0x46cc00"
+        },
+        "v206": {
+          "funds": "0x46aa40",
+          "days": "0x46aa94",
+          "wealthMultipliers": "0x46aaac"
+        }
       },
       "source": "nurockplayer calendar-and-setup.md（MJ 文件偏移 0x6b194/0x6b1e8/0x6b200，Game 0x69640/0x69694/0x696ac）"
     },
     "facilityLevels": {
       "count": 5,
-      "types": ["park", "hotel", "mall", "gas", "lab"],
-      "expect": [1, 5, 5, 1, 5],
-      "hint": { "v311": "0x474940" },
+      "types": [
+        "park",
+        "hotel",
+        "mall",
+        "gas",
+        "lab"
+      ],
+      "expect": [
+        1,
+        5,
+        5,
+        1,
+        5
+      ],
+      "hint": {
+        "v311": "0x474940"
+      },
       "source": "oama rich4-spec data-tables；design/data-pipeline.md §6.2"
     },
     "lunar": {
       "firstSolar": "1998-01-01",
-      "hint": { "v311": "0x47639c" },
+      "hint": {
+        "v311": "0x47639c"
+      },
       "source": "v3.11 节日查找 0x4521f0 中 kind 1 分支读取的逐日农历表；签名为 1998-01-01 的农历日期（1997 年十二月初三）"
+    }
+  },
+  "events": {
+    "newsHandlers": {
+      "count": 36,
+      "headlines": [
+        "無罪開釋",
+        "延長刑期"
+      ],
+      "hint": {
+        "v311": "0x475e24"
+      },
+      "source": "新闻分派 v3.11 0x44b6df：call [ebx*4+表]（先 arg 0 显示、2400ms 后 arg 1 收尾）；牌堆 0x499090、游标 0x4990e0；可行性 0x448be2"
+    },
+    "newsCategories": {
+      "names": 6,
+      "follows": "newsHandlers",
+      "hint": {
+        "v311": "0x475eb4"
+      },
+      "source": "紧随新闻指针表：36 字节分类号 + 6 个分类名指针（v3.11 0x475ed8）"
+    },
+    "fateHandlers": {
+      "count": 49,
+      "base": 37,
+      "headlines": [
+        "強制拆除",
+        "強制徵收"
+      ],
+      "hint": {
+        "v311": "0x475ef0"
+      },
+      "source": "命运分派 v3.11 0x44db81：编号 < 33 取表[编号]，否则取表[编号 + 4 × 地图组]；可行性/替换 0x44bb4b；加持判定 0x44b896"
+    },
+    "magicEffects": {
+      "count": 12,
+      "stride": 16,
+      "nameOffset": 12,
+      "names": [
+        "變賣所有卡片",
+        "抽取命運三張"
+      ],
+      "hint": {
+        "v311": "0x475718"
+      },
+      "source": "魔法屋效果表 12×16（图标号、x、y、名称指针）"
+    },
+    "magicConditions": {
+      "count": 12,
+      "names": [
+        "財產最多",
+        "土地最多"
+      ],
+      "hint": {
+        "v311": "0x4756b8"
+      },
+      "source": "魔法屋条件名称指针表（女巫转盘）"
+    },
+    "magicEffectJump": {
+      "count": 12,
+      "hint": {
+        "v311": "0x431c7a"
+      },
+      "source": "魔法屋效果执行 v3.11 0x431caa 的跳表（代码节内）"
+    },
+    "magicCondJump": {
+      "count": 12,
+      "hint": {
+        "v311": "0x431812"
+      },
+      "source": "魔法屋条件求名单 v3.11 0x431842 的跳表（代码节内）"
     }
   }
 }

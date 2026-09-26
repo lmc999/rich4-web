@@ -1,5 +1,7 @@
 # 大富翁4 网页复刻：前端渲染 / UI·UX / 美术与音频管线设计
 
+> **实施记录**：与本文不一致的实际做法见 architecture §17.5（M3a）、§18.2（M3b 主循环与对话框）、§18.6（联调），以那里为准。
+
 > 适用范围：`apps/client`（Vite + React 19 + PixiJS v8），以及本领域需要放进 `packages/shared` 的两块纯函数代码：`presentation/timing.ts`（动画时长预算，服务器和客户端共用）和 `minigames/*`（小游戏确定性模拟）。
 > 遵守全局约定：服务器是唯一权威。客户端只发 intent、只播放 events、最终以快照为准。需要玩家决策的地方由 pendingDecision 驱动。
 > 2026-09-26 在 npm registry 上核实过的版本见第 14 节。

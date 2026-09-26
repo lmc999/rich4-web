@@ -5,6 +5,7 @@ import type { GameConfig, RuleConfig } from '../engine/types/config';
 import type { CharacterId, DateNum, SeatAiConfig, SeatIndex } from '../engine/types/ids';
 import type { SeatControl } from '../view/types';
 import { DEFAULT_MAX_SPECTATORS } from './limits';
+import type { SaveWarning } from './protocol';
 import { type AiPace, DEFAULT_RECONNECT_GRACE_S, type TimerPreset } from './timing';
 
 export type RoomPhase = 'lobby' | 'playing' | 'paused' | 'ended';
@@ -107,7 +108,15 @@ export interface RoomView {
   spectators: { id: string; nickname: string }[];
   settings: RoomSettings;
   you: RoomYou;
-  loadedSave?: { saveId: string; name: string; gameDay: number; date: DateNum; verified: boolean };
+  loadedSave?: {
+    saveId: string;
+    name: string;
+    gameDay: number;
+    date: DateNum;
+    verified: boolean;
+    /** 兼容性提示（数据表不一致等），仍可开局 */
+    warnings?: SaveWarning[];
+  };
   paused?: { reason: 'host' | 'all_away'; since: number };
   serverNow: number;
 }

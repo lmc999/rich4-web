@@ -1,0 +1,573 @@
+/* 通用组件（design/client.md §6.1）：厚描边、胖按钮、奶油底面板。颜色一律取 tokens.css 的变量。 */
+
+/* ───────── Button 补充变体（基础 .btn 在 global.css） ───────── */
+.btnRed {
+  background: var(--c-red);
+  color: var(--c-white);
+}
+
+.btnPurple {
+  background: var(--c-purple);
+  color: var(--c-white);
+}
+
+.btnGhost {
+  background: transparent;
+  box-shadow: none;
+  border-style: dashed;
+}
+
+.btnLg {
+  min-height: 52px;
+  padding: 0 var(--space-5);
+  font-size: 22px;
+  border-radius: 18px;
+}
+
+.btnBlock {
+  width: 100%;
+}
+
+/* ───────── Panel ───────── */
+.panelHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+}
+
+.panelHead h2,
+.panelHead h3 {
+  margin: 0;
+  flex: 1;
+  font-size: 20px;
+}
+
+/* ───────── Modal / BottomSheet ───────── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgb(58 42 26 / 0.35);
+  z-index: 40;
+  animation: fadeIn 140ms ease-out;
+}
+
+.modal {
+  position: fixed;
+  z-index: 41;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  width: min(var(--modal-w, 640px), calc(100vw - 24px));
+  max-height: min(86dvh, 860px);
+  display: flex;
+  flex-direction: column;
+  background: var(--c-cream);
+  border: var(--border);
+  border-radius: 20px;
+  box-shadow: 0 6px 0 var(--c-ink);
+  animation: popIn 180ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.modal:focus {
+  outline: none;
+}
+
+.sheet {
+  top: auto;
+  bottom: 0;
+  translate: -50% 0;
+  width: 100vw;
+  max-height: 70dvh;
+  border-radius: 20px 20px 0 0;
+  border-bottom: none;
+  padding-bottom: env(safe-area-inset-bottom);
+  animation: slideUp 200ms ease-out;
+}
+
+.modalHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 3px dashed rgb(58 42 26 / 0.25);
+}
+
+.modalTitle {
+  flex: 1;
+  margin: 0;
+  font-family: var(--font-title);
+  font-size: 22px;
+  font-weight: 400;
+}
+
+.modalBody {
+  flex: 1;
+  overflow: auto;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+.modalFoot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 3px dashed rgb(58 42 26 / 0.25);
+}
+
+.closeBtn {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: var(--border);
+  border-radius: 50%;
+  background: var(--c-white);
+  box-shadow: 0 2px 0 var(--c-ink);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--c-ink);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    scale: 0.92;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    translate: -50% 40%;
+  }
+}
+
+/* ───────── Countdown ───────── */
+.countdown {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: var(--c-ink);
+}
+
+.countdown svg {
+  position: absolute;
+  inset: 0;
+  rotate: -90deg;
+}
+
+.countdownTrack {
+  fill: var(--c-white);
+  stroke: var(--c-cream-deep);
+}
+
+.countdownArc {
+  fill: none;
+  stroke: var(--c-green);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 200ms linear;
+}
+
+.countdownNum {
+  position: relative;
+  font-family: var(--font-num);
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.countdown[data-urgent="true"] .countdownArc {
+  stroke: var(--c-red);
+}
+
+.countdown[data-urgent="true"] .countdownNum {
+  color: var(--c-red);
+  animation: tick 1s steps(1) infinite;
+}
+
+@keyframes tick {
+  50% {
+    scale: 1.15;
+  }
+}
+
+/* ───────── Money ───────── */
+.money {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.moneyNeg {
+  color: var(--c-up);
+}
+
+.moneyPos {
+  color: var(--c-down);
+}
+
+.unit {
+  margin-left: 2px;
+  font-family: var(--font-body);
+  font-size: 0.8em;
+  opacity: 0.75;
+}
+
+/* ───────── Stepper / AmountSlider ───────── */
+.stepper {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: stretch;
+  border: var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--c-white);
+  overflow: hidden;
+  box-shadow: 0 2px 0 var(--c-ink);
+}
+
+.stepper button {
+  appearance: none;
+  min-width: 36px;
+  border: none;
+  background: var(--c-sun);
+  color: var(--c-ink);
+  font-family: var(--font-num);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stepper button + button {
+  border-left: 2px solid var(--c-ink);
+}
+
+.stepper button:disabled {
+  background: var(--c-cream-deep);
+  color: var(--c-ink-soft);
+  cursor: not-allowed;
+}
+
+.stepper input {
+  width: 7ch;
+  min-height: 36px;
+  border: none;
+  border-left: 2px solid var(--c-ink);
+  border-right: 2px solid var(--c-ink);
+  text-align: center;
+  font-family: var(--font-num);
+  font-size: 16px;
+  background: transparent;
+  color: var(--c-ink);
+}
+
+.slider {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sliderRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sliderRow input[type="range"] {
+  flex: 1;
+  accent-color: var(--c-orange);
+  height: 28px;
+}
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* ───────── Sparkline ───────── */
+.spark {
+  display: block;
+  overflow: visible;
+}
+
+.spark path {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/* ───────── CardTile / ItemTile ───────── */
+.tile {
+  --frame: var(--c-sun);
+  position: relative;
+  appearance: none;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  justify-items: center;
+  gap: 2px;
+  width: var(--tile-w, 92px);
+  min-height: 124px;
+  padding: 6px 6px 8px;
+  border: var(--border);
+  border-radius: 12px;
+  background: linear-gradient(to bottom, var(--frame) 0 18px, transparent 18px), var(--c-white);
+  box-shadow: 0 3px 0 var(--c-ink);
+  color: var(--c-ink);
+  font: inherit;
+  text-align: center;
+  cursor: default;
+  transition:
+    transform 100ms ease-out,
+    box-shadow 100ms ease-out,
+    filter 120ms;
+}
+
+button.tile {
+  cursor: pointer;
+}
+
+button.tile:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 0 var(--c-ink);
+}
+
+button.tile:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 2px 0 var(--c-ink);
+}
+
+.tile:focus-visible {
+  outline: 3px solid var(--c-blue);
+  outline-offset: 2px;
+}
+
+.tile[data-selected="true"] {
+  outline: 4px solid var(--c-orange);
+  outline-offset: 1px;
+}
+
+.tile[data-disabled="true"] {
+  filter: grayscale(0.85) opacity(0.7);
+  cursor: not-allowed;
+}
+
+.tileIcon {
+  font-size: 34px;
+  line-height: 1.1;
+  margin-top: 16px;
+}
+
+.tileName {
+  font-family: var(--font-title);
+  font-size: 15px;
+  line-height: 1.15;
+}
+
+.tilePrice {
+  position: absolute;
+  top: -2px;
+  right: 4px;
+  font-family: var(--font-num);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-ink);
+}
+
+.tileCount {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border: var(--border);
+  border-radius: 13px;
+  background: var(--c-red);
+  color: var(--c-white);
+  font-family: var(--font-num);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tileReason {
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--c-ink-soft);
+}
+
+.tileGrid {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--tile-w, 92px), 1fr));
+  gap: var(--space-3);
+  justify-items: center;
+  padding-top: 8px;
+}
+
+/* ───────── Avatar / SeatMark / PlayerChip ───────── */
+.avatar {
+  --seat: var(--c-ink-soft);
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border: 3px solid var(--seat);
+  border-radius: 50%;
+  background: var(--c-white);
+  box-shadow: 0 2px 0 var(--c-ink);
+  overflow: hidden;
+}
+
+.avatar img {
+  width: 118%;
+  height: 118%;
+  object-fit: cover;
+  object-position: 50% 12%;
+}
+
+.seatMark {
+  font-size: 0.9em;
+  line-height: 1;
+  -webkit-text-stroke: 1px var(--c-ink);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 2px 10px 2px 2px;
+  border: 2px solid var(--c-ink);
+  border-radius: 999px;
+  background: var(--c-white);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* ───────── Tabs（radix） ───────── */
+.tabsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.tabsTrigger {
+  appearance: none;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: var(--border);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--c-cream-deep);
+  color: var(--c-ink);
+  font-family: var(--font-title);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.tabsTrigger[data-state="active"] {
+  background: var(--c-sun);
+  box-shadow: inset 0 -4px 0 var(--c-orange);
+}
+
+.tabsTrigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ───────── 小件 ───────── */
+.kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px var(--space-3);
+  margin: 0;
+}
+
+.kv dt {
+  color: var(--c-ink-soft);
+}
+
+.kv dd {
+  margin: 0;
+  text-align: right;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 2px solid var(--c-ink);
+  border-radius: 999px;
+  background: var(--c-white);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.preview {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  margin: 0;
+  overflow: hidden;
+  width: var(--preview-w, 120px);
+  height: var(--preview-h, 120px);
+  border: 2px dashed rgb(58 42 26 / 0.3);
+  border-radius: var(--radius-sm);
+  background: radial-gradient(ellipse at 50% 85%, #d7efb0 0 40%, transparent 41%), var(--c-white);
+}
+
+.preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.previewFallback {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 2px;
+  padding-bottom: 14px;
+}
+
+.previewFloor {
+  width: 44px;
+  height: 10px;
+  border: 2px solid var(--c-ink);
+  border-radius: 3px;
+  background: var(--c-orange);
+}
+
+.previewRoof {
+  width: 0;
+  height: 0;
+  border-left: 30px solid transparent;
+  border-right: 30px solid transparent;
+  border-bottom: 18px solid var(--seat, var(--c-red));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal,
+  .sheet,
+  .overlay {
+    animation: none;
+  }
+}

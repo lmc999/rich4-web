@@ -9,7 +9,8 @@
  * - 序号：每应用一个 action seq+1；epoch 由 Room 在开局、rematch、读档、重启时递增后传入。
  * - 待决策与截止时间：新出现的决策按 Deadlines 计算截止时间（budgetKey 链、拍卖每人独立计时、小游戏票据）。
  * - 托管状态机（SeatControl）、断线宽限、连续超时进 AFK、暂停恢复、clientActionId 幂等（每座位 LRU 32）。
- * - RingBuffer 256 个原始 batch 供 catchup；内存 journal 供重放校验（M5 改为持久化）。
+ * - RingBuffer 256 个原始 batch 供 catchup；内存 journal 供重放校验；每条 journal 经 hooks.applied 交给房间持久化。
+ * - 重启恢复与读档：init.seq 为起始序号（恢复时沿用快照 + journal 重放后的 seq），init.paused 以暂停状态开局（不计时）。
  * - 按观察者组装 game:batch / snapshot / catchup / pending / over 消息（投影在这里做，发送在 RoomBroadcaster）。
  */
 import type { DataRegistry, MapIndex } from '@rich4/shared/data';
@@ -103,6 +104,8 @@ export interface JournalEntry {
 
 /** GameRunner 向房间报告的事情；全部同步调用 */
 export interface RunnerHooks {
+  /** 每应用一个 action 调用一次，先于 batch（房间据此追加持久化 journal） */
+  applied?(entry: JournalEntry): void;
   /** 每应用一个 action 调用一次（先于 ack） */
   batch(raw: RawBatch): void;
   /** 截止时间或托管状态变了，但没有新的 action */
@@ -135,6 +138,16 @@ export interface SeatInit {
   seat: SeatIndex;
   control: SeatControl;
   connected: boolean;
+}
+
+export interface RunnerInit {
+  epoch: number;
+  state: GameState;
+  seats: SeatInit[];
+  /** 起始 seq（默认 0；重启恢复时为快照 + journal 重放后的 seq） */
+  seq?: number;
+  /** 以暂停状态开局：begin() 不为待决策计时，resume() 时才开始（重启恢复） */
+  paused?: boolean;
 }
 
 interface SeatRt {
@@ -196,10 +209,12 @@ export class GameRunner {
 
   constructor(
     private readonly deps: GameRunnerDeps,
-    init: { epoch: number; state: GameState; seats: SeatInit[] },
+    init: RunnerInit,
   ) {
     this.epoch = init.epoch;
     this.st = init.state;
+    this.seqNo = init.seq ?? 0;
+    this.pausedFlag = init.paused === true;
     for (const s of init.seats) {
       this.seatRts.set(s.seat, {
         seat: s.seat,
@@ -214,7 +229,7 @@ export class GameRunner {
     }
   }
 
-  /** 开局后调用一次：为初始待决策计时（createGame 不产生事件，seq 从 0 开始） */
+  /** 开局后调用一次：为初始待决策计时（createGame 不产生事件；seq 从 init.seq 开始） */
   begin(): void {
     this.overFlag = this.deps.engine.getResult(this.st) !== null;
     this.syncPending(0, this.overFlag ? [] : this.deps.engine.getPendingDecisions(this.st));
@@ -245,6 +260,7 @@ export class GameRunner {
     return this.deps.engine.getResult(this.st);
   }
 
+  /** 本 runner 生命期内应用的 action（重启恢复的 runner 只含恢复之后的部分） */
   journal(): readonly JournalEntry[] {
     return this.journalList;
   }
@@ -350,8 +366,11 @@ export class GameRunner {
       events: next.events,
       animMs: estimateAnimMs(next.events),
     };
-    this.journalList.push({ seq: this.seqNo, at: clock.now(), by, action });
+    const entry: JournalEntry = { seq: this.seqNo, at: clock.now(), by, action };
+    this.journalList.push(entry);
     this.ring.push(raw);
+    // 持久化 journal 先于广播（崩溃时最多丢最后一个尚未写入的 action）
+    if (this.deps.hooks.applied) this.hook('applied', seat, () => this.deps.hooks.applied?.(entry));
     if (isSystemAction(action) && action.type === 'SYS_SET_CONTROLLER') {
       const rt = this.seatRts.get(action.seat);
       if (rt && action.controller === 'ai') this.setControl(rt, 'ai', true);

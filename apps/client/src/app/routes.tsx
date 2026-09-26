@@ -3,12 +3,13 @@ import { useTranslation } from 'react-i18next';
 import { Route, Switch } from 'wouter';
 import { HomeScreen } from '../ui/screens/HomeScreen';
 import { NotFound } from '../ui/screens/NotFound';
-import { RoomScreen } from '../ui/screens/RoomScreen';
-import { SoloScreen } from '../ui/screens/SoloScreen';
 
-// 开发页含 Pixi，按路由懒加载，不进首屏 chunk
+// 房间 / 对局 / 单机页（选角 SVG、Pixi 棋盘）与开发页都按路由懒加载，不进首屏 chunk
+const RoomScreen = lazy(() => import('../ui/screens/RoomScreen'));
+const SoloScreen = lazy(() => import('../ui/screens/SoloScreen'));
 const MapPreview = lazy(() => import('../dev/MapPreview'));
 const Gallery = lazy(() => import('../dev/Gallery'));
+const DevDecisions = lazy(() => import('../ui/decisions/DevDecisions'));
 
 /** 路由表（design/client.md §1.3：/、/r/:code、/solo、/dev/*） */
 export const ROUTE_PATHS = {
@@ -17,6 +18,7 @@ export const ROUTE_PATHS = {
   solo: '/solo',
   devMap: '/dev/map',
   devGallery: '/dev/gallery',
+  devDecisions: '/dev/decisions',
 } as const;
 
 function RouteFallback(): ReactNode {
@@ -37,6 +39,7 @@ export function AppRoutes(): ReactNode {
         <Route path={ROUTE_PATHS.solo} component={SoloScreen} />
         <Route path={ROUTE_PATHS.devMap} component={MapPreview} />
         <Route path={ROUTE_PATHS.devGallery} component={Gallery} />
+        <Route path={ROUTE_PATHS.devDecisions} component={DevDecisions} />
         <Route>
           <NotFound />
         </Route>

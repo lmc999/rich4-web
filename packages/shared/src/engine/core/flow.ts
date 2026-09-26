@@ -11,27 +11,17 @@
 import { isIntentAllowed } from '../decisions/allowed';
 import { EngineInvariantError, EngineRuleError } from '../errors';
 import { ASK } from '../flow/ask';
+import { BANK } from '../flow/bank';
 import { BANKRUPT } from '../flow/bankruptcy';
+import { CONFINE } from '../flow/confine';
 import { DAY } from '../flow/day';
+import { FEE } from '../flow/fee';
 import { LAND } from '../flow/land';
 import { MOVE } from '../flow/move';
 import { PAYX } from '../flow/pay';
 import { ROOT } from '../flow/root';
-import {
-  AUCTION,
-  BANK,
-  CARD,
-  CONFINE,
-  FATE,
-  FEE,
-  GOD,
-  ITEM,
-  MAGIC,
-  NEWS,
-  SHOP,
-  SURRENDER,
-  VILLAIN,
-} from '../flow/stubs';
+import { SHOP } from '../flow/shop';
+import { AUCTION, CARD, FATE, GOD, ITEM, MAGIC, NEWS, SURRENDER, VILLAIN } from '../flow/stubs';
 import { TOLL } from '../flow/toll';
 import { TURN } from '../flow/turn';
 import type { Frame, FrameKind, FrameOf } from '../types/frames';

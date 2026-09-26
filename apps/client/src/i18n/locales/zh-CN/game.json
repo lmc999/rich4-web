@@ -1,1 +1,48 @@
-{}
+{
+  "reason": {
+    "noTarget": "没有可选目标",
+    "passive": "被动卡，满足条件时自动询问",
+    "marketClosed": "今天不开市",
+    "suspended": "停牌中",
+    "limitUp": "涨停无法买进",
+    "limitDown": "跌停无法卖出",
+    "tortoise": "乌龟状态下不能用",
+    "sleepwalk": "梦游中不能用",
+    "investBlocked": "神明作祟，禁止投资",
+    "notEnoughCash": "现金不足",
+    "notEnoughPoints": "点券不足",
+    "handFull": "手牌已满",
+    "itemFull": "这个道具已经拿满了",
+    "poolEmpty": "已经卖完了",
+    "noAnchor": "还没有可以回去的时间点",
+    "humanOnly": "只有真人玩家能用",
+    "alreadyEquipped": "已经装备了",
+    "nothingToDispel": "没有需要送走的东西",
+    "menuLimit": "本回合操作次数已达上限",
+    "notYourTurn": "还没轮到你"
+  },
+  "status": {
+    "jail": "坐牢",
+    "hospital": "住院",
+    "hotel": "住旅馆",
+    "away": "不在场",
+    "hibernate": "冬眠",
+    "sleepwalk": "梦游",
+    "stay": "停留",
+    "tortoise": "乌龟"
+  },
+  "vehicle": {
+    "walk": "步行",
+    "moto": "机车",
+    "car": "汽车",
+    "engineer": "工程车"
+  },
+  "object": {
+    "roadblock": "路障",
+    "mine": "地雷",
+    "bomb": "定时炸弹",
+    "gift": "礼物",
+    "chest": "宝箱"
+  },
+  "stockFallback": "股票 {{n}}"
+}

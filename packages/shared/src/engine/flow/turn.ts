@@ -9,21 +9,27 @@
  * landed MOVE / LAND 出栈后 → end。
  * end    清空回合临时状态 → TURN_ENDED → 出栈。
  *
- * 钩子：贷款到期检查（M4）、神明 / 同盟 / 工程车 / 研究所倒数（M4/M6）、走回棋盘时的物件结算（M6）、时光机锚点（M7）。
+ * M4：回合开始的贷款到期检查（剩 3/2/1 天 LOAN_REMINDER；到期按银行口径强制还款，扣不出来就破产）、
+ *     保险与拒绝往来的两段式倒数、名下研究所倒数（到 0 交付道具 8+project）；菜单里的股票买卖（STOCK_BUY / STOCK_SELL）。
+ * 钩子：神明 / 同盟 / 工程车倒数（M6）、走回棋盘时的物件结算（M6）、时光机锚点（M7）。
  */
 import { ECON } from '../../data/tables/economy';
+import { researchItemOf } from '../../data/tables/ids';
 import type { Ctx } from '../core/ctx';
 import type { FrameHandler } from '../core/frameHandler';
 import { buildTurnMenu } from '../decisions/build';
 import { turnMenuBudgetKey } from '../decisions/timing';
 import { EngineInvariantError, EngineRuleError } from '../errors';
-import { displayRemaining, mainBlockOf, tickActorCounters } from '../rules/counters';
+import { daysBetween } from '../rules/calendar';
+import { displayRemaining, mainBlockOf, tick2, tickActorCounters } from '../rules/counters';
+import { receiveItem } from '../rules/inventory';
 import { diceAllowed } from '../rules/movement';
 import { MENU_ACTION_LIMIT } from '../types/decision';
 import type { ConfineWhere, FrameOf } from '../types/frames';
 import type { DiceFace, SeatIndex, TileId } from '../types/ids';
 import type { IntentOf, PlayerAction } from '../types/intent';
 import type { PlayerState, PlayerTurnState } from '../types/state';
+import { buyStock, sellStock } from './stock';
 
 type TurnFrame = FrameOf<'TURN'>;
 
@@ -86,10 +92,18 @@ function start(ctx: Ctx, f: TurnFrame): void {
   // §7.2 步骤 0：未落地先跳伞（先取随机数），步骤 1 再刷新本人股票可买量
   const drop = p.placed ? null : parachuteSpot(ctx);
   refreshQuota(ctx, p);
-  // TODO(M4)：贷款到期检查（剩 3/2/1 天 LOAN_REMINDER；到期按银行口径强制还款，扣不出来就破产）
   const released = tickActorCounters(p.st);
-  // TODO(M4/M6)：同盟、保险、拒贷、神明任期、研究所、工程车的倒数
+  // 保险、拒绝往来按两段式倒数（g_arbitration §3.2）；TODO(M6)：同盟、神明任期、工程车的倒数
+  p.insuranceDays = tick2(p.insuranceDays).next;
+  p.bankReject = tick2(p.bankReject).next;
+  const research = tickResearch(ctx, f.seat);
   ctx.emit('TURN_STARTED', { actor, turnNo: s.clock.turnNo });
+
+  if (checkLoan(ctx, f.seat)) {
+    f.stage = 'end';
+    return;
+  }
+  deliverResearch(ctx, f.seat, research);
 
   for (const where of released) {
     release(ctx, p, where);
@@ -161,12 +175,73 @@ function roll(ctx: Ctx, f: TurnFrame, p: PlayerState, a: IntentOf<'ROLL'>): void
   else ctx.push({ k: 'MOVE', actor, remaining: steps, total: steps, seg: [], mode: 'normal', bankPassed: false });
 }
 
-/** 非终结的菜单操作（M4 股票、M6 卡片与道具、M7 公布栏）；M1 一律不可用 */
+/** 非终结的菜单操作：M4 股票买卖；卡片与道具属于 M6，公布栏属于 M7（现在抛 NOT_USABLE） */
 function menuAction(ctx: Ctx, f: TurnFrame, p: PlayerState, a: PlayerAction): void {
-  void ctx;
-  void f;
-  void p;
-  throw new EngineRuleError('NOT_USABLE', `${a.type} is not available yet`, { intent: a.type });
+  switch (a.type) {
+    case 'STOCK_BUY':
+      // 先记日志再成交：日志随 STOCK_TRADED 的 post 公布（非法时整个草稿丢弃）
+      p.turn.log.push('stockBuy');
+      buyStock(ctx, f.seat, a.stock, a.shares);
+      return;
+    case 'STOCK_SELL':
+      p.turn.log.push('stockSell');
+      sellStock(ctx, f.seat, a.stock, a.shares);
+      return;
+    default:
+      throw new EngineRuleError('NOT_USABLE', `${a.type} is not available yet`, { intent: a.type });
+  }
+}
+
+/** 名下研究所倒数（回合开始、TURN_STARTED 之前）；返回本回合到期的研究所下标 */
+function tickResearch(ctx: Ctx, seat: SeatIndex): number[] {
+  const done: number[] = [];
+  ctx.s.facilities.forEach((fac, i) => {
+    if (fac.owner !== seat || fac.research === null) return;
+    fac.research = { project: fac.research.project, days: fac.research.days - 1 };
+    if (fac.research.days <= 0) done.push(i);
+  });
+  return done;
+}
+
+/** 研发到期：交付道具 8+project（持有已满 9 个则作废）；研究所已不是 ≥ 项目等级的研究所则作废 */
+function deliverResearch(ctx: Ctx, seat: SeatIndex, idx: readonly number[]): void {
+  for (const i of idx) {
+    const fac = ctx.s.facilities[i]!;
+    const r = fac.research;
+    if (r === null) continue;
+    fac.research = null;
+    if (fac.type !== 'lab' || fac.level < r.project || fac.owner !== seat) {
+      ctx.emit('RESEARCH_CANCELLED', { seat, lot: fac.id, project: r.project });
+      continue;
+    }
+    const item = researchItemOf(r.project);
+    const got = receiveItem(ctx.s, seat, item, 1);
+    ctx.emit('RESEARCH_DONE', { seat, lot: fac.id, project: r.project, item, delivered: got > 0 });
+  }
+}
+
+/**
+ * 贷款到期检查（exe 0x41c86d）：剩 3/2/1 天 → LOAN_REMINDER；≤0 天 → 按银行口径（先存款后现金）归还全部贷款，
+ * 扣不出来就破产（返回 true，本回合随即结束）。
+ */
+function checkLoan(ctx: Ctx, seat: SeatIndex): boolean {
+  const p = ctx.player(seat);
+  if (p.loan <= 0 || p.loanDue === 0) return false;
+  const left = daysBetween(ctx.s.clock.date, p.loanDue);
+  if (left > 0) {
+    if (left <= ECON.LOAN_REMINDER_DAYS) ctx.emit('LOAN_REMINDER', { seat, daysLeft: left });
+    return false;
+  }
+  const amount = p.loan;
+  const r = ctx.pay({ t: 'seat', seat }, { t: 'bank' }, amount, {
+    order: 'depositFirst',
+    reason: 'loanForced',
+    cause: { k: 'loan', ref: null, by: null },
+  });
+  p.loan = 0;
+  p.loanDue = 0;
+  ctx.emit('LOAN_FORCED', { seat, amount, paid: r.paid });
+  return r.bankrupt;
 }
 
 export const TURN: FrameHandler<TurnFrame> = {

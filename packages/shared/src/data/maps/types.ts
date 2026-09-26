@@ -153,8 +153,12 @@ export interface StockDef {
 export interface HolidayDef {
   slot: number;
   month: number;
+  /** kind 0/1 为日；kind 2 为「第 n 个」（1..5） */
   day: number;
+  /** 0 公历、1 农历、2 该月第 day 个星期 weekday */
   kind: number;
+  /** kind 2 的星期（0 = 星期日 … 6）；其他 kind 不带（VERIFY V-E5） */
+  weekday?: number;
   flagsRaw: number;
   closed?: boolean;
   giveCard?: boolean;

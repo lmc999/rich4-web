@@ -1,0 +1,2266 @@
+{
+  "schema": "rich4.anchors-constants/1",
+  "note": "规则常量锚点：v3.11 为参考（人工 r2 复核），v2.06 VA 由 `npm run extract -- exe constants --write-anchors` 按指令模式迁移后写入；`verify --constants` 在两版逐项复核。只含数值、地址与自拟说明，不含原版字节。",
+  "reference": "v311",
+  "constants": [
+    {
+      "id": "bomb.fuse",
+      "value": 38,
+      "desc": "停下拾取地面定时炸弹时写入的引信步数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x41c025",
+      "v206": "0x41b85c",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "g_arbitration §2.e；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "doll.steps",
+      "value": 9,
+      "desc": "机器娃娃沿路前进的步数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x40deb9",
+      "v206": "0x40d97f",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "r_items §5.1；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "missile.halfWidth",
+      "value": 100,
+      "desc": "飞弹：范围伤害函数的半宽参数（push）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x447078",
+      "v206": "0x445c17",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "g_villains；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "nuke.radiusArg",
+      "value": -1,
+      "desc": "核子飞弹：半宽参数 -1 = 整个 440×440 视窗（半宽 220）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x447b8a",
+      "v206": "0x44673b",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "window.size",
+      "value": 440,
+      "desc": "范围收集：半宽 -1 时取整个视窗边长",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x40a46b",
+      "v206": "0x40a076",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "window.center",
+      "value": 220,
+      "desc": "范围收集：视窗中心（= 视窗半宽，核弹范围）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x40a472",
+      "v206": "0x40a07d",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "god.respawnDistX",
+      "value": 300,
+      "desc": "神明重生：新位置与旧位置 |dx| < 300 且 |dy| < 300 时重抽（x 分量）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x40ab22",
+      "v206": "0x40a71e",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "g_villains；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "god.respawnDistY",
+      "value": 300,
+      "desc": "神明重生：重抽阈值（y 分量）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x40ab36",
+      "v206": "0x40a732",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "g_villains；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "villain.stepsMod",
+      "value": 9,
+      "desc": "恶人步数 rand % 9 + 2 的模数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x40de57",
+      "v206": "0x40d91d",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "g_villains §步数；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "villain.stepsBase",
+      "value": 2,
+      "desc": "恶人步数 rand % 9 + 2 的加数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x40de61",
+      "v206": "0x40d927",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "g_villains §步数；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "lottery.numbers",
+      "value": 36,
+      "desc": "乐透号码个数（电脑选号遍历上界）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x4316b1",
+      "v206": "0x430a9b",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "r_squares_events §4；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "lottery.ticket",
+      "value": 1000,
+      "desc": "每注扣现金（不乘物价指数）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x4316f6",
+      "v206": "0x430ae0",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "r_squares_events §4；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "lottery.toPool",
+      "value": 1000,
+      "desc": "每注金额进公库",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x431700",
+      "v206": "0x430aea",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "lottery.aiMinCash",
+      "value": 1000,
+      "desc": "电脑买乐透要求现金 > 1000",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x43169e",
+      "v206": "0x430a88",
+      "confirmed": true,
+      "verify": "V-C2",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "bail.jail",
+      "value": [
+        30,
+        30,
+        30,
+        30,
+        300,
+        300,
+        300,
+        300
+      ],
+      "desc": "监狱保释点券：玩家 0..3 为 30，恶人 4..7 为 300",
+      "loc": {
+        "kind": "data",
+        "type": "u32",
+        "count": 8,
+        "ref": "0x43cde6",
+        "ref206": "0x43bb21"
+      },
+      "v311": "0x475c44",
+      "v206": "0x473a58",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "g_villains；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "bail.hospital",
+      "value": [
+        30,
+        30,
+        30,
+        30,
+        300,
+        300,
+        300,
+        300
+      ],
+      "desc": "医院保释点券：玩家 30，恶人 300",
+      "loc": {
+        "kind": "data",
+        "type": "u32",
+        "count": 8,
+        "ref": "0x43e546",
+        "ref206": "0x43d265"
+      },
+      "v311": "0x475ca4",
+      "v206": "0x473ab8",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "g_villains；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "loan.days",
+      "value": 90,
+      "desc": "贷款到期天数（遇休市日顺延）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x433b91",
+      "v206": "0x432f4b",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "g_arbitration §2.f；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "beggar.almsPI",
+      "value": 1000,
+      "desc": "乞丐施舍 = 1000 × 物价指数（进公库）",
+      "loc": {
+        "kind": "mulChain",
+        "length": 10,
+        "reg": "ebx",
+        "source": "PI"
+      },
+      "v311": "0x41b63a",
+      "v206": "0x41aea1",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "g_villains；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.27.suspendDays",
+      "value": 15,
+      "desc": "个股停牌天数（文案写 10 天）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b154",
+      "v206": "0x449b7b",
+      "confirmed": true,
+      "verify": "V-E9",
+      "source": "r_squares_events #27；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "shop.sellRateCard",
+      "value": 0.9,
+      "desc": "商店卖回卡片：价格 × 0.9",
+      "loc": {
+        "kind": "f64"
+      },
+      "v311": "0x42d174",
+      "v206": "0x42c54d",
+      "confirmed": true,
+      "verify": "V-E6",
+      "source": "r_references §2；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "shop.sellRateTool",
+      "value": 0.9,
+      "desc": "商店卖回道具：价格 × 0.9",
+      "loc": {
+        "kind": "f64"
+      },
+      "v311": "0x42d1da",
+      "v206": "0x42c5b3",
+      "confirmed": true,
+      "verify": "V-E6",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "bank.monthlyInterest",
+      "value": 1.1,
+      "desc": "月结：无贷款者存款 × 1.1（有贷款者不计息）",
+      "loc": {
+        "kind": "f64"
+      },
+      "v311": "0x438207",
+      "v206": "0x437363",
+      "confirmed": true,
+      "verify": "V-E6",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "bank.interestPreview",
+      "value": 0.1,
+      "desc": "银行界面显示的本月利息 = 存款 × 0.1",
+      "loc": {
+        "kind": "f64"
+      },
+      "v311": "0x439e16",
+      "v206": "0x438e1a",
+      "confirmed": true,
+      "verify": "V-E6",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "rand.mul",
+      "value": 1103515245,
+      "desc": "rand：next = next × 0x41C64E6D + 0x3039",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x456f37",
+      "v206": "0x455597",
+      "confirmed": true,
+      "verify": "V-E6",
+      "source": "r_references §rand；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "rand.add",
+      "value": 12345,
+      "desc": "rand 线性同余加数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x456f3d",
+      "v206": "0x45559d",
+      "confirmed": true,
+      "verify": "V-E6",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "rand.shift",
+      "value": 16,
+      "desc": "rand 返回 (next >> 16) & 0x7FFF 的移位",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x456f47",
+      "v206": "0x4555a7",
+      "confirmed": true,
+      "verify": "V-E6",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "rand.mask",
+      "value": 32767,
+      "desc": "rand 返回值掩码",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x456f4a",
+      "v206": "0x4555aa",
+      "confirmed": true,
+      "verify": "V-E6",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fortune.high",
+      "value": 100,
+      "desc": "加持判定：财运 > 100 必定高档",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b8c8",
+      "v206": "0x44a36e",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "g_arbitration §2.b；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fortune.mid",
+      "value": 50,
+      "desc": "加持判定：50 < 值 ≤ 100 时 rand & 1",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b8d5",
+      "v206": "0x44a37b",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "g_arbitration §2.b；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.deck",
+      "value": 36,
+      "desc": "新闻牌堆张数（游标到 36 回 0）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b7d4",
+      "v206": "0x44a27a",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.1.days",
+      "value": 3,
+      "desc": "新闻 1：在押者刑期 +3 天",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x448f5b",
+      "v206": "0x447b0b",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.3.days",
+      "value": 3,
+      "desc": "新闻 3：住院者 +3 天",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x449097",
+      "v206": "0x447c38",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.4.halfWidth",
+      "value": 100,
+      "desc": "新闻 4 外星人：范围伤害半宽",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44922b",
+      "v206": "0x447dc6",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.4.hospitalDays",
+      "value": 3,
+      "desc": "新闻 4：范围内玩家住院天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x449282",
+      "v206": "0x447e1d",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.6.factor",
+      "value": 1.3,
+      "desc": "新闻 6：同名路段地价 × 1.3（截断）",
+      "loc": {
+        "kind": "f64"
+      },
+      "v311": "0x449662",
+      "v206": "0x4481eb",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.6.factorFacility",
+      "value": 1.3,
+      "desc": "新闻 6：设施地价 × 1.3",
+      "loc": {
+        "kind": "f64"
+      },
+      "v311": "0x449708",
+      "v206": "0x448285",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.8.rewardPI",
+      "value": 10000,
+      "desc": "新闻 8：第一大地主奖金 = 10000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 9,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x449994",
+      "v206": "0x4484f6",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.9.minInit",
+      "value": 10000,
+      "desc": "新闻 9：求最少地产数的初值（未排除 0 块地的玩家）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x449b17",
+      "v206": "0x448667",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.9.subsidyPI",
+      "value": 5000,
+      "desc": "新闻 9：补助 = 5000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 9,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x449b6a",
+      "v206": "0x4486b4",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.10.rewardPI",
+      "value": 10000,
+      "desc": "新闻 10：股市第一大户奖金 = 10000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 9,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x449c4a",
+      "v206": "0x448782",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.11.rate",
+      "value": 0.05,
+      "desc": "新闻 11：所得税 = 现金 × 0.05（不乘物价指数）",
+      "loc": {
+        "kind": "f64"
+      },
+      "v311": "0x449cf4",
+      "v206": "0x448823",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.12.rate",
+      "value": 0.05,
+      "desc": "新闻 12：地价税 = Σ(地价 + 等级 × 房价) × 0.05，截断后 × 物价指数",
+      "loc": {
+        "kind": "f64"
+      },
+      "v311": "0x449f22",
+      "v206": "0x448a24",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.13.rate",
+      "value": 0.05,
+      "desc": "新闻 13：证交税 = Σ(持股 × 现价) × 0.05，截断后 × 物价指数",
+      "loc": {
+        "kind": "f64"
+      },
+      "v311": "0x44a11c",
+      "v206": "0x448bea",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.14.factor",
+      "value": 0.7,
+      "desc": "新闻 14：同名路段地价 × 0.7",
+      "loc": {
+        "kind": "f64"
+      },
+      "v311": "0x44a3a2",
+      "v206": "0x448e4b",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.20.halfWidth",
+      "value": 100,
+      "desc": "新闻 20 台风：范围伤害半宽（不伤人）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44ac41",
+      "v206": "0x44969c",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.22.days",
+      "value": 15,
+      "desc": "新闻 22：银行挤兑天数（玩家 +0x3c）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44aeb6",
+      "v206": "0x4498f6",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.23.rate",
+      "value": 0.1,
+      "desc": "新闻 23：无贷款者得存款 × 0.1（进存款）",
+      "loc": {
+        "kind": "f64"
+      },
+      "v311": "0x44af4a",
+      "v206": "0x449984",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.24.trend",
+      "value": 1,
+      "desc": "新闻 24：12 支股票趋势字节 = 1（低半字节 = 下跌天数）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b033",
+      "v206": "0x449a66",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.25.trend",
+      "value": 16,
+      "desc": "新闻 25：趋势字节 = 0x10（高半字节 = 上涨天数）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b07e",
+      "v206": "0x449ab1",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.26.days",
+      "value": 10,
+      "desc": "新闻 26：股市休市天数计数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b0c6",
+      "v206": "0x449af9",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.27.pick",
+      "value": 12,
+      "desc": "新闻 27：rand % 12 选一支股票",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b0ee",
+      "v206": "0x449b1b",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.29.jailDays",
+      "value": 5,
+      "desc": "新闻 29：董事长坐牢天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b35f",
+      "v206": "0x449d77",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.30.fine",
+      "value": 10000,
+      "desc": "新闻 30/33：公司本月盈余 −10000（不乘物价指数）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b3d9",
+      "v206": "0x449deb",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.30.trend",
+      "value": 3,
+      "desc": "新闻 30/33/34：趋势字节 = 3（下跌 3 天）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b3fa",
+      "v206": "0x449e0c",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.31.gain",
+      "value": 20000,
+      "desc": "新闻 31：公司盈余 +20000",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b47a",
+      "v206": "0x449e87",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.31.trend",
+      "value": 48,
+      "desc": "新闻 31：趋势字节 = 0x30（上涨 3 天）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b49b",
+      "v206": "0x449ea8",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.32.loss",
+      "value": 20000,
+      "desc": "新闻 32：公司盈余 −20000",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b50d",
+      "v206": "0x449f23",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.32.trend",
+      "value": 4,
+      "desc": "新闻 32：趋势字节 = 4（下跌 4 天）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b532",
+      "v206": "0x449f44",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.34.fine",
+      "value": 5000,
+      "desc": "新闻 34：公司盈余 −5000",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b5e2",
+      "v206": "0x44a05b",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.35.threshold",
+      "value": 10000,
+      "desc": "新闻 35：候选公司盈余须 > 10000",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b623",
+      "v206": "0x44a0c0",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "news.35.divisor",
+      "value": 10000,
+      "desc": "新闻 35：上涨天数 = 原盈余 / 10000（写入高半字节，按 16 取模）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44b6a1",
+      "v206": "0x44a138",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.deck",
+      "value": 37,
+      "desc": "命运牌堆张数（洗牌）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44bb02",
+      "v206": "0x44a599",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.2.loanPI",
+      "value": 10000,
+      "desc": "命运 2：冒贷 = 10000 × 物价指数（罚金类）",
+      "loc": {
+        "kind": "mulChain",
+        "length": 9,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44c0fe",
+      "v206": "0x44ab50",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.3.days",
+      "value": 30,
+      "desc": "命运 3：拒绝往来天数（玩家 +0x3b 累加）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44c2ba",
+      "v206": "0x44ad09",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.4.pct",
+      "value": 10,
+      "desc": "命运 4：挪用每位对手存款的百分比",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44c2d4",
+      "v206": "0x44ad1d",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.4.pctDiv",
+      "value": 100,
+      "desc": "命运 4：百分比除数",
+      "loc": {
+        "kind": "f32"
+      },
+      "v311": "0x44c348",
+      "v206": "0x44ad8e",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.6.days",
+      "value": 3,
+      "desc": "命运 6：出国天数（劫难类）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44c5eb",
+      "v206": "0x44b00d",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.7.days",
+      "value": 3,
+      "desc": "命运 7：被绑架天数（劫难类）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44c700",
+      "v206": "0x44b11c",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.8.pct",
+      "value": 10,
+      "desc": "命运 8：每支持股损失百分比（罚金类）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44c802",
+      "v206": "0x44b218",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.8.pctDiv",
+      "value": 100,
+      "desc": "命运 8：百分比除数",
+      "loc": {
+        "kind": "f32"
+      },
+      "v311": "0x44c8b0",
+      "v206": "0x44b2c6",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.12.days",
+      "value": 3,
+      "desc": "命运 12：住院天数（劫难类）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44cc67",
+      "v206": "0x44b668",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.13.days",
+      "value": 3,
+      "desc": "命运 13：住院天数（劫难类）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44cd84",
+      "v206": "0x44b77f",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.14.amountPI",
+      "value": 3000,
+      "desc": "命运 14：罚金/损失 = 3000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 10,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44cdb1",
+      "v206": "0x44b7a6",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.15.amountPI",
+      "value": 3000,
+      "desc": "命运 15：罚金/损失 = 3000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 10,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44cf5b",
+      "v206": "0x44b947",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.16.amountPI",
+      "value": 3000,
+      "desc": "命运 16：罚金/损失 = 3000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 10,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d0aa",
+      "v206": "0x44ba8d",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.17.amountPI",
+      "value": 6000,
+      "desc": "命运 17：罚金/损失 = 6000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 10,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d0ee",
+      "v206": "0x44bacb",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.18.amountPI",
+      "value": 600,
+      "desc": "命运 18：罚金/损失 = 600 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 8,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d1b9",
+      "v206": "0x44bb90",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.19.amountPI",
+      "value": 1500,
+      "desc": "命运 19：罚金/损失 = 1500 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 10,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d1f8",
+      "v206": "0x44bbc5",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.20.amountPI",
+      "value": 1000,
+      "desc": "命运 20：奖金 = 1000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 10,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d237",
+      "v206": "0x44bbfe",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.21.amountPI",
+      "value": 2000,
+      "desc": "命运 21：奖金 = 2000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 10,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d352",
+      "v206": "0x44bd13",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.22.amountPI",
+      "value": 3000,
+      "desc": "命运 22：奖金 = 3000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 10,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d3f2",
+      "v206": "0x44bdaa",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.23.amountPI",
+      "value": 1000,
+      "desc": "命运 23：罚金/损失 = 1000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 10,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d436",
+      "v206": "0x44bde8",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.24.amountPI",
+      "value": 2000,
+      "desc": "命运 24：罚金/损失 = 2000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 10,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d47a",
+      "v206": "0x44be26",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.25.amountPI",
+      "value": 10000,
+      "desc": "命运 25：奖金 = 10000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 9,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d4bd",
+      "v206": "0x44be63",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.26.amountPI",
+      "value": 8000,
+      "desc": "命运 26：罚金/损失 = 8000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 10,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d4ff",
+      "v206": "0x44be9f",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.27.amountPI",
+      "value": 4000,
+      "desc": "命运 27：奖金 = 4000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 10,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d542",
+      "v206": "0x44bedc",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.28.amountPI",
+      "value": 6000,
+      "desc": "命运 28：奖金 = 6000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 10,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d585",
+      "v206": "0x44bf19",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.29.amountPI",
+      "value": 8000,
+      "desc": "命运 29：奖金 = 8000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 10,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d5c8",
+      "v206": "0x44bf56",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.30.amountPI",
+      "value": 5000,
+      "desc": "命运 30：罚金/损失 = 5000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 9,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d60c",
+      "v206": "0x44bf94",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.31.amountPI",
+      "value": 5000,
+      "desc": "命运 31：奖金 = 5000 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 9,
+        "reg": "eax",
+        "source": "PI"
+      },
+      "v311": "0x44d64d",
+      "v206": "0x44bfcf",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.33.days",
+      "value": 3,
+      "desc": "命运 33：坐牢天数（劫难类；地图组 0 的文案）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44d797",
+      "v206": "0x44c113",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.34.days",
+      "value": 5,
+      "desc": "命运 34：坐牢天数（劫难类；地图组 0 的文案）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44d8e7",
+      "v206": "0x44c25a",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.35.days",
+      "value": 7,
+      "desc": "命运 35：坐牢天数（劫难类；地图组 0 的文案）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44d915",
+      "v206": "0x44c282",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.36.days",
+      "value": 9,
+      "desc": "命运 36：坐牢天数（劫难类；地图组 0 的文案）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44d943",
+      "v206": "0x44c2aa",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.33.days1",
+      "value": 3,
+      "desc": "命运 33 的地图组 1 文案变体：坐牢天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44d971",
+      "v206": "0x44c2d2",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.34.days1",
+      "value": 5,
+      "desc": "命运 34 的地图组 1 文案变体：坐牢天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44d99f",
+      "v206": "0x44c2fa",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.35.days1",
+      "value": 7,
+      "desc": "命运 35 的地图组 1 文案变体：坐牢天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44d9cd",
+      "v206": "0x44c322",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.36.days1",
+      "value": 9,
+      "desc": "命运 36 的地图组 1 文案变体：坐牢天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44d9fb",
+      "v206": "0x44c34a",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.33.days2",
+      "value": 3,
+      "desc": "命运 33 的地图组 2 文案变体：坐牢天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44da29",
+      "v206": "0x44c372",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.34.days2",
+      "value": 5,
+      "desc": "命运 34 的地图组 2 文案变体：坐牢天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44da57",
+      "v206": "0x44c39a",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.35.days2",
+      "value": 7,
+      "desc": "命运 35 的地图组 2 文案变体：坐牢天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44da85",
+      "v206": "0x44c3c2",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.36.days2",
+      "value": 9,
+      "desc": "命运 36 的地图组 2 文案变体：坐牢天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44dab3",
+      "v206": "0x44c3ea",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.33.days3",
+      "value": 3,
+      "desc": "命运 33 的地图组 3 文案变体：坐牢天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44dae1",
+      "v206": "0x44c412",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.34.days3",
+      "value": 5,
+      "desc": "命运 34 的地图组 3 文案变体：坐牢天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44db0f",
+      "v206": "0x44c43a",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.35.days3",
+      "value": 7,
+      "desc": "命运 35 的地图组 3 文案变体：坐牢天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44db3d",
+      "v206": "0x44c462",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "fate.36.days3",
+      "value": 9,
+      "desc": "命运 36 的地图组 3 文案变体：坐牢天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x44db6b",
+      "v206": "0x44c48a",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "magic.condCount",
+      "value": 11,
+      "desc": "条件表跳转上界（cmp 0xb：12 条）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x431855",
+      "v206": "0x430c3e",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "magic.effectCount",
+      "value": 11,
+      "desc": "效果表跳转上界（cmp 0xb：12 项）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x4320cf",
+      "v206": "0x43149a",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "magic.condPickHuman",
+      "value": 12,
+      "desc": "真人：女巫转盘 rand % 12 选条件（无人符合就重抽）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x432720",
+      "v206": "0x431acd",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "ai.magic.condPick",
+      "value": 12,
+      "desc": "电脑：rand % 12 选条件（无人符合就重抽）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x433917",
+      "v206": "0x432cc8",
+      "confirmed": true,
+      "verify": "V-C2",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "ai.magic.selfEffect",
+      "value": 6,
+      "desc": "电脑：名单含自己时固定选效果 6（得一张卡片）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x43395a",
+      "v206": "0x432d0b",
+      "confirmed": true,
+      "verify": "V-C2",
+      "source": "r_squares_events §3.1；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "ai.magic.effectPick",
+      "value": 11,
+      "desc": "电脑：否则 rand % 11 选效果（抽到 6 改为 7）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x43396d",
+      "v206": "0x432d1e",
+      "confirmed": true,
+      "verify": "V-C2",
+      "source": "r_squares_events §3.1；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "magic.2.hatePI",
+      "value": 90,
+      "desc": "魔法屋坐牢：目标对施法者的敌意 + 90 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 8,
+        "reg": "ebx",
+        "source": "PI"
+      },
+      "v311": "0x431e21",
+      "v206": "0x431201",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "g_villains；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "magic.2.jailDays",
+      "value": 3,
+      "desc": "魔法屋坐牢天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x431e65",
+      "v206": "0x431242",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "magic.10.hatePI",
+      "value": 90,
+      "desc": "魔法屋住院：敌意 + 90 × 物价指数",
+      "loc": {
+        "kind": "mulChain",
+        "length": 8,
+        "reg": "ebx",
+        "source": "PI"
+      },
+      "v311": "0x4323d9",
+      "v206": "0x431790",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "magic.10.hospitalDays",
+      "value": 3,
+      "desc": "魔法屋住院天数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x43241e",
+      "v206": "0x4317d2",
+      "confirmed": true,
+      "verify": "V-E7",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "minigame.humanOnly",
+      "value": 1,
+      "desc": "只有玩家类型 = 1（真人）才亲自玩（M1）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x41560d",
+      "v206": "0x414f2e",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "minigames-ai §11 M1；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "minigame.skipMod",
+      "value": 20,
+      "desc": "不玩分支：点券 = 50 + rand % 20 的模数（M2）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x41545e",
+      "v206": "0x414d83",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "minigames-ai §11 M2；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "minigame.skipBase",
+      "value": 50,
+      "desc": "不玩分支：点券基数（M2）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x415468",
+      "v206": "0x414d8d",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "penguin.playTicks",
+      "value": 150,
+      "desc": "企鹅挖宝游玩 tick 数（M5）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x4148b9",
+      "v206": "0x4141d7",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "minigames-ai §3.1；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "penguin.introTicks",
+      "value": 10,
+      "desc": "企鹅挖宝 intro tick 数（M5）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x4148c3",
+      "v206": "0x4141e1",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "penguin.tickMs",
+      "value": 100,
+      "desc": "企鹅挖宝计时器毫秒（M5）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x4148d9",
+      "v206": "0x4141f7",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "penguin.itemCounts",
+      "value": [
+        3,
+        12,
+        3,
+        9,
+        1
+      ],
+      "desc": "企鹅埋藏件数模板（类型 1..5，M3）",
+      "loc": {
+        "kind": "data",
+        "type": "u32",
+        "count": 5,
+        "ref": "0x412027",
+        "ref206": "0x411945"
+      },
+      "v311": "0x411fc8",
+      "v206": "0x4118e6",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "minigames-ai §11 M3；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "penguin.score2",
+      "value": 5,
+      "desc": "类型 2 每件分值（结算乘法链）",
+      "loc": {
+        "kind": "mulChain",
+        "length": 4,
+        "reg": "eax",
+        "source": "penguin.count2"
+      },
+      "v311": "0x413d97",
+      "v206": "0x4136b5",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "penguin.score3",
+      "value": 12,
+      "desc": "类型 3 每件分值",
+      "loc": {
+        "kind": "mulChain",
+        "length": 5,
+        "reg": "eax",
+        "source": "penguin.count3"
+      },
+      "v311": "0x413d7a",
+      "v206": "0x413698",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "penguin.score4",
+      "value": 8,
+      "desc": "类型 4 每件分值",
+      "loc": {
+        "kind": "mulChain",
+        "length": 2,
+        "reg": "ecx",
+        "source": "penguin.count4"
+      },
+      "v311": "0x413d8c",
+      "v206": "0x4136aa",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "penguin.score5",
+      "value": 20,
+      "desc": "类型 5 每件分值",
+      "loc": {
+        "kind": "mulChain",
+        "length": 5,
+        "reg": "ecx",
+        "source": "penguin.count5"
+      },
+      "v311": "0x413d6a",
+      "v206": "0x413688",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "penguin.itemTotal",
+      "value": 28,
+      "desc": "埋藏总件数 = 模板之和",
+      "loc": {
+        "kind": "derived",
+        "op": "sum",
+        "args": [
+          "penguin.itemCounts"
+        ]
+      },
+      "v311": null,
+      "v206": null,
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "penguin.maxScore",
+      "value": 188,
+      "desc": "满分 = Σ 件数 × 分值（炸弹 0 分）",
+      "loc": {
+        "kind": "derived",
+        "op": "dot",
+        "args": [
+          "penguin.itemCounts",
+          [
+            0,
+            "penguin.score2",
+            "penguin.score3",
+            "penguin.score4",
+            "penguin.score5"
+          ]
+        ]
+      },
+      "v311": null,
+      "v206": null,
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "balloon.playTicks",
+      "value": 150,
+      "desc": "七彩气球游玩 tick 数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x414c1d",
+      "v206": "0x41453b",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "minigames-ai §4.1；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "balloon.slots",
+      "value": 16,
+      "desc": "气球槽数（M10）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x413031",
+      "v206": "0x41294f",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "balloon.laneStart",
+      "value": 40,
+      "desc": "跑道 x 起点",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x413027",
+      "v206": "0x412945",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "balloon.laneStep",
+      "value": 80,
+      "desc": "跑道间距",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x41305b",
+      "v206": "0x412979",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "balloon.laneEnd",
+      "value": 640,
+      "desc": "跑道 x 上界（不含）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x41305e",
+      "v206": "0x41297c",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "balloon.lanes",
+      "value": 8,
+      "desc": "跑道数",
+      "loc": {
+        "kind": "derived",
+        "op": "rangeCount",
+        "args": [
+          "balloon.laneStart",
+          "balloon.laneEnd",
+          "balloon.laneStep"
+        ]
+      },
+      "v311": null,
+      "v206": null,
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "balloon.scoreCap",
+      "value": 1000,
+      "desc": "数字气球计分后 ≥ 1000 时夹紧（M12）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x414ee5",
+      "v206": "0x414803",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "balloon.scoreClamp",
+      "value": 999,
+      "desc": "夹紧到 999（M12）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x414eed",
+      "v206": "0x41480b",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "balloon.speed",
+      "value": [
+        15,
+        15,
+        15,
+        15,
+        18,
+        18,
+        18,
+        24,
+        24,
+        24,
+        24,
+        18
+      ],
+      "desc": "气球速度表（px/tick，按类型 0..11，M8）",
+      "loc": {
+        "kind": "data",
+        "type": "u8",
+        "count": 12,
+        "ref": "0x4130ee",
+        "ref206": "0x412a0c"
+      },
+      "v311": "0x475004",
+      "v206": "0x472e94",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "minigames-ai §11 M8；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "balloon.special",
+      "value": [
+        9,
+        9,
+        10,
+        10,
+        10,
+        10,
+        10,
+        11,
+        11,
+        11
+      ],
+      "desc": "特殊气球表（M9）",
+      "loc": {
+        "kind": "data",
+        "type": "u8",
+        "count": 10,
+        "ref": "0x413014",
+        "ref206": "0x412932"
+      },
+      "v311": "0x475039",
+      "v206": "0x472ec9",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "minigames-ai §11 M9；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "xicong.playTicks",
+      "value": 360,
+      "desc": "喜从天降游玩 tick 数",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x41500f",
+      "v206": "0x41492d",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "minigames-ai §5.1；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "xicong.bombMod",
+      "value": 10,
+      "desc": "炸弹预警：rand % 10（M15）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x4123c1",
+      "v206": "0x411cdf",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "xicong.bombThreshold",
+      "value": 7,
+      "desc": "炸弹预警：结果 ≥ 7 才起预警（M15）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x4123cb",
+      "v206": "0x411ce9",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "xicong.bombPct",
+      "value": 30,
+      "desc": "炸弹预警概率（%）",
+      "loc": {
+        "kind": "derived",
+        "op": "pctGe",
+        "args": [
+          "xicong.bombMod",
+          "xicong.bombThreshold"
+        ]
+      },
+      "v311": null,
+      "v206": null,
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "xicong.fall",
+      "value": [
+        24,
+        18,
+        15,
+        12,
+        15
+      ],
+      "desc": "落速表（类型 0..4，M14）",
+      "loc": {
+        "kind": "data",
+        "type": "u8",
+        "count": 5,
+        "ref": "0x4134e2",
+        "ref206": "0x412e00"
+      },
+      "v311": "0x475010",
+      "v206": "0x472ea0",
+      "confirmed": true,
+      "verify": "V-C1",
+      "source": "minigames-ai §11 M14；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "ai.buyLand.reserveRate",
+      "value": 0.05,
+      "desc": "买地保留额 = min(trunc(开局资金 × 0.05), 7000) × 物价指数（A4）",
+      "loc": {
+        "kind": "f64"
+      },
+      "v311": "0x41d7e0",
+      "v206": "0x41cf83",
+      "confirmed": true,
+      "verify": "V-C2",
+      "source": "minigames-ai §9.7；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "ai.buyLand.reserveCapCmp",
+      "value": 7000,
+      "desc": "保留额上限比较（A4）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x41d7ee",
+      "v206": "0x41cf91",
+      "confirmed": true,
+      "verify": "V-C2",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "ai.buyLand.reserveCap",
+      "value": 7000,
+      "desc": "保留额上限赋值（A4）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x41d7f7",
+      "v206": "0x41cf9a",
+      "confirmed": true,
+      "verify": "V-C2",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "ai.bank.lendGateMod",
+      "value": 10,
+      "desc": "借款闸门：rand % 10 == 0 或 现金+存款 < 30000（A6）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x43689a",
+      "v206": "0x435ab9",
+      "confirmed": true,
+      "verify": "V-C2",
+      "source": "minigames-ai §9.7；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "ai.bank.lendCashFloor",
+      "value": 30000,
+      "desc": "借款闸门：现金+存款 < 30000（不乘物价指数，A6）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x4368bb",
+      "v206": "0x435ada",
+      "confirmed": true,
+      "verify": "V-C2",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "ai.bank.loanRatioDiv",
+      "value": 100,
+      "desc": "借款额 = 角色借贷比例 × 额度 / 100（赋值，不累加，A6）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x4368f0",
+      "v206": "0x435b0f",
+      "confirmed": true,
+      "verify": "V-C2",
+      "source": "r2 人工复核（v3.11）"
+    },
+    {
+      "id": "ai.dice.lookahead",
+      "value": 5,
+      "desc": "骰子策略：前瞻格数（A5）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x42221e",
+      "v206": "0x421994",
+      "confirmed": true,
+      "verify": "V-C2",
+      "source": "minigames-ai §9.4；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "wheel.slots",
+      "value": 12,
+      "desc": "设施转盘：起点 rand % 12，逐格 +1（模 12）转动，停在第一个非 0xFF 的格",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x43f7e1",
+      "v206": "0x43e459",
+      "confirmed": true,
+      "verify": "V-E8",
+      "source": "g_map §4.2–4.3；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "wheel.tables",
+      "value": [
+        1,
+        255,
+        0,
+        255,
+        1,
+        255,
+        2,
+        255,
+        3,
+        255,
+        2,
+        255,
+        255,
+        255,
+        1,
+        255,
+        255,
+        4,
+        255,
+        3,
+        255,
+        255,
+        2,
+        255,
+        1,
+        255,
+        6,
+        255,
+        5,
+        255,
+        4,
+        255,
+        3,
+        255,
+        2,
+        255,
+        5,
+        255,
+        3,
+        255,
+        30,
+        255,
+        20,
+        255,
+        15,
+        255,
+        10,
+        255
+      ],
+      "desc": "转盘表 4 × 12（0 航空出国天数、1 旅馆住宿天数、2 购物中心倍数、3 保险天数；0xFF = 空格，停到下一个有值的格）",
+      "loc": {
+        "kind": "data",
+        "type": "u8",
+        "count": 48,
+        "ref": "0x43fad1",
+        "ref206": "0x43e749"
+      },
+      "v311": "0x475d0c",
+      "v206": "0x473b20",
+      "confirmed": true,
+      "verify": "V-E8",
+      "source": "g_map §4.2–4.3；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "ai.bank.repayDays",
+      "value": 6,
+      "desc": "电脑还款：距到期 ≤ 6 天且 现金+存款 ≥ 1.1 × 贷款，或 2 × 贷款 < 存款 → 全额还清（A6）",
+      "loc": {
+        "kind": "imm"
+      },
+      "v311": "0x4367ce",
+      "v206": "0x435a1f",
+      "confirmed": true,
+      "verify": "V-C2",
+      "source": "minigames-ai §9.7；r2 人工复核（v3.11）"
+    },
+    {
+      "id": "ai.bank.repayFactor",
+      "value": 1.1,
+      "desc": "电脑还款的资金门槛系数（贷款 × 1.1）",
+      "loc": {
+        "kind": "f64"
+      },
+      "v311": "0x4367fc",
+      "v206": "0x435a47",
+      "confirmed": true,
+      "verify": "V-C2",
+      "source": "r2 人工复核（v3.11）"
+    }
+  ]
+}

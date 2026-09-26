@@ -1,0 +1,195 @@
+/* 信息面板（design/client.md §5.4）：可放进 Modal/BottomSheet，也可以嵌在决策对话框里 */
+
+.panel {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.head h2,
+.head h3 {
+  margin: 0;
+  flex: 1;
+  font-size: 20px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--space-2);
+}
+
+.stat {
+  display: grid;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 2px solid var(--c-ink);
+  border-radius: var(--radius-sm);
+  background: var(--c-white);
+}
+
+.stat > span:first-child {
+  font-size: 12px;
+  color: var(--c-ink-soft);
+}
+
+.stat > :last-child {
+  font-size: 18px;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.muted {
+  margin: 0;
+  color: var(--c-ink-soft);
+  font-size: 13px;
+}
+
+.warn {
+  margin: 0;
+  padding: 6px 10px;
+  border: 2px solid var(--c-red);
+  border-radius: var(--radius-sm);
+  background: #fff0f0;
+  font-size: 14px;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 2px solid var(--c-ink);
+  border-radius: var(--radius-sm);
+  background: var(--c-white);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  padding: 6px 8px;
+  background: var(--c-cream-deep);
+  font-weight: 600;
+  text-align: left;
+  font-size: 13px;
+}
+
+.table td {
+  padding: 5px 8px;
+  border-top: 1px dashed rgb(58 42 26 / 0.2);
+}
+
+.table .num {
+  text-align: right;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.table tr[data-selected="true"] td {
+  background: #fff4c2;
+}
+
+.table tr[data-clickable="true"] {
+  cursor: pointer;
+}
+
+.table tr[data-clickable="true"]:hover td {
+  background: #fffbe8;
+}
+
+.up {
+  color: var(--c-up);
+}
+
+.down {
+  color: var(--c-down);
+}
+
+.trade {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 2px dashed var(--c-ink-soft);
+  border-radius: var(--radius-sm);
+  background: rgb(255 255 255 / 0.6);
+}
+
+.tradeRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.popover {
+  z-index: 30;
+  width: min(300px, calc(100vw - 24px));
+  padding: var(--space-3);
+  background: var(--c-cream);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-chunky);
+  animation: pop 140ms ease-out;
+}
+
+.popoverArrow {
+  fill: var(--c-ink);
+}
+
+.anchor {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    scale: 0.94;
+  }
+}
+
+.mark {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--c-white);
+}
+
+.markRaise {
+  background: var(--c-red);
+}
+
+.markSeal {
+  background: var(--c-blue);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popover {
+    animation: none;
+  }
+}

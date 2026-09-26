@@ -3,10 +3,15 @@
  *
  * RICH4_DATA_DIR 未设置时依次尝试 <cwd>/rich4-data 与仓库根目录下的 rich4-data（本机开发方便）；
  * 都没有 manifest.json 时只提供 fixture 地图。
- * RICH4_TEST_ENGINE=stub 时使用 test/helpers/stubEngine（真实引擎完成前的联调与 botplay 用）。
+ * RICH4_TEST_ENGINE=stub 时使用 test/helpers/stubEngine（只在源码模式 tsx / vitest 下可用，构建产物不含测试代码）。
+ *
+ * 持久化（M5）：DATA_DIR 下的 rich4.db（STORE=sqlite，默认）或 store/ 目录（STORE=json，备用）；
+ * DATA_DIR/badwords.txt 为聊天敏感词表；DATA_DIR/backup 为每日备份（BACKUP_ENABLED=0 关闭，BACKUP_KEEP 份数）。
+ * 生产环境（NODE_ENV=production）必须设置 SAVE_HMAC_SECRET（≥32 字节）。
+ * RICH4_AI_POLICY=original|basic 选择电脑策略（默认 original）；RICH4_TIMER_SCALE 只在测试模式下缩放决策计时。
  */
 import { existsSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import type { LogLevel } from './infra/logger';
@@ -17,7 +22,8 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().int().min(0).max(65535).default(3000),
   HOST: z.string().min(1).default('0.0.0.0'),
   PUBLIC_URL: z.url().optional(),
-  DATA_DIR: z.string().min(1).default('.data'),
+  /** 开发默认放在 .cache/data（仓库 .gitignore 已忽略 .cache/）；生产由 compose 设为 /data */
+  DATA_DIR: z.string().min(1).default('.cache/data'),
   RICH4_DATA_DIR: z.string().min(1).optional(),
   DEFAULT_MAP: z.string().min(1).default('taiwan'),
   SAVE_HMAC_SECRET: z.string().min(32).optional(),
@@ -30,16 +36,32 @@ const EnvSchema = z.object({
   DEV_CORS_ORIGIN: z.string().min(1).optional(),
   RICH4_TEST_MODE: Flag.default(false),
   RICH4_TEST_ENGINE: z.enum(['stub', 'real']).default('real'),
+  /** 电脑策略：original = 原版 AI（OriginalAiPolicy，默认）；basic = BasicAiPolicy（排查问题时对照用） */
+  RICH4_AI_POLICY: z.enum(['original', 'basic']).default('original'),
+  /** 计时倍率（只在 RICH4_TEST_MODE=1 时生效，E2E 用来缩短超时等待）；生产恒为 1 */
+  RICH4_TIMER_SCALE: z.coerce.number().positive().max(1).optional(),
   STATIC_DIR: z.string().min(1).optional(),
   NODE_ENV: z.string().optional(),
+  STORE: z.enum(['sqlite', 'json']).default('sqlite'),
+  BACKUP_ENABLED: Flag.default(true),
+  BACKUP_KEEP: z.coerce.number().int().min(1).max(365).default(7),
 });
 
 export interface AppConfig {
   port: number;
   host: string;
   publicUrl: string;
-  /** 可读写目录（M5 起放 sqlite 与备份） */
+  /** 可读写目录：sqlite、备份、敏感词表 */
   dataDir: string;
+  /** 存储实现 */
+  store: 'sqlite' | 'json';
+  /** sqlite 文件（或 ':memory:'）；json 存储时为目录 */
+  storePath: string;
+  backupEnabled: boolean;
+  backupDir: string;
+  backupKeep: number;
+  /** 聊天敏感词表（不存在时不过滤） */
+  badWordsPath: string;
   /** 只读数据目录；null 表示只提供 fixture 地图 */
   rich4DataDir: string | null;
   defaultMap: string;
@@ -53,6 +75,9 @@ export interface AppConfig {
   devCorsOrigin: string | null;
   testMode: boolean;
   testEngine: 'stub' | 'real';
+  aiPolicy: 'original' | 'basic';
+  /** Deadlines.timerScale；非测试模式恒为 1 */
+  timerScale: number;
   staticDir: string | null;
   production: boolean;
 }
@@ -78,6 +103,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   const e = r.data;
   const abs = (p: string) => (isAbsolute(p) ? p : resolve(cwd, p));
   const production = e.NODE_ENV === 'production';
+  if (production && !e.SAVE_HMAC_SECRET) {
+    throw new ConfigError('环境变量无效：SAVE_HMAC_SECRET 在生产环境必填（≥32 字节随机串）');
+  }
+  const dataDir = abs(e.DATA_DIR);
   const rich4DataDir = e.RICH4_DATA_DIR
     ? abs(e.RICH4_DATA_DIR)
     : firstExisting([resolve(cwd, 'rich4-data'), resolve(REPO_ROOT, 'rich4-data')], 'manifest.json');
@@ -88,7 +117,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     port: e.PORT,
     host: e.HOST,
     publicUrl: e.PUBLIC_URL ?? `http://localhost:${e.PORT}`,
-    dataDir: abs(e.DATA_DIR),
+    dataDir,
+    store: e.STORE,
+    storePath: e.STORE === 'json' ? join(dataDir, 'store') : join(dataDir, 'rich4.db'),
+    backupEnabled: e.BACKUP_ENABLED,
+    backupDir: join(dataDir, 'backup'),
+    backupKeep: e.BACKUP_KEEP,
+    badWordsPath: join(dataDir, 'badwords.txt'),
     rich4DataDir,
     defaultMap: e.DEFAULT_MAP,
     saveHmacSecret: e.SAVE_HMAC_SECRET ?? null,
@@ -101,6 +136,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     devCorsOrigin: e.DEV_CORS_ORIGIN ?? null,
     testMode: e.RICH4_TEST_MODE,
     testEngine: e.RICH4_TEST_ENGINE,
+    aiPolicy: e.RICH4_AI_POLICY,
+    timerScale: e.RICH4_TEST_MODE ? (e.RICH4_TIMER_SCALE ?? 1) : 1,
     staticDir,
     production,
   };

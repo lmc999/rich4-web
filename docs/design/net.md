@@ -653,6 +653,8 @@ export function replay<P, S>(sim: MinigameSim<P, S>, seed: number, p: P, inputs:
 
 ## 7. 电脑 AI 在服务器上的接入
 
+> **实施记录**：服务器默认策略为 `OriginalAiPolicy`（`RICH4_AI_POLICY=basic` 切回 BasicAiPolicy），AiDriver 与模拟脚本共用 shared/ai 的 `makeAiContext`；测试模式下 `RICH4_TIMER_SCALE` 缩放决策计时（architecture §18.6）。
+
 **结论：不把 AI 做成特殊的 socket 客户端，而是在进程内直接调用决策函数。** 但 AI 走和真人完全相同的 `GameRunner.submit()` 校验管线，只用公平视图（投影），不看 `secret`。
 
 ```ts
@@ -684,6 +686,8 @@ export class AiDriver {
 ---
 
 ## 8. 存档、读档与重启持久化
+
+> **实施记录（M5）**：journal 主键含 epoch、saves 表的 verified 列、重启恢复的几种结果（恢复并暂停 / skipped / 转存档）、进行中对局禁止导出与另开房间读档、读档座位规则、DATA_DIR 默认值与新环境变量等实际做法见 architecture §18.3，与本节不一致处以那里为准。
 
 ### 8.1 存储选型
 

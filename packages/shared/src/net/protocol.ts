@@ -17,6 +17,7 @@ import type { DecisionForYou, GameView, PendingView } from '../view/types';
 import type { AppError, Result } from './errors';
 import type { PublicRoomSummary, RoomClosedReason, RoomSettingsPatch, RoomView, RoomYou } from './room';
 
+export type { TrusteeSettings } from '../ai/types';
 export type { SeatControl } from '../view/types';
 export type { AppError, ErrorCode, Result } from './errors';
 
@@ -165,7 +166,33 @@ export type SystemMsgKey =
   | 'gameLoaded'
   | 'aiPaused'
   /** 对局内部错误（定时器或广播抛出非规则异常），房间已暂停；params 可带 seat */
-  | 'internalError';
+  | 'internalError'
+  /** 服务器重启后恢复了本房间（epoch 已加 1，房间暂停，等真人回来） */
+  | 'serverRestored';
+
+/** 全部系统消息 key（编译期对 SystemMsgKey 穷举；存档与快照里的聊天记录据此校验） */
+export const SYSTEM_MSG_KEYS = Object.freeze(
+  Object.keys({
+    playerJoined: 1,
+    playerLeft: 1,
+    spectatorJoined: 1,
+    spectatorLeft: 1,
+    hostChanged: 1,
+    autopilotOn: 1,
+    autopilotOff: 1,
+    disconnected: 1,
+    reconnected: 1,
+    kicked: 1,
+    timeoutDefault: 1,
+    gamePaused: 1,
+    gameResumed: 1,
+    gameSaved: 1,
+    gameLoaded: 1,
+    aiPaused: 1,
+    internalError: 1,
+    serverRestored: 1,
+  } satisfies { readonly [K in SystemMsgKey]: 1 }) as SystemMsgKey[],
+);
 
 export interface ChatMessage {
   id: string;
@@ -199,7 +226,12 @@ export interface SaveSummary {
   compatible: boolean;
   /** HMAC 签名有效；false 时显示「非官方存档」 */
   verified: boolean;
+  /** 兼容性提示（仍可读档）：tablesHashMismatch = 存档的数据表与服务器当前数据不一致 */
+  warnings?: SaveWarning[];
 }
+
+/** 读档兼容性提示（design/net.md §8.3：只告警、仍允许读取） */
+export type SaveWarning = 'tablesHashMismatch' | 'needsMigration' | 'chatTailDropped';
 
 export interface ServerNotice {
   kind: 'shutdown' | 'maintenance' | 'info';

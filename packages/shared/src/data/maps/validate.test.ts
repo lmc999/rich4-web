@@ -59,6 +59,20 @@ interface Mutation {
 
 const MUTATIONS: Mutation[] = [
   {
+    name: '「第 n 个星期几」节日缺 weekday',
+    expect: 'E_HOLIDAY_FIELD',
+    mutate: (d) => {
+      d.holidays.push({ slot: 7, month: 5, day: 2, kind: 2, flagsRaw: 0 });
+    },
+  },
+  {
+    name: '公历节日带 weekday',
+    expect: 'E_HOLIDAY_FIELD',
+    mutate: (d) => {
+      d.holidays[0]!.weekday = 3;
+    },
+  },
+  {
     name: '重复格 id',
     expect: 'E_ID_DUP',
     mutate: (d) => {
@@ -468,6 +482,26 @@ describe('validateMap：企业远端前沿格（architecture §16.2）', () => {
     const r = validateMap(d);
     expect(r.ok).toBe(false);
     expect(r.issues.find((i) => i.code === 'E_LOT_FRONT_NOT_ADJ')?.tiles).toEqual([8]);
+  });
+});
+
+describe('validateMap：节日字段', () => {
+  it('kind 2 带合法 weekday 时通过；lunar 标记与 kind 不符、未知 kind 报 E_HOLIDAY_FIELD', () => {
+    const ok = buildTestMap();
+    ok.holidays.push({ slot: 7, month: 5, day: 2, kind: 2, weekday: 0, flagsRaw: 0 });
+    expect(codes(ok)).toEqual(['W_LINK_ONEWAY']);
+    const bad = buildTestMap();
+    bad.holidays.push({ slot: 8, month: 1, day: 1, kind: 1, flagsRaw: 0, lunar: false });
+    bad.holidays.push({ slot: 9, month: 1, day: 1, kind: 3, flagsRaw: 0 });
+    bad.holidays.push({ slot: 10, month: 5, day: 6, kind: 2, weekday: 7, flagsRaw: 0 });
+    const r = validateMap(bad);
+    expect(r.ok).toBe(false);
+    expect(r.issues.filter((i) => i.code === 'E_HOLIDAY_FIELD').map((i) => i.path)).toEqual([
+      'holidays[2].lunar',
+      'holidays[3].kind',
+      'holidays[4].weekday',
+      'holidays[4].day',
+    ]);
   });
 });
 

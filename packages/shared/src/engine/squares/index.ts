@@ -3,16 +3,20 @@
  * 只在停下时触发。梦游中：特殊格（落点码 1..16）全部跳过，地产只结算过路费（不能买、不能盖）。
  *
  * M1 实现：地产（住宅的买、盖、过路费）、公园、点券格 10/11/12、卡片格 13。
+ * M4 实现：设施与企业格（property 分派）、乐透 9、银行 14、百货公司 15。
  * 其余先做空处理，按里程碑补上（见各 TODO）。
  */
 import type { TileDef, TileKind } from '../../data/maps/types';
 import type { Ctx } from '../core/ctx';
 import type { FrameOf } from '../types/frames';
 import type { SeatIndex } from '../types/ids';
+import { bankSquare } from './bank';
 import { cardSquare } from './cardSquare';
+import { lotterySquare } from './lottery';
 import { parkSquare } from './park';
 import { pointsSquare } from './points';
 import { propertySquare } from './property';
+import { shopSquare } from './shop';
 
 export interface SquareContext {
   seat: SeatIndex;
@@ -39,15 +43,13 @@ export const SQUARE_HANDLERS = Object.freeze({
   penguin: noop,
   balloon: noop,
   xicong: noop,
-  // TODO(M4)：乐透（现金 ≥1000 且有未售号码 → LOTTERY 决策）
-  lottery: noop,
+  lottery: lotterySquare,
   points50: pointsSquare,
   points30: pointsSquare,
   points10: pointsSquare,
   card: cardSquare,
-  // TODO(M4)：银行（BANK(stop)：先 ATM 再柜台）、百货公司（SHOP）
-  bank: noop,
-  shop: noop,
+  bank: bankSquare,
+  shop: shopSquare,
   // TODO(M7)：魔法屋（抽条件 → MAGIC_CAST）
   magic: noop,
 } satisfies { readonly [K in TileKind]: SquareHandler });

@@ -1,0 +1,137 @@
+/* 聊天、表情、观战名单（design/client.md §5.6） */
+.chat {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: rgb(255 246 220 / 0.94);
+  box-shadow: var(--shadow-chunky);
+  overflow: hidden;
+}
+
+.list {
+  flex: 1 1 auto;
+  min-height: 60px;
+  margin: 0;
+  padding: var(--space-2);
+  list-style: none;
+  overflow-y: auto;
+  font-size: 14px;
+}
+
+.line {
+  display: flex;
+  gap: var(--space-2);
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.spec {
+  opacity: 0.8;
+}
+
+.who {
+  flex: none;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.text {
+  min-width: 0;
+}
+
+.system {
+  padding: 2px 0;
+  color: var(--c-ink-soft);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.tag {
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--c-purple);
+  color: var(--c-white);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.form {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-top: 2px solid var(--c-cream-deep);
+}
+
+.form :global(.input) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.emoteWrap {
+  position: relative;
+}
+
+.emoteGrid {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(4, 40px);
+  gap: 4px;
+  padding: var(--space-2);
+  border: var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--c-white);
+  box-shadow: var(--shadow-chunky);
+}
+
+.emoteBtn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.emoteBtn:hover {
+  background: var(--c-cream);
+}
+
+.specs {
+  padding: var(--space-3);
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--c-cream);
+  box-shadow: var(--shadow-chunky);
+}
+
+.specs h3 {
+  font-size: 17px;
+  margin-bottom: var(--space-2);
+}
+
+.specs ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.specs li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.empty {
+  margin: 0;
+  color: var(--c-ink-soft);
+  font-size: 13px;
+}

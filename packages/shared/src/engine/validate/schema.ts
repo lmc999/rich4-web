@@ -261,8 +261,9 @@ const u32 = z.int().min(0).max(0xffffffff);
 
 export const GameStateSchema = z.strictObject({
   v: z.int().min(1),
-  engine: z.string(),
-  dataRef: z.strictObject({ mapId: z.string(), mapHash: z.string(), tablesHash: z.string() }),
+  // 有界字符串：这些字段属于公开世界，随每个 view 下发；导入存档里超长的值会被放大（apps/server SaveService）
+  engine: z.string().max(32),
+  dataRef: z.strictObject({ mapId: z.string().max(64), mapHash: z.string().max(128), tablesHash: z.string().max(128) }),
   config: GameConfigSchema,
   status: z.enum(['playing', 'over']),
   result: ResultSchema.nullable(),
@@ -277,7 +278,7 @@ export const GameStateSchema = z.strictObject({
       z.strictObject({ t: z.literal('day') }),
     ]),
     marketOpen: z.boolean(),
-    holiday: z.string().nullable(),
+    holiday: z.string().max(32).nullable(),
   }),
   econ: z.strictObject({
     initialFund: z.int().min(1),

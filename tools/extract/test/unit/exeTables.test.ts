@@ -83,6 +83,15 @@ describe('exe 表：合成 PE 上的签名定位与解析', () => {
       lastSolar: '1999-02-04',
     });
     expect(t.lunar.maxDayMonth12).toBe(29);
+    // 逐日数据与按月归并（供引擎做农历换算对照）
+    expect(t.lunar.packed).toHaveLength(400);
+    expect(t.lunar.packed[0]).toBe((1997 << 16) | (12 << 8) | 3);
+    expect(t.lunar.months[0]).toEqual({ solarStart: '1998-01-01', year: 1997, month: 12, leap: false, days: 27 });
+    expect(t.lunar.months[1]).toEqual({ solarStart: '1998-01-28', year: 1998, month: 1, leap: false, days: 30 });
+    expect(t.lunar.months.reduce((s, m) => s + m.days, 0)).toBe(400);
+    // edition 为 unknown 时不跑第二阶段
+    expect(t.news).toBeNull();
+    expect(t.constants).toBeNull();
   });
 
   it('事实核对全部通过（农历「十二月三十一」按信息项报告）', () => {
@@ -123,7 +132,7 @@ describe('exe → MapDef 按图数据', () => {
     expect(() => stocksForMap(t, 1)).toThrow(/E_EXE_STOCKS/);
   });
 
-  it('holidaysForMap：停用项不输出，flagsRaw 打包 flags0 | 事件 << 8 | 星期 << 16', () => {
+  it('holidaysForMap：停用项不输出；kind 2 写 weekday；flagsRaw 打包 flags0 | 事件 << 8 | 星期 << 16', () => {
     const h = holidaysForMap(t, 0);
     expect(h.holidays).toHaveLength(23);
     expect(h.dropped).toEqual([{ slot: 12, reason: 'disabled' }]);
@@ -141,6 +150,9 @@ describe('exe → MapDef 按图数据', () => {
       lunar: false,
     });
     expect(h.holidays.find((x) => x.slot === 17)).toMatchObject({ lunar: true, bgm: true, flagsRaw: 0x0401 });
+    // kind 2（该月第 n 个星期几）写 weekday，其余不带
+    expect(h.holidays.find((x) => x.slot === 7)).toMatchObject({ kind: 2, day: 2, weekday: 0, flagsRaw: 0 });
+    expect(h.holidays.filter((x) => x.weekday !== undefined).map((x) => x.slot)).toEqual([7]);
     expect(SYNTH_HOLIDAYS).toHaveLength(24);
   });
 

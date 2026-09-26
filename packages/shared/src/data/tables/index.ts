@@ -1,13 +1,22 @@
 /**
  * 手录全局数据表的入口（architecture §2 data/tables）。
  * TABLES 的规范化 JSON 做 FNV-1a 64 得到 tablesHash（state.dataRef.tablesHash；读档时不符只告警）。
- * M4+ 追加 gods、facilities、companies、news、fate、magic、emotes 时同步加入 TABLES。
+ * M4 加入 facilities（设施与企业收费表）；M6+ 追加 gods、news、fate、magic、emotes 时同步加入 TABLES。
  */
 import { canonicalJson } from '../../util/canonicalJson';
 import { fnv1a64 } from '../../util/hash';
 import { CARDS } from './cards';
 import { CHARACTERS } from './characters';
 import { ECONOMY } from './economy';
+import {
+  AIRLINE_WHEEL,
+  FACILITY_CAPS,
+  HOTEL_WHEEL,
+  INDUSTRIES,
+  INSURANCE_WHEEL,
+  MALL_WHEEL,
+  VEHICLE_FEE_FACTOR,
+} from './facilities';
 import { ITEMS } from './items';
 import {
   INITIAL_FUND_TABLE,
@@ -24,6 +33,7 @@ import {
 export * from './cards';
 export * from './characters';
 export * from './economy';
+export * from './facilities';
 export * from './ids';
 export * from './items';
 export * from './setup';
@@ -33,6 +43,15 @@ export const TABLES = Object.freeze({
   items: ITEMS,
   characters: CHARACTERS,
   economy: ECONOMY,
+  facilities: Object.freeze({
+    caps: FACILITY_CAPS,
+    hotelWheel: HOTEL_WHEEL,
+    mallWheel: MALL_WHEEL,
+    airlineWheel: AIRLINE_WHEEL,
+    insuranceWheel: INSURANCE_WHEEL,
+    vehicleFeeFactor: VEHICLE_FEE_FACTOR,
+    industries: INDUSTRIES,
+  }),
   setup: Object.freeze({
     initialFund: INITIAL_FUND_TABLE,
     tenure: TENURE_TABLE,

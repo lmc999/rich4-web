@@ -34,16 +34,34 @@ export class AnimClock {
     return this.t;
   }
 
-  /** 推进真实毫秒 realDtMs；返回本次推进的时钟毫秒 */
+  /**
+   * 推进真实毫秒 realDtMs；返回本次推进的时钟毫秒。
+   * 帧回调彼此隔离：某个回调抛错（例如补间在写已销毁的 Pixi 对象）只注销它自己并报告，
+   * 其余回调与到期的 wait 照常执行，调用方（rAF 驱动）不会因此中断。
+   */
   advance(realDtMs: number): number {
     if (!(realDtMs > 0)) return 0;
     const dt = realDtMs * this._speed;
     this.t += dt;
-    // 帧回调在迭代副本上执行，允许回调内注销自己
-    for (const cb of [...this.frames]) cb(this.t, dt);
-    this.flushWaiters();
+    try {
+      // 帧回调在迭代副本上执行，允许回调内注销自己
+      for (const cb of [...this.frames]) {
+        if (!this.frames.has(cb)) continue;
+        try {
+          cb(this.t, dt);
+        } catch (err) {
+          this.frames.delete(cb);
+          this.onError(err);
+        }
+      }
+    } finally {
+      this.flushWaiters();
+    }
     return dt;
   }
+
+  /** 帧回调出错时的报告（测试可替换） */
+  onError: (err: unknown) => void = (err) => console.error('[AnimClock] frame callback failed', err);
 
   /** 每次 advance 调用一次；返回注销函数 */
   onFrame(cb: FrameCallback): () => void {

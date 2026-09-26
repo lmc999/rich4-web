@@ -98,6 +98,82 @@ export const ECONOMY = Object.freeze({
   /** 两段式计数器：0x80 = 待释放，低 7 位 = 天数 */
   COUNTER_PENDING: c(0x80, '减到 0 时写 0x80，下一回合释放', [X('0x41c84f'), R('docs/research/g_arbitration.md §3.2')]),
   COUNTER_MASK: c(0x7f, '重复入狱：(旧值 + 新天数) & 0x7f', [X('0x41c84f'), R('docs/research/g_arbitration.md §3.3')]),
+  // ───────────────────────── M4：银行、月结、乐透、股市、商店 ─────────────────────────
+  /** 贷款到期前 3/2/1 天提醒 */
+  LOAN_REMINDER_DAYS: c(3, '剩 3/2/1 天 emit LOAN_REMINDER；≤0 天按银行口径强制还款', [
+    X('0x41c86d'),
+    R('docs/design/engine.md §7.2'),
+  ]),
+  /** 每月 15 日分红与乐透开奖 */
+  DIVIDEND_DAY: c(15, '15 日：逐公司分红，然后乐透开奖', [R('docs/research/r_stocks_time.md §1.4'), X('0x41cf67')]),
+  /** 乐透：有人持号 > 10 个时只在已售号码里开 */
+  LOTTERY_SOLD_ONLY_THRESHOLD: c(10, '任一人持号 > 10 个 → 只在已售号码里开奖（必有人中）', [
+    R('docs/research/r_squares_events.md §4'),
+  ]),
+  /** 悲情人物：倒楣天数 × PI × 2500 */
+  TRAGIC_DAY_FACTOR: c(2500, '分数 = 意外损失 − 意外之财 + 倒楣天数×PI×2500 + 霉运×10', [
+    R('docs/research/r_rules_map.md §7'),
+    R('docs/research/r_stocks_time.md §1.5'),
+  ]),
+  TRAGIC_BAD_LUCK: c(10, '悲情人物分数里霉运值的系数', [R('docs/research/r_rules_map.md §7')], 'medium'),
+  /** 悲情人物须领先次高分 40%：best × 10 > second × 14 */
+  TRAGIC_RATIO_X10: c(14, '最高分超过次高分的 1.4 倍才颁发', [R('docs/research/r_rules_map.md §7')], 'medium'),
+  /** 住旅馆的「本月意外损失」= 2000 × 天数 × PI；保险理赔同额 */
+  CONFINE_LOSS_PER_DAY: c(2000, '住旅馆记意外损失 2000×天数×PI；投保者被关押时理赔 2000×天数×PI', [
+    R('docs/research/r_property.md §6.2'),
+    R('docs/research/g_map.md §4.3'),
+  ]),
+  /** 股价下限 / 上限（分）：1 元 .. 9999 元 */
+  STOCK_PRICE_MIN_CENTS: c(100, '股价下限 1 元', [R('docs/research/r_stocks_time.md §4.1')]),
+  STOCK_PRICE_MAX_CENTS: c(999900, '股价上限 9999 元', [R('docs/research/r_stocks_time.md §4.1')]),
+  /** 单日涨跌幅上限（百分比） */
+  STOCK_LIMIT_PCT: c(10, '±10%；涨停不能买、跌停不能卖', [X('0x41200000'), R('docs/research/r_stocks_time.md §4.1')]),
+  /** 走势图保留的开市日数 */
+  STOCK_HISTORY_DAYS: c(144, '「半年内股价走势线图」', [R('docs/research/r_stocks_time.md §4.1')]),
+  /** 行情：G = (rand − 16384) / 4097；shock = (rand − 16384) / 1171 */
+  MARKET_RAND_MID: c(16384, 'rand15 的中点', [X('0x4291d6'), R('docs/research/r_stocks_time.md §4.4')], 'medium'),
+  MARKET_G_DIV: c(
+    4097,
+    '全市场冲击的除数（约 ±4）',
+    [X('0x4291d6'), R('docs/research/r_stocks_time.md §4.4')],
+    'medium',
+  ),
+  MARKET_SHOCK_DIV: c(
+    1171,
+    '个股冲击的除数（约 ±14）',
+    [X('0x4291d6'), R('docs/research/r_stocks_time.md §4.4')],
+    'medium',
+  ),
+  /** 均值回归（×100）：有公司 3.0 / 0.85 × 资产额/10000；无公司 8.0 / 0.5 × 初始价 */
+  MARKET_COMPANY_UP_X100: c(300, '有公司：价格 > 3.0 × 锚价时涨幅减半、跌幅加倍', [
+    R('docs/research/r_stocks_time.md §4.4'),
+  ]),
+  MARKET_COMPANY_LO_X100: c(85, '有公司：价格 < 0.85 × 锚价时反之', [R('docs/research/r_stocks_time.md §4.4')]),
+  MARKET_PLAIN_UP_X100: c(800, '无公司：价格 > 8.0 × 初始价', [R('docs/research/r_stocks_time.md §4.4')]),
+  MARKET_PLAIN_LO_X100: c(50, '无公司：价格 < 0.5 × 初始价', [R('docs/research/r_stocks_time.md §4.4')]),
+  /** 股价档位：新价（元）< 5 → 0.01，< 15 → 0.05，< 50 → 0.1，< 150 → 0.5，其余 1 元 */
+  STOCK_TICK_BREAK_1: c(500, '档位分界 5 元（分）', [R('docs/research/r_stocks_time.md §4.1')], 'medium'),
+  STOCK_TICK_BREAK_2: c(1500, '档位分界 15 元（分）', [R('docs/research/r_stocks_time.md §4.1')], 'medium'),
+  STOCK_TICK_BREAK_3: c(5000, '档位分界 50 元（分）', [R('docs/research/r_stocks_time.md §4.1')], 'medium'),
+  STOCK_TICK_BREAK_4: c(15000, '档位分界 150 元（分）', [R('docs/research/r_stocks_time.md §4.1')], 'medium'),
+  /** 现场认购：每次造访最多 1000 股；单价 = trunc(资产额 / 10000) */
+  SUBSCRIBE_MAX_SHARES: c(1000, '每次造访合计最多认购 1000 股', [R('docs/research/r_stocks_time.md §4.3')], 'medium'),
+  SUBSCRIBE_UNIT_DIV: c(10000, '认购价 = 资产额 ÷ 10000', [R('docs/research/g_map.md §2.6')]),
+  /** 百货货架：rand15() % 10 + 6 张 */
+  SHOP_SHELF_BASE: c(6, '货架张数下限', [R('docs/research/r_cards.md §4')]),
+  SHOP_SHELF_RANGE: c(10, '货架张数 rand%10', [R('docs/research/r_cards.md §4')]),
+  /** 研究所：研发一律 5 天，不收费 */
+  RESEARCH_DAYS: c(5, '研发 5 天，只在业主自己的回合倒数', [R('docs/research/r_property.md §6.2')]),
+  /** 加油站：500 × k × 步数 × PI */
+  GAS_PER_STEP: c(500, '加油站每步 500×k×PI（k：机车 1、汽车 2、工程车 4）', [
+    X('0x41a4db'),
+    R('docs/research/g_map.md §4.2'),
+  ]),
+  /** 建设公司找不到可加盖的目标时收 1000 × PI */
+  CONSTRUCTION_NO_TARGET_FEE: c(1000, '建设公司找不到目标时收 1000×PI', [
+    X('0x41adff'),
+    R('docs/research/g_map.md §4.3'),
+  ]),
   /** 电脑买地保留额：min(trunc(开局资金 × 5%), 7000) × PI */
   AI_BUY_RESERVE_PCT: c(5, '电脑买地时现金+存款−价格须大于保留额', [
     X('0x41d7d4'),

@@ -8,7 +8,8 @@
  * - 福神（小、大）附身：PROGRAM = 照付全价，成功后额外送 1 级；MANUAL = 大福神买地免费、小福神半价，不送级。
  */
 import { ECON } from '../../data/tables/economy';
-import { GOD, type GodKind } from '../../data/tables/ids';
+import { FACILITY_CAPS } from '../../data/tables/facilities';
+import { type FacilityType, GOD, type GodKind } from '../../data/tables/ids';
 import { add32, divTrunc, mul32 } from '../../util/int32';
 import type { EngineMap } from '../core/mapCache';
 import type { LotLevel, SeatIndex } from '../types/ids';
@@ -61,12 +62,12 @@ export function landUpgradeCost(w: RuleWorld, em: EngineMap, landIdx: number): n
   return mul32(em.lands[landIdx]!.housePrice, w.econ.priceIndex, modeOf(w));
 }
 
-/** 无主设施的标价：(地价 + 等级 × rate0) × PI */
-export function facilityBuyPrice(w: RuleWorld, em: EngineMap, facIdx: number): number {
-  const mode = modeOf(w);
-  const f = w.facilities[facIdx]!;
-  const def = em.facilities[facIdx]!;
-  return mul32(add32(f.landPrice, mul32(def.rateWindow[0], f.level, mode), mode), w.econ.priceIndex, mode);
+/**
+ * 无主设施的标价：设施地价(+0x22) × PI，与等级无关（exe 0x41a86b-0x41a89d 不读等级；g_map §4.2、r_property §6.1）。
+ * 住宅不同：无主住宅连旧房子一起买，价含 等级 × 房价（landBuyPrice）。
+ */
+export function facilityBuyPrice(w: RuleWorld, _em: EngineMap, facIdx: number): number {
+  return mul32(w.facilities[facIdx]!.landPrice, w.econ.priceIndex, modeOf(w));
 }
 
 /** 设施加盖一层：rate0 × PI */
@@ -101,4 +102,59 @@ export function canUpgradeLand(w: RuleWorld, em: EngineMap, seat: SeatIndex, lan
 export function upgradedLevel(from: LotLevel, bonus: 0 | 1): LotLevel {
   const to = from + 1 + bonus;
   return (to > MAX_LEVEL ? MAX_LEVEL : to) as LotLevel;
+}
+
+// ───────────────────────── 设施（大块地，docs/research/g_map.md §4.2、r_property.md §6.1） ─────────────────────────
+
+/** 设施等级上限：公园 1、旅馆 5、购物中心 5、加油站 1、研究所 5 */
+export function facilityCap(type: FacilityType): number {
+  return FACILITY_CAPS[type];
+}
+
+/** 买无主设施：地价 × PI（不含等级；MANUAL 下福神修正同买地）；只用现金 */
+export function canBuyFacility(w: RuleWorld, em: EngineMap, seat: SeatIndex, facIdx: number): InvestCheck {
+  const p = playerOf(w.players, seat);
+  const price = fortunePrice(w, p, facilityBuyPrice(w, em, facIdx));
+  if (p.st.sleepwalk !== 0) return { ok: false, reason: 'sleepwalk', price, god: null };
+  const god = buyBlockingGod(p);
+  if (god !== null) return { ok: false, reason: 'investBlocked', price, god };
+  if (price > p.cash) return { ok: false, reason: 'notEnoughCash', price, god: null };
+  return { ok: true, price };
+}
+
+/** 首建（0 → 1 级，选类型）：再付一次 地价 × PI */
+export function facilityBuildCost(w: RuleWorld, facIdx: number): number {
+  return mul32(w.facilities[facIdx]!.landPrice, w.econ.priceIndex, modeOf(w));
+}
+
+export function canBuildFacility(w: RuleWorld, seat: SeatIndex, facIdx: number): InvestCheck {
+  const p = playerOf(w.players, seat);
+  const f = w.facilities[facIdx]!;
+  const price = facilityBuildCost(w, facIdx);
+  if (f.level !== 0) return { ok: false, reason: 'maxLevel', price, god: null };
+  if (p.st.sleepwalk !== 0) return { ok: false, reason: 'sleepwalk', price, god: null };
+  const god = investBlockingGod(p);
+  if (god !== null) return { ok: false, reason: 'investBlocked', price, god };
+  if (price > p.cash) return { ok: false, reason: 'notEnoughCash', price, god: null };
+  return { ok: true, price };
+}
+
+/** 设施加盖一层：rate0 × PI；0 级（需首建）或已到该类型上限时不能盖 */
+export function canUpgradeFacility(w: RuleWorld, em: EngineMap, seat: SeatIndex, facIdx: number): InvestCheck {
+  const p = playerOf(w.players, seat);
+  const f = w.facilities[facIdx]!;
+  const price = facilityUpgradeCost(w, em, facIdx);
+  if (f.level === 0 || f.level >= facilityCap(f.type)) return { ok: false, reason: 'maxLevel', price, god: null };
+  if (p.st.sleepwalk !== 0) return { ok: false, reason: 'sleepwalk', price, god: null };
+  const god = investBlockingGod(p);
+  if (god !== null) return { ok: false, reason: 'investBlocked', price, god };
+  if (price > p.cash) return { ok: false, reason: 'notEnoughCash', price, god: null };
+  return { ok: true, price };
+}
+
+/** 设施升 n 级后的等级（按类型封顶） */
+export function facilityLevelAfter(from: LotLevel, n: number, type: FacilityType): LotLevel {
+  const cap = facilityCap(type);
+  const to = from + n;
+  return (to > cap ? Math.max(cap, from) : to) as LotLevel;
 }

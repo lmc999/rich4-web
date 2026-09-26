@@ -280,7 +280,11 @@ export interface GameEventPayloads {
   ALLIANCE_FORMED: { a: SeatIndex; b: SeatIndex; days: number };
   ALLIANCE_BROKEN: { a: SeatIndex; b: SeatIndex; reason: 'hostility' | 'newAlliance' | 'bankrupt' };
   ALLIANCE_EXPIRED: { a: SeatIndex; b: SeatIndex };
-  BANK_REJECTED: { seat: SeatIndex; days: number };
+  /**
+   * 银行不受理：reason='rejected' 为拒绝往来（days = 剩余天数，含今天）；
+   * reason='sunday' 为 sundayBankClosed（MANUAL）下星期日休息（days=0），ATM 与柜台都只弹提示
+   */
+  BANK_REJECTED: { seat: SeatIndex; days: number; reason: 'rejected' | 'sunday' };
   // event
   NEWS: { id: NewsId; params: EventParams; affected: SeatIndex[] };
   FATE: { seat: SeatIndex; id: FateId; amount: number | null; blessing: BlessingResult | null };

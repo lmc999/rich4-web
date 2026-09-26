@@ -75,8 +75,15 @@ export default defineConfig({
             { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 30 },
             { name: 'pixi', test: /node_modules[\\/](pixi\.js|@pixi)[\\/]/, priority: 20 },
             { name: 'i18n', test: /node_modules[\\/](i18next|react-i18next)[\\/]/, priority: 10 },
-            // 棋盘渲染与程序化美术（纯 Pixi），只由懒加载的页面引用
-            { name: 'game', test: /apps[\\/]client[\\/]src[\\/]game[\\/]/, priority: 5 },
+            // 棋盘渲染与程序化美术（纯 Pixi），只由懒加载的页面引用。
+            // 不递归收依赖：否则首屏与 game/ 共用的 shared 模块（以及不含 Pixi 的 game/anim）会被并进 game chunk，
+            // 首屏因此静态依赖 game 与 pixi；game/anim（AnimClock 等纯逻辑）留在首屏
+            {
+              name: 'game',
+              test: /apps[\\/]client[\\/]src[\\/]game[\\/](?!anim[\\/])/,
+              priority: 5,
+              includeDependenciesRecursively: false,
+            },
           ],
         },
       },

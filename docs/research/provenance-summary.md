@@ -76,8 +76,8 @@
 | 地形 | g:1122 w:1016 s:247 p:0 m:0 |
 | override 条数 | 4 |
 | strict4 | 已启用 |
-| MapDef dataHash | `c8ea4388f9b9c39ad1dc23950c8fcbfff4b426351fffd46a9863766f86b9eca0` |
-| taiwan.map.json sha256 | `a5d7584a6bd4746f94b82d7fb29584f3fa67180cd8252845be8e31910ea15eee` |
+| MapDef dataHash | `3c2f31eb596b101b2989768ffbec27d11ecf82c9fe3c248b48041336ef41a551` |
+| taiwan.map.json sha256 | `14ef91e8429d48da04d317be63e9cb01131aa6a6c72511fd6bab9146302a6c10` |
 
 ## 5. validateMap 结果
 
@@ -98,6 +98,5 @@ ok = true（error 以外的分类见下表；分类规则见 `tools/extract/src/
 
 ## 6. 未决项
 
-- MapDef 的 HolidayDef 没有星期字段：kind 2（该月第 n 个星期几）的星期暂放在 flagsRaw 的 16..23 位（flagsRaw = flags0 | 事件位 << 8 | 星期 << 16），建议 shared 契约增加 weekday。
 - 格点为拟合模式（T=48），与「32 单位一格」的假设不符，请对照原版截图人工审阅 `.cache/extract/preview/taiwan.svg`。
 - 几何决定记录在 `tools/extract/maps/taiwan.overrides.json`；岛屿朝向（transform）尚未与原版截图核对。
