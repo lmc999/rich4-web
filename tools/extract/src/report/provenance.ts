@@ -1,5 +1,7 @@
+import type { CompanyStockCheck } from '../exe/mapData';
 import type { FingerprintReport } from '../fingerprint/identify';
 import type { BuildResult, IssueClass } from '../map/build';
+import type { RulesReport } from '../verify/rulesAgainstExe';
 import type { SampleResult } from '../verify/samples';
 import { ICON } from './table';
 
@@ -7,6 +9,22 @@ import { ICON } from './table';
  * docs/research/provenance-summary.md（入库，data-pipeline.md §10.2）：
  * 只写输入指纹、样本 ✅/❌、几何统计与未决项；不含整图数据、原始字节、时间戳，重复生成字节一致。
  */
+
+/** 按地图数据（股票、节日）来自哪个 exe（architecture §16.5） */
+export interface ExeDataInfo {
+  edition: string;
+  exeFile: string;
+  exeSha256: string;
+  stocksVa: string;
+  holidaysVa: string;
+  stocks: number;
+  holidays: number;
+  /** 停用（bit7）而不输出的节日槽 */
+  dropped: number[];
+  empty: number;
+  /** 另一版本 exe 中该图数据是否一致 */
+  crossEdition: 'same' | 'diff' | 'n/a';
+}
 
 export interface ProvenanceInput {
   mapKey: string;
@@ -18,6 +36,9 @@ export interface ProvenanceInput {
   build: BuildResult;
   mapFileSha256: string;
   strict4: boolean;
+  exeData?: ExeDataInfo | null;
+  rules?: RulesReport | null;
+  companyStocks?: readonly CompanyStockCheck[];
 }
 
 const code = (s: string | number) => `\`${s}\``;
@@ -26,8 +47,7 @@ const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 
 const CLASS_LABEL: Record<IssueClass, string> = {
   error: '错误',
-  pending: '待 D2 数据',
-  contract: '契约缺口',
+  pending: '待 exe 数据',
   warn: '警告',
 };
 
@@ -81,7 +101,53 @@ export function renderProvenance(p: ProvenanceInput): string {
   } else L.push('（未运行）');
   L.push('');
 
-  L.push('## 3. 几何归一化统计（data-pipeline.md §8）');
+  L.push('## 3. exe 表：本图股票、节日与规则表核对（D2）');
+  L.push('');
+  const x = p.exeData ?? null;
+  if (x) {
+    L.push(
+      `股票与节日取自 ${code(x.exeFile)}（${x.edition}，sha256 ${code(x.exeSha256)}）：股票模板表 ${code(x.stocksVa)} 的本图 ${x.stocks} 支、` +
+        `节日表 ${code(x.holidaysVa)} 的本图 ${x.holidays} 条` +
+        (x.dropped.length > 0 ? `（停用槽 ${x.dropped.join('、')} 原版查找时跳过，不输出）` : '') +
+        (x.empty > 0 ? `，空槽 ${x.empty}` : '') +
+        `。另一版本 exe 中本图数据：${x.crossEdition === 'same' ? '一致' : x.crossEdition === 'diff' ? '**不一致**' : '未比较'}。`,
+    );
+    const cs = p.companyStocks ?? [];
+    if (cs.length > 0) {
+      L.push('');
+      L.push(
+        `企业 ↔ 股票（企业 +0x19 行号）：${cs.map((c) => `${c.ok ? ICON.pass : ICON.fail} ${c.detail}`).join('；')}。`,
+      );
+    }
+  } else {
+    L.push('（没有 exe 表：stocks/holidays 为空，见 §6 未决项）');
+  }
+  L.push('');
+  const rules = p.rules ?? null;
+  if (rules) {
+    L.push('规则表「手录值 / v2.06 / v3.11 / 结论」矩阵（`npm run extract -- verify --tables`）：');
+    L.push('');
+    L.push(row(['表', '核对项', '手录', 'v2.06 与 v3.11', '结论']));
+    L.push(row(['---', '---:', ':---:', '---', '---']));
+    for (const v of rules.verdicts) {
+      L.push(
+        row([
+          code(v.table),
+          v.items,
+          v.manual === 'ok' ? ICON.pass : v.manual === 'mismatch' ? ICON.fail : '（缺）',
+          v.editions === 'same' ? '相同' : v.editions === 'diff' ? '不同' : '单版本',
+          v.conclusion,
+        ]),
+      );
+    }
+    const badRefs = rules.verifyRefs.filter((r) => !r.ok).length;
+    L.push('');
+    L.push(`手录表 ${code('@verify')} 引用 ${rules.verifyRefs.length} 条，无法解析 ${badRefs} 条。`);
+    for (const c of rules.checklist) L.push(`- 待对照：${c}`);
+  }
+  L.push('');
+
+  L.push('## 4. 几何归一化统计（data-pipeline.md §8）');
   L.push('');
   L.push(row(['项目', '值']));
   L.push(row(['---', '---']));
@@ -126,7 +192,7 @@ export function renderProvenance(p: ProvenanceInput): string {
   for (const [k, v] of items) L.push(row([k, v]));
   L.push('');
 
-  L.push('## 4. validateMap 结果');
+  L.push('## 5. validateMap 结果');
   L.push('');
   const counts = new Map<string, number>();
   for (const i of build.classified)
@@ -151,18 +217,18 @@ export function renderProvenance(p: ProvenanceInput): string {
   }
   L.push('');
 
-  L.push('## 5. 未决项');
+  L.push('## 6. 未决项');
   L.push('');
   const pending = build.semantic.pending;
   const open: string[] = [];
   if (pending.length > 0) {
     open.push(
-      `本图的 ${pending.join('、')} 需要从 exe 表抽取（D2），目前为空数组；因此企业的 stockIndex 在 validateMap 中悬空（分类「待 D2 数据」）。`,
+      `本图的 ${pending.join('、')} 需要从 exe 表抽取（先运行 exe tables 或提供 original/ 下的 RICH4.EXE），目前为空数组；因此企业的 stockIndex 在 validateMap 中悬空（分类「待 exe 数据」）。`,
     );
   }
-  if (build.classified.some((i) => i.class === 'contract')) {
+  if (build.def.holidays.some((h) => h.kind === 2)) {
     open.push(
-      '同一企业的多个落点格相距过远（大宇百貨的两个百貨公司格分处南北），MapDef 只有一个矩形，无法同时与两格相邻：需要 shared 的契约或 validateMap 放宽（分类「契约缺口」）。',
+      'MapDef 的 HolidayDef 没有星期字段：kind 2（该月第 n 个星期几）的星期暂放在 flagsRaw 的 16..23 位（flagsRaw = flags0 | 事件位 << 8 | 星期 << 16），建议 shared 契约增加 weekday。',
     );
   }
   if (lat.mode === 'fitted') {

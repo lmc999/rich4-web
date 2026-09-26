@@ -4,7 +4,6 @@ import {
   DataError,
   type FacilityLot,
   type HolidayDef,
-  isAdjacentToRect,
   type LandLot,
   type LandmarkDef,
   type MapDef,
@@ -37,7 +36,7 @@ export const GENERATOR = 'rich4-extract/map-build@1';
 export interface BuildOptions {
   mapKey: string;
   strict4?: boolean;
-  /** 本期不抽 exe 表：缺省为空数组（D2 起由 exe 表提供；nameKey 由这里按 map.<id>.stock.<index> 生成） */
+  /** 本图 12 支股票（D2 起由 exe 股票模板表提供，见 exe/mapData.ts；nameKey 由这里按 map.<id>.stock.<index> 生成） */
   stocks?: readonly { stock: Omit<StockDef, 'nameKey'>; name: string }[];
   holidays?: HolidayDef[];
 }
@@ -45,11 +44,10 @@ export interface BuildOptions {
 /**
  * issue 分类：
  * - error：必须处理；
- * - pending：等待后续里程碑填充的数据引起（本期 stocks 为空 → 企业的 stockIndex 悬空）；
- * - contract：MapDef 契约无法表达的原版结构（同一企业的多个落点格相距过远，无法都与一个矩形相邻）；
- * - warn：validateMap 的警告。
+ * - pending：等待 exe 表数据引起（没有 exe 表时 stocks 为空 → 企业的 stockIndex 悬空）；
+ * - warn：validateMap 的警告（含 architecture §16.2 的 W_COMPANY_REMOTE_FRONT：企业远端的银行/百货格）。
  */
-export type IssueClass = 'error' | 'pending' | 'contract' | 'warn';
+export type IssueClass = 'error' | 'pending' | 'warn';
 
 export interface ClassifiedIssue extends MapIssue {
   class: IssueClass;
@@ -75,29 +73,13 @@ export function classifyIssues(
   issues: readonly MapIssue[],
   pending: readonly string[],
 ): ClassifiedIssue[] {
-  const tileById = new Map(def.tiles.map((t) => [t.id, t]));
   return issues.map((i): ClassifiedIssue => {
-    let cls: IssueClass = i.severity === 'error' ? 'error' : 'warn';
-    const com = /^companies\[(\d+)\]\.(stockIndex|frontTiles\[\d+\])$/.exec(i.path);
-    const company = com ? def.companies[Number(com[1])] : undefined;
-    if (
+    const pendingStock =
       i.code === 'E_TILE_REF_MISMATCH' &&
-      com?.[2] === 'stockIndex' &&
+      /^companies\[\d+\]\.stockIndex$/.test(i.path) &&
       def.stocks.length === 0 &&
-      pending.includes('stocks')
-    ) {
-      cls = 'pending';
-    } else if (i.code === 'E_LOT_FRONT_NOT_ADJ' && company && com?.[2]?.startsWith('frontTiles')) {
-      // 银行/百货格（落点码 14/15）远离本企业建筑，而同企业至少有一个前沿格与建筑相邻
-      const id = i.tiles?.[0];
-      const t = id === undefined ? undefined : tileById.get(id);
-      const anyAdj = company.frontTiles.some((f) => {
-        const c = tileById.get(f)?.cell;
-        return c !== undefined && isAdjacentToRect(c, company.rect);
-      });
-      if (t && anyAdj && (t.landingCode === 14 || t.landingCode === 15)) cls = 'contract';
-    }
-    return { ...i, class: cls };
+      pending.includes('stocks');
+    return { ...i, class: pendingStock ? 'pending' : i.severity === 'error' ? 'error' : 'warn' };
   });
 }
 

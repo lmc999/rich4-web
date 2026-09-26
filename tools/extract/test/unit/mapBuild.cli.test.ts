@@ -6,6 +6,7 @@ import { parseMapDef, validateMap, verifyMapDataHash } from '@rich4/shared/data'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { main } from '../../src/cli';
 import { ExitCode, realpathLoose } from '../../src/context';
+import { buildSynthExe } from '../helpers/buildExe';
 import { buildMapResource, type MapSpec } from '../helpers/buildMapResource';
 import { buildMkf } from '../helpers/buildMkf';
 import { laidOutTaiwanLike } from '../helpers/syntheticMap';
@@ -80,7 +81,8 @@ describe('CLI map build / pack（合成台湾样式地图）', () => {
     ]);
     expect(def.tiles.flatMap((t) => t.links).filter((l) => l.blocked)).toHaveLength(2);
     const prov = readFileSync(files[4]!, 'utf8');
-    expect(prov).toContain('## 3. 几何归一化统计');
+    expect(prov).toContain('几何归一化统计');
+    expect(prov).toContain('没有 exe 表');
     expect(prov).not.toMatch(/"hex"/);
     expect(readFileSync(files[3]!, 'utf8')).toMatch(/^<svg /);
 
@@ -109,6 +111,33 @@ describe('CLI map build / pack（合成台湾样式地图）', () => {
       pending: ['stocks', 'holidays'],
       validation: { ok: false, issues: { pending: 3 } },
     });
+  });
+
+  it('有 exe 时股票与节日来自 exe 表：pending 清空、validateMap ok、两版一致', async () => {
+    writeOriginal(laidOutTaiwanLike());
+    const put = (rel: string, bytes: Uint8Array) => {
+      mkdirSync(path.dirname(at('original', rel)), { recursive: true });
+      writeFileSync(at('original', rel), bytes);
+    };
+    put('Game/RICH4.EXE', buildSynthExe({ maps: 1, dataShift: 0x40 }).bytes);
+    put('MultiverseJourney/RICH4.EXE', buildSynthExe({ maps: 2 }).bytes);
+    const ov = writeOverrides();
+    expect(await run('map', 'build', '--map', 'taiwan', '--overrides', ov, '--strict4')).toBe(ExitCode.OK);
+    const def = parseMapDef(JSON.parse(readFileSync(at('.cache', 'extract', 'maps', 'taiwan.map.json'), 'utf8')));
+    expect(def.stocks).toHaveLength(12);
+    expect(def.strings['zh-TW'][def.stocks[3]!.nameKey]).toBe('台積電');
+    expect(def.strings['zh-CN'][def.stocks[3]!.nameKey]).toBe('台积电');
+    expect(def.holidays).toHaveLength(23);
+    const v = validateMap(def, { strict4: true });
+    expect(v.issues.filter((i) => i.severity === 'error')).toEqual([]);
+    const text = out.join('\n');
+    expect(text).toContain('股票 12 支、节日 23 条（停用槽 12 不输出）；两版该图数据一致');
+    const prov = readFileSync(at('docs', 'research', 'provenance-summary.md'), 'utf8');
+    expect(prov).toContain('## 3. exe 表');
+    expect(prov).toContain('待对照');
+    expect(await run('pack', '--out', 'rich4-data')).toBe(ExitCode.OK);
+    const manifest = JSON.parse(readFileSync(at('rich4-data', 'manifest.json'), 'utf8'));
+    expect(manifest.maps[0]).toMatchObject({ pending: [], validation: { ok: true } });
   });
 
   it('默认（真实）overrides 的 expectResourceSha256 与合成数据不符 → exit 5', async () => {

@@ -1,0 +1,15 @@
+{
+  "smallWealth": { "name": "小财神" },
+  "bigWealth": { "name": "大财神" },
+  "smallFortune": { "name": "小福神" },
+  "bigFortune": { "name": "大福神" },
+  "smallPoor": { "name": "小穷神" },
+  "bigPoor": { "name": "大穷神" },
+  "smallMisfortune": { "name": "小衰神" },
+  "bigMisfortune": { "name": "大衰神" },
+  "angel": { "name": "天使" },
+  "devil": { "name": "恶魔" },
+  "dog": { "name": "恶犬" },
+  "earthGod": { "name": "土地公" },
+  "death": { "name": "死神" }
+}

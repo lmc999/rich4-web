@@ -806,7 +806,7 @@ sequenceDiagram
   - 文本先 NFC 规范化，去掉控制字符和零宽字符，截断到 200 字，再过一遍可配置的敏感词表（`DATA_DIR/badwords.txt`，替换成 `*`）。
   - 玩家消息发往 `r:<code>`。观战者消息按 `spectatorChat` 设置处理：`all` 时发全体；`spectators` 时只发 `r:<code>:spec`，并标记 `audience:'spectators'`；`off` 时返回 `CHAT_DISABLED`。
   - 最近 100 条保存在 ChatLog，加入或恢复时通过 `chat:history` 下发，并随房间快照一起持久化。
-  - 系统消息用 `{key, params}` 形式，比如 `player_joined`、`autopilot_on`、`host_changed`、`game_saved`、`reconnected`，由前端做本地化。
+  - 系统消息用 `{key, params}` 形式，比如 `playerJoined`、`autopilotOn`、`hostChanged`、`gameSaved`、`reconnected`（全局 camelCase 约定，完整取值见 `shared/net/protocol.ts` 的 `SystemMsgKey`），由前端做本地化。
 - **表情**：`emoteId` 必须在 shared 的 `EMOTES` 数据表里（可以配角色语音），冷却 1.5 秒，广播到全体。可选 `targetSeat`，让表情气泡飞向某个角色。前端可以屏蔽某个人。
 - **观战**：
   - 观战者收到 `room:state`、公开投影的 `game:snapshot` 和 `game:batch`、`chat:*`，只能发 chat、emote 和 `time:ping`。

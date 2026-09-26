@@ -530,14 +530,15 @@ export type MapIssueCode =
   | 'E_RECT_INVALID' | 'E_OUT_OF_BOUNDS' | 'E_OVERLAP' | 'E_LOT_FRONT_NOT_ADJ' | 'E_LOT_NO_FRONT'
   | 'E_TILE_REF_MISMATCH' | 'E_STREET_NAME' | 'E_RENT_SHAPE' | 'E_PRICE_RANGE' | 'E_UNREACHABLE'
   | 'E_HOLD_MISSING' | 'E_TERRAIN_SHAPE' | 'E_COUNT_MISMATCH' | 'E_VIA_BROKEN'
-  | 'W_DIAGONAL_LINK' | 'W_VIA_LONG' | 'W_RENT_NONMONO' | 'W_DEADEND' | 'W_NAME_EMPTY' | 'W_LINK_ONEWAY';
+  | 'W_DIAGONAL_LINK' | 'W_VIA_LONG' | 'W_RENT_NONMONO' | 'W_DEADEND' | 'W_NAME_EMPTY' | 'W_LINK_ONEWAY'
+  | 'W_COMPANY_REMOTE_FRONT';   // architecture §16.2；以 validate.ts 的 MAP_ISSUE_CODES 为准
 export interface MapIssue { code: MapIssueCode; severity: 'error' | 'warn'; path: string; msg: string; tiles?: number[]; cells?: Cell[] }
 export function validateMap(map: MapDef, opts?: { strict4?: boolean; expect?: Partial<MapCounts> }): { ok: boolean; issues: MapIssue[] };
 ```
 检查项：
 - 编号唯一；links 的目标存在，且除标注 oneWay 的外都是对称的；同一格没有重复槽号；blocked 的槽确实是一条边。
 - 格子、地块、地标、连接格两两不重叠，都在边界内，矩形尺寸为正。
-- 每块地块至少有一个前沿格，且与每个前沿格 4-相邻；`tile.ref` 与地块反向一致。
+- 每块地块至少有一个前沿格，且与每个前沿格 4-相邻；`tile.ref` 与地块反向一致。例外（architecture §16.2）：企业只要有一个前沿格与建筑相邻，落点码 14/15（银行格、百货格）的远端前沿格只报 `W_COMPANY_REMOTE_FRONT`（warn）。
 - 同一街道内名称相同；rent 有 6 项且都 ≥ 0（不单调只报 warn）；设施的 rateWindow 有 6 项。
 - 所有可走格在无向图上连通；有死路时报 warn（原版遇死路会原路返回）。
 - 关押格存在；terrain 是 h 行、每行 w 字符；计数与 `expect` 一致。

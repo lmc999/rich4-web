@@ -38,7 +38,26 @@
 | 中國信託 industry/stockIndex | {"industry":7,"stockIndex":0} | ✅ | ✅ | ✅ |
 | 住宅 rent[0] = 地价×20%（启发式） | 全部满足 | ⚠️ | ⚠️ | ⚠️ |
 
-## 3. 几何归一化统计（data-pipeline.md §8）
+## 3. exe 表：本图股票、节日与规则表核对（D2）
+
+股票与节日取自 `Game/rich4.exe`（v206，sha256 `110b29f9d2fadcff3836eb69ec380aa264951859c90955da6e11158d2f956a13`）：股票模板表 `0x47ce92` 的本图 12 支、节日表 `0x47d6aa` 的本图 23 条（停用槽 12 原版查找时跳过，不输出）。另一版本 exe 中本图数据：一致。
+
+企业 ↔ 股票（企业 +0x19 行号）：✅ 「臺灣人壽」→ 股票 1「臺灣人壽」hasCompany=true；✅ 「大宇百貨」→ 股票 2「大宇百貨」hasCompany=true；✅ 「中國信託」→ 股票 0「中國信託」hasCompany=true；✅ hasCompany 的股票 3 支，企业 3 家。
+
+规则表「手录值 / v2.06 / v3.11 / 结论」矩阵（`npm run extract -- verify --tables`）：
+
+| 表 | 核对项 | 手录 | v2.06 与 v3.11 | 结论 |
+| --- | ---: | :---: | --- | --- |
+| `cards` | 120 | ✅ | 相同 | 手录值与 exe 一致（90 项） |
+| `items` | 39 | ✅ | 相同 | 手录值与 exe 一致（26 项） |
+| `characters` | 84 | ✅ | 相同 | 手录值与 exe 一致（72 项） |
+| `setup` | 6 | ✅ | 相同 | 手录值与 exe 一致（6 项） |
+| `facilityLevels` | 1 | （缺） | 相同 | 手录表缺失：只输出 exe 值（见对照清单） |
+
+手录表 `@verify` 引用 58 条，无法解析 0 条。
+- 待对照：facilities.ts：设施等级上限（公园/旅馆/购物中心/加油站/研究所）↔ exe facilityLevels.max
+
+## 4. 几何归一化统计（data-pipeline.md §8）
 
 | 项目 | 值 |
 | --- | --- |
@@ -57,17 +76,16 @@
 | 地形 | g:1122 w:1016 s:247 p:0 m:0 |
 | override 条数 | 4 |
 | strict4 | 已启用 |
-| MapDef dataHash | `f3bae58374147886ffa051e7aea3f89efb190cbe90e0ac68ed1244441625a36c` |
-| taiwan.map.json sha256 | `f819635b11861e9ca4e401d200bd8c27f24f4240e29031f2cb37c15da17559e6` |
+| MapDef dataHash | `c8ea4388f9b9c39ad1dc23950c8fcbfff4b426351fffd46a9863766f86b9eca0` |
+| taiwan.map.json sha256 | `a5d7584a6bd4746f94b82d7fb29584f3fa67180cd8252845be8e31910ea15eee` |
 
-## 4. validateMap 结果
+## 5. validateMap 结果
 
-ok = false（error 以外的分类见下表；分类规则见 `tools/extract/src/map/build.ts`）
+ok = true（error 以外的分类见下表；分类规则见 `tools/extract/src/map/build.ts`）
 
 | 分类 | code | 数量 |
 | --- | --- | ---: |
-| 契约缺口 | `E_LOT_FRONT_NOT_ADJ` | 1 |
-| 待 D2 数据 | `E_TILE_REF_MISMATCH` | 3 |
+| 警告 | `W_COMPANY_REMOTE_FRONT` | 1 |
 | 警告 | `W_DEADEND` | 2 |
 | 警告 | `W_LINK_ONEWAY` | 2 |
 | 警告 | `W_NAME_EMPTY` | 4 |
@@ -78,9 +96,8 @@ ok = false（error 以外的分类见下表；分类规则见 `tools/extract/src
 语义层提示：
 - `S_NAME_SUGGESTS_CODE` 节点 23 名称「公園」像落点码 1，但实际落点码为 0
 
-## 5. 未决项
+## 6. 未决项
 
-- 本图的 stocks、holidays 需要从 exe 表抽取（D2），目前为空数组；因此企业的 stockIndex 在 validateMap 中悬空（分类「待 D2 数据」）。
-- 同一企业的多个落点格相距过远（大宇百貨的两个百貨公司格分处南北），MapDef 只有一个矩形，无法同时与两格相邻：需要 shared 的契约或 validateMap 放宽（分类「契约缺口」）。
+- MapDef 的 HolidayDef 没有星期字段：kind 2（该月第 n 个星期几）的星期暂放在 flagsRaw 的 16..23 位（flagsRaw = flags0 | 事件位 << 8 | 星期 << 16），建议 shared 契约增加 weekday。
 - 格点为拟合模式（T=48），与「32 单位一格」的假设不符，请对照原版截图人工审阅 `.cache/extract/preview/taiwan.svg`。
 - 几何决定记录在 `tools/extract/maps/taiwan.overrides.json`；岛屿朝向（transform）尚未与原版截图核对。

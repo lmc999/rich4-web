@@ -1,9 +1,11 @@
-/** 需要用户正版文件（original/）；文件不存在时整组 skip。台湾 MapDef 的构建结果核对。 */
+/** 需要用户正版文件（original/）；文件不存在时整组 skip。台湾 MapDef 的构建结果核对（股票与节日来自 v2.06 exe）。 */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { computeMapDataHash, MapDefSchema, validateMap } from '@rich4/shared/data';
+import { computeMapDataHash, MapDefSchema } from '@rich4/shared/data';
 import { describe, expect, it } from 'vitest';
 import { ExitCode, ExtractContext } from '../../src/context';
+import { extractEditions } from '../../src/exe/extract';
+import { companyStockChecks, holidaysForMap, stocksForMap } from '../../src/exe/mapData';
 import { loadKnownFiles } from '../../src/fingerprint/identify';
 import { canonicalJson } from '../../src/io/writeCanonicalJson';
 import { type BuildResult, buildMapDef } from '../../src/map/build';
@@ -12,7 +14,7 @@ import { loadRawSource, RAW_SOURCES, sourceDef } from '../../src/map/sources';
 import { runTaiwanSamples } from '../../src/verify/samples';
 
 const ctx = new ExtractContext({ logger: { out: () => {}, err: () => {} } });
-const REQUIRED = ['Game/MapDat.MKF', 'Game/map.mkf', 'MultiverseJourney/map.mkf'];
+const REQUIRED = ['Game/MapDat.MKF', 'Game/map.mkf', 'MultiverseJourney/map.mkf', 'Game/rich4.exe'];
 const available = REQUIRED.every((p) => existsSync(path.join(ctx.srcDir, p)));
 const OVERRIDES = path.join(ctx.packageDir, 'maps', 'taiwan.overrides.json');
 
@@ -22,7 +24,13 @@ describe.skipIf(!available)('台湾 MapDef 构建（本机原版文件）', () =
   const build = async (): Promise<BuildResult> => {
     const known = await loadKnownFiles(ctx.packageDir);
     const { raw } = await loadRawSource(ctx, sourceDef(ov.source.id), 0, known);
-    return buildMapDef(raw, ov, { mapKey: 'taiwan', strict4: true });
+    const t = (await extractEditions(ctx, ['v206'])).v206!;
+    return buildMapDef(raw, ov, {
+      mapKey: 'taiwan',
+      strict4: true,
+      stocks: stocksForMap(t, 0),
+      holidays: holidaysForMap(t, 0).holidays,
+    });
   };
   const once = async () => {
     cached ??= await build();
@@ -37,23 +45,44 @@ describe.skipIf(!available)('台湾 MapDef 构建（本机原版文件）', () =
     expect(computeMapDataHash(r.def)).toBe(r.def.meta.dataHash);
   });
 
-  it('validateMap（strict4）：错误只有「待 D2 股票」与「企业远端百货格」两类，没有对角 link', async () => {
+  it('validateMap（strict4）ok：无 error、无 pending；企业远端百货格只报 W_COMPANY_REMOTE_FRONT；没有对角 link', async () => {
     const r = await once();
-    expect(r.classified.filter((i) => i.class === 'error')).toEqual([]);
-    expect(r.classified.filter((i) => i.class === 'pending').map((i) => i.path)).toEqual([
-      'companies[0].stockIndex',
-      'companies[1].stockIndex',
-      'companies[2].stockIndex',
-    ]);
-    const contract = r.classified.filter((i) => i.class === 'contract');
-    expect(contract.map((i) => i.tiles)).toEqual([[15]]);
+    expect(r.validation.ok).toBe(true);
+    expect(r.classified.filter((i) => i.class !== 'warn')).toEqual([]);
+    expect(r.semantic.pending).toEqual([]);
+    const remote = r.classified.filter((i) => i.code === 'W_COMPANY_REMOTE_FRONT');
+    expect(remote.map((i) => i.tiles)).toEqual([[15]]);
     expect(r.validation.issues.some((i) => i.code === 'W_DIAGONAL_LINK')).toBe(false);
-    // 去掉股票依赖后（仅本测试内补虚构股票）只剩契约缺口
-    const withStocks = validateMap(
-      { ...r.def, stocks: [0, 1, 2].map((index) => ({ ...fakeStock(index) })) },
-      { strict4: true },
-    );
-    expect(withStocks.issues.filter((i) => i.severity === 'error').map((i) => i.code)).toEqual(['E_LOT_FRONT_NOT_ADJ']);
+  });
+
+  it('股票 12 支（名称去空格、整数分）、节日 23 条（停用槽 12 不输出）；企业 ↔ 股票同名', async () => {
+    const r = await once();
+    const tw = r.def.strings['zh-TW'];
+    expect(r.def.stocks.map((s) => [tw[s.nameKey], s.initPriceCents / 100, s.volatility])).toEqual([
+      ['中國信託', 100, 1],
+      ['臺灣人壽', 40, 0.6],
+      ['大宇百貨', 25, 1.5],
+      ['台積電', 180, 1.6],
+      ['大宇資訊', 80, 1.2],
+      ['台灣塑膠', 60, 1],
+      ['裕隆汽車', 60, 1.4],
+      ['遠東紡織', 27, 0.9],
+      ['統一超商', 310, 0.7],
+      ['震旦行', 66, 1],
+      ['萊爾富', 171, 1.4],
+      ['聯合報', 280, 0.8],
+    ]);
+    expect(r.def.stocks.filter((s) => s.hasCompany).map((s) => s.index)).toEqual([0, 1, 2]);
+    expect(r.def.stocks[1]!.float).toBe(5000);
+    expect(r.def.holidays).toHaveLength(23);
+    expect(r.def.holidays.map((h) => h.slot)).not.toContain(12);
+    expect(r.def.holidays.find((h) => h.month === 12 && h.day === 25 && !h.lunar)).toMatchObject({
+      closed: true,
+      giveCard: true,
+      bgm: true,
+    });
+    expect(r.def.holidays.filter((h) => h.lunar)).toHaveLength(8);
+    expect(companyStockChecks(r.def).every((c) => c.ok)).toBe(true);
   });
 
   it('计数 103/50/4/3/21，恰好 2 处静态封路，关押格双向引用', async () => {
@@ -86,15 +115,3 @@ describe.skipIf(!available)('台湾 MapDef 构建（本机原版文件）', () =
     expect(canonicalJson(again.def)).toBe(canonicalJson(r.def));
   });
 });
-
-function fakeStock(index: number) {
-  return {
-    index,
-    nameKey: 'map.taiwan.name',
-    hasCompany: true,
-    float: 10000,
-    initPriceCents: 100,
-    volatility: 1,
-    volatilityF32: '3f800000',
-  };
-}

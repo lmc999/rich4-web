@@ -746,7 +746,7 @@ dicePolicy: @0x4221c0（A/B）
 
 ```ts
 const view = projectState(st, { kind: 'seat', seat }, visOpts);
-const ctx = makeAiContext({ aiSeed: st.secret.aiSeed, seat, decisionId: d.id, turnIndex: view.turn.index,
+const ctx = makeAiContext({ aiSeed: st.secret.aiSeed, seat, decisionId: d.id, turnIndex: view.clock.turnNo,
   traits: st.players[seat].aiTraits, data, handVisibility: visOpts.handVisibility });
 let intent: PlayerIntent;
 try { intent = policy.decide(view, d, ctx); } catch (e) { log.warn(e); intent = d.defaultIntent; }

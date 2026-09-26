@@ -18,3 +18,6 @@ playwright-report/
 .DS_Store
 .env
 deploy/.env
+
+# vitest 附件
+.vitest/

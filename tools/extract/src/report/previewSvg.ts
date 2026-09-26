@@ -182,7 +182,7 @@ export function renderPreviewSvg({ def, semantic, geometry, classified }: Previe
       `<text x="${f1(cx(t.cell))}" y="${f1(cy(t.cell) + 2)}" font-size="${Math.max(5, cs / 2.4)}" text-anchor="middle" fill="#000">${t.id}</text>`,
     );
   }
-  // 问题标记：几何问题的格/节点、validateMap 的 error/pending/contract 所涉节点
+  // 问题标记：几何问题的格/节点、validateMap 的 error/pending 所涉节点
   const marks = new Map<string, Cell>();
   const mark = (c: Cell | undefined) => {
     if (c) marks.set(`${c.x},${c.y}`, c);

@@ -1,0 +1,14 @@
+{
+  "johnJoe": { "name": "杰克", "tag": "西部牛仔" },
+  "shalonbasi": { "name": "阿里老爷", "tag": "阿拉伯富商" },
+  "shintaro": { "name": "影丸", "tag": "忍者" },
+  "madamQian": { "name": "珠光太太", "tag": "贵妇" },
+  "atubo": { "name": "田伯", "tag": "老农伯" },
+  "princessSarah": { "name": "蔷薇公主", "tag": "公主" },
+  "miyamoto": { "name": "小剑", "tag": "武士少年" },
+  "tangtang": { "name": "小铃", "tag": "女学生" },
+  "wumi": { "name": "小羽", "tag": "印第安小女孩" },
+  "sunXiaomei": { "name": "朵朵", "tag": "邻家小女孩" },
+  "danny": { "name": "阿飞", "tag": "送报童" },
+  "jinBeibei": { "name": "豆豆", "tag": "婴儿" }
+}

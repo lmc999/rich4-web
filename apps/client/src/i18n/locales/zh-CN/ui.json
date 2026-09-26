@@ -1,0 +1,88 @@
+{
+  "app": {
+    "title": "大富翁4 网页联机复刻",
+    "short": "rich4",
+    "tagline": "4 人联机 · 服务器权威 · 美术自制致敬风格"
+  },
+  "common": {
+    "loading": "加载中…",
+    "error": "出错了",
+    "retry": "重试",
+    "back": "返回",
+    "backHome": "回到首页",
+    "comingSoon": "施工中"
+  },
+  "nav": {
+    "home": "首页",
+    "solo": "单机",
+    "devMap": "地图预览",
+    "devGallery": "美术画廊"
+  },
+  "home": {
+    "title": "大富翁4 联机版",
+    "createRoom": "创建房间",
+    "joinRoom": "输入房间号加入",
+    "solo": "单机对战电脑",
+    "wip": "大厅、建房与选角正在施工中（M3 后续）。先去开发页看看棋盘渲染吧。"
+  },
+  "room": {
+    "title": "房间 {{code}}",
+    "wip": "房间页正在施工中：连接服务器、选座、选角色、准备与开始。"
+  },
+  "solo": {
+    "title": "单机对战",
+    "wip": "单机模式会自动建私密房间并补 3 个电脑（M3 后续）。"
+  },
+  "notFound": {
+    "title": "找不到这个页面",
+    "body": "地址 {{path}} 不存在。"
+  },
+  "dev": {
+    "map": {
+      "title": "地图预览",
+      "map": "地图",
+      "rotateLeft": "向左旋转",
+      "rotateRight": "向右旋转",
+      "rotation": "方向 {{n}}/4",
+      "zoomIn": "放大",
+      "zoomOut": "缩小",
+      "zoom": "缩放 {{z}}",
+      "fitAll": "显示全图",
+      "walkStart": "4 人随机行走",
+      "walkStop": "停止行走",
+      "randomLots": "随机地产状态",
+      "clearLots": "清空地产",
+      "selected": "选中",
+      "hint": "拖动平移、滚轮或双指缩放、点击格子查看 TileDef。",
+      "none": "点击棋盘上的格子查看详情",
+      "loading": "正在加载地图…",
+      "loadFailed": "地图加载失败：{{reason}}",
+      "taiwanHint": "台湾图需要本机数据包：启动服务端（RICH4_DATA_DIR=./rich4-data npm run dev:server），或在 rich4-data/maps/ 下放置 taiwan.map.json 供开发服务器直读。",
+      "issues": "校验：{{errors}} 个错误，{{warns}} 个警告",
+      "stats": "{{tiles}} 格 · {{lots}} 地块 · {{companies}} 企业 · {{landmarks}} 地标 · {{via}} 连接格",
+      "cell": "网格",
+      "terrain": "地形",
+      "road": "连接格（via）",
+      "empty": "空地"
+    },
+    "gallery": {
+      "title": "美术画廊",
+      "buildings": "建筑",
+      "houses": "住宅 0–5 级",
+      "facilities": "设施",
+      "companies": "企业",
+      "landmarks": "地标",
+      "characters": "角色",
+      "portraits": "头像",
+      "gods": "神明（占位）",
+      "poses": "姿势",
+      "front": "正面",
+      "back": "背面",
+      "mirrored": "镜像"
+    }
+  },
+  "board": {
+    "forSale": "出售",
+    "forLease": "招商"
+  }
+}

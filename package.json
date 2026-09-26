@@ -3,8 +3,14 @@
   "private": true,
   "type": "module",
   "description": "《大富翁4》网页版 4 人联机复刻（自研，美术自制致敬风格）",
-  "engines": { "node": ">=24.9" },
-  "workspaces": ["packages/*", "apps/*", "tools/*"],
+  "engines": {
+    "node": ">=24.9"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "tools/*"
+  ],
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:server": "npm -w @rich4/server run dev",
@@ -22,7 +28,9 @@
     "check:determinism": "tsx scripts/check-determinism.ts",
     "check:no-original": "tsx scripts/check-no-original.ts",
     "check:deps": "tsx scripts/check-deps.ts",
-    "check": "npm run typecheck && npm run lint && npm test && npm run check:determinism && npm run check:no-original && npm run check:deps"
+    "check": "npm run typecheck && npm run lint && npm test && npm run check:determinism && npm run check:no-original && npm run check:deps",
+    "test:browser": "vitest run --project client-browser",
+    "bench:engine": "tsx apps/server/scripts/bench-engine.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

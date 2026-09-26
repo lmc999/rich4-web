@@ -3,6 +3,7 @@ import { readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { cmdExeDiff, cmdExeTables, cmdVerifyTables } from './commands/exe';
 import { cmdMapBuild, cmdOverridesSchema, cmdPack } from './commands/mapBuild';
 import { type ContextOptions, ExitCode, ExtractContext, ExtractError, type Logger } from './context';
 import {
@@ -32,8 +33,10 @@ const USAGE = `用法: rich4-extract <命令> [选项]
   map raw --map <gm> [--sources auto|all|<id,…>] [--dump-bin]
                                                      解析地图结构 → .cache/extract/raw/<source>/map<gm>.raw.json
   map diff --map <gm>                                多来源逐字段比较 → .cache/extract/diff/map<gm>.json
-  verify --samples [--map 0] [--sources auto|all|<id,…>]
-                                                     台湾样本校验（✅/❌）
+  exe tables [--edition v206|v311|all] [--verbose]   定位并解析 exe 固定表 → .cache/extract/tables.<edition>.json
+  exe diff                                           两版表/地图/字符串对比 → docs/research/version-diff.md
+  verify [--samples] [--tables] [--map 0] [--sources auto|all|<id,…>]
+                                                     台湾样本校验；--tables 手录规则表与 exe 对照（都不加 = 两者都跑）
   map build --map taiwan [--overrides <file>] [--strict4] [--preview] [--strict]
                                                      语义层 + 几何归一化 → .cache/extract/maps/taiwan.map.json，
                                                      并写 docs/research/provenance-summary.md（--preview 另写 .cache/extract/preview/taiwan.svg）
@@ -54,6 +57,8 @@ const OPTIONS = {
   'allow-unknown': { type: 'boolean' },
   'dump-bin': { type: 'boolean' },
   samples: { type: 'boolean' },
+  tables: { type: 'boolean' },
+  edition: { type: 'string' },
   overrides: { type: 'string' },
   out: { type: 'string' },
   strict4: { type: 'boolean' },
@@ -324,7 +329,14 @@ async function cmdMapDiff(ctx: ExtractContext, v: Values): Promise<number> {
 // ───────────────────────── verify --samples ─────────────────────────
 
 async function cmdVerify(ctx: ExtractContext, v: Values): Promise<number> {
-  if (!v.samples) throw new ExtractError('E_ARGS', '目前只实现 verify --samples（规则表核对属于后续里程碑）');
+  const both = !v.samples && !v.tables;
+  let exit: number = ExitCode.OK;
+  if (v.samples || both) exit = Math.max(exit, await cmdVerifySamples(ctx, v));
+  if (v.tables || both) exit = Math.max(exit, await cmdVerifyTables(ctx, v));
+  return exit;
+}
+
+async function cmdVerifySamples(ctx: ExtractContext, v: Values): Promise<number> {
   const gm = v.map === undefined ? 0 : parseMapId(v.map);
   if (gm !== 0) throw new ExtractError('E_ARGS', `只有台湾（--map 0）有样本，收到 --map ${gm}`);
   const { selected, skipped } = await selectSources(ctx, v.sources ?? 'auto');
@@ -403,6 +415,8 @@ export async function main(argv: readonly string[], opts: MainOptions = {}): Pro
     if (cmd === 'map raw') return await cmdMapRaw(ctx, v);
     if (cmd === 'map diff') return await cmdMapDiff(ctx, v);
     if (pos[0] === 'verify') return await cmdVerify(ctx, v);
+    if (cmd === 'exe tables') return await cmdExeTables(ctx, v);
+    if (cmd === 'exe diff') return await cmdExeDiff(ctx, v);
     if (cmd === 'map build') return await cmdMapBuild(ctx, v);
     if (pos[0] === 'pack') return await cmdPack(ctx, v);
     if (cmd === 'overrides schema') return await cmdOverridesSchema(ctx);

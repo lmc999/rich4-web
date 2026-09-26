@@ -1,6 +1,8 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ExitCode, type ExitCodeValue, type ExtractContext, ExtractError } from '../context';
+import { companyStockChecks, holidaysForMap, type MapHolidays, type MapStockInput, stocksForMap } from '../exe/mapData';
+import type { ExeEdition } from '../exe/types';
 import { type FingerprintReport, type KnownFiles, loadKnownFiles } from '../fingerprint/identify';
 import { sha256Hex } from '../io/hash';
 import { isFile } from '../io/readOnly';
@@ -18,9 +20,11 @@ import { diffRaw } from '../map/rawDiff';
 import type { MapDataRaw } from '../map/rawTypes';
 import { loadRawSource, RAW_SOURCES, type RawSourceDef, selectSources, sourceDef } from '../map/sources';
 import { renderPreviewSvg } from '../report/previewSvg';
-import { renderProvenance } from '../report/provenance';
+import { type ExeDataInfo, renderProvenance } from '../report/provenance';
 import { ICON } from '../report/table';
+import { compareRules, loadManualTables, type RulesReport } from '../verify/rulesAgainstExe';
 import { runTaiwanSamples, type SampleResult, samplesFailed } from '../verify/samples';
+import { loadBothTables } from './exe';
 
 /** map build 与 pack 子命令（data-pipeline.md §3）。 */
 
@@ -83,6 +87,57 @@ async function readFingerprint(ctx: ExtractContext): Promise<FingerprintReport |
   }
 }
 
+interface ExeMapData {
+  info: ExeDataInfo;
+  stocks: MapStockInput[];
+  holidays: MapHolidays;
+  rules: RulesReport | null;
+}
+
+/**
+ * 按地图的股票与节日（architecture §16.5）：取与基线来源同版本的 exe（v206-* → Game/RICH4.EXE），
+ * 另一版本可用时核对两版该图的数据是否一致；exe 与缓存都没有时返回 null（stocks/holidays 保持待补）。
+ */
+async function loadExeMapData(ctx: ExtractContext, edition: string, gm: number): Promise<ExeMapData | null> {
+  const ed: ExeEdition = edition === 'v311' ? 'v311' : 'v206';
+  const all = await loadBothTables(ctx);
+  const t = all[ed];
+  if (!t) return null;
+  const stocks = stocksForMap(t, gm);
+  const holidays = holidaysForMap(t, gm);
+  const other = all[ed === 'v206' ? 'v311' : 'v206'];
+  let crossEdition: ExeDataInfo['crossEdition'] = 'n/a';
+  if (other && gm < other.stocks.maps && gm < other.holidays.maps) {
+    const same =
+      canonicalJson(stocksForMap(other, gm)) === canonicalJson(stocks) &&
+      canonicalJson(holidaysForMap(other, gm)) === canonicalJson(holidays);
+    crossEdition = same ? 'same' : 'diff';
+  }
+  let rules: RulesReport | null = null;
+  try {
+    rules = compareRules(await loadManualTables(ctx.root), all);
+  } catch {
+    rules = null;
+  }
+  return {
+    info: {
+      edition: ed,
+      exeFile: t.exe.file,
+      exeSha256: t.exe.sha256,
+      stocksVa: t.locate.stocks.va,
+      holidaysVa: t.locate.holidays.va,
+      stocks: stocks.length,
+      holidays: holidays.holidays.length,
+      dropped: holidays.dropped.map((d) => d.slot),
+      empty: holidays.empty,
+      crossEdition,
+    },
+    stocks,
+    holidays,
+    rules,
+  };
+}
+
 function summarize(r: BuildResult): Record<string, number> {
   const out: Record<string, number> = {};
   for (const i of r.classified) out[`${i.class}:${i.code}`] = (out[`${i.class}:${i.code}`] ?? 0) + 1;
@@ -119,7 +174,16 @@ export async function cmdMapBuild(ctx: ExtractContext, v: BuildArgs): Promise<nu
   const diff = raws.length >= 2 ? diffRaw(raws) : null;
 
   const strict4 = v.strict4 === true;
-  const build = buildMapDef(main.raw, ov, { mapKey: key, strict4 });
+  const exeData = await loadExeMapData(ctx, main.raw.source.edition, gm);
+  if (!exeData)
+    ctx.log.out(
+      `${ICON.warn} 没有 exe 表（original/ 下无 RICH4.EXE，缓存也没有 tables.*.json）：stocks/holidays 保持待补`,
+    );
+  const build = buildMapDef(main.raw, ov, {
+    mapKey: key,
+    strict4,
+    ...(exeData ? { stocks: exeData.stocks, holidays: exeData.holidays.holidays } : {}),
+  });
   const geo = build.geometry.report;
 
   const mapsDir = ctx.cachePath('maps');
@@ -173,6 +237,9 @@ export async function cmdMapBuild(ctx: ExtractContext, v: BuildArgs): Promise<nu
         build,
         mapFileSha256: mapSha,
         strict4,
+        exeData: exeData?.info ?? null,
+        rules: exeData?.rules ?? null,
+        companyStocks: exeData ? companyStockChecks(build.def) : [],
       }),
     );
   }
@@ -228,6 +295,16 @@ export async function cmdMapBuild(ctx: ExtractContext, v: BuildArgs): Promise<nu
   }
   for (const i of build.semantic.issues) {
     ctx.log.out(`  ${i.severity === 'error' ? ICON.fail : ICON.warn} ${i.code} ${i.msg}`);
+  }
+  if (exeData) {
+    const x = exeData.info;
+    ctx.log.out(
+      `exe 表（${x.edition} ${x.exeFile}）：股票 ${x.stocks} 支、节日 ${x.holidays} 条` +
+        (x.dropped.length > 0 ? `（停用槽 ${x.dropped.join(',')} 不输出）` : '') +
+        `；两版该图数据${x.crossEdition === 'same' ? '一致' : x.crossEdition === 'diff' ? '不一致' : '未比较'}`,
+    );
+    for (const c of companyStockChecks(build.def))
+      ctx.log.out(`  ${c.ok ? ICON.pass : ICON.fail} 企业↔股票 ${c.detail}`);
   }
   ctx.log.out(`validateMap（strict4=${strict4}）：ok=${build.validation.ok}  ${JSON.stringify(byClass)}`);
   for (const i of build.classified) {

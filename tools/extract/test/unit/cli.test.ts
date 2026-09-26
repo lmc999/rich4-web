@@ -155,7 +155,8 @@ describe('CLI 退出码（合成文件）', () => {
   it('未知命令与参数错误', async () => {
     expect(await run('bogus')).toBe(ExitCode.STRUCTURE);
     expect(await main(['map', 'raw', '--nope'], { logger })).toBe(ExitCode.STRUCTURE);
-    expect(await run('verify')).toBe(ExitCode.STRUCTURE);
+    // verify 不带参数 = --samples 与 --tables 都跑；空目录下缺少输入
+    expect(await run('verify')).toBe(ExitCode.MISSING_INPUT);
     expect(await run('--help')).toBe(ExitCode.OK);
   });
 });

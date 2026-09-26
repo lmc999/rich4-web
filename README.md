@@ -35,7 +35,7 @@ rich4/
 ```bash
 npm install        # 安装全部 workspace 依赖
 npm run dev        # 并行启动服务端 :3000 与前端 :5173（输出带 [server]/[client] 前缀，Ctrl+C 一并结束）
-npm test           # vitest：shared、server、client-unit、extract、scripts 各 project
+npm test           # vitest：shared、server（stubEngine）、server-real（真实引擎跑集成测试）、client-unit、client-dom、extract、scripts；本机有 Playwright Chromium 时另加 client-browser
 npm run check      # typecheck + lint + test + 三个守卫，提交前请跑一遍
 ```
 

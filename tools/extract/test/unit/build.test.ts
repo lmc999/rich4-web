@@ -120,7 +120,7 @@ describe('build：待补数据与契约缺口的分类', () => {
     expect(r.exitCode).toBe(ExitCode.OK);
   });
 
-  it('企业的远端银行/百货格（落点码 14/15）不相邻 → contract；普通前沿格不相邻仍是 error', () => {
+  it('企业的远端银行/百货格（落点码 14/15）不相邻 → W_COMPANY_REMOTE_FRONT（warn）；普通前沿格不相邻仍是 error', () => {
     const r = build({ w: 10, h: 9 });
     const def = structuredClone(r.def);
     const c1 = def.companies.find((c) => c.id === 'C1')!;
@@ -134,7 +134,9 @@ describe('build：待补数据与契约缺口的分类', () => {
     far.kind = 'shop';
     far.src = { flags: 15 };
     const cls2 = classifyIssues(def, validateMap(def).issues, []);
-    expect(cls2.find((i) => i.code === 'E_LOT_FRONT_NOT_ADJ')?.class).toBe('contract');
+    expect(cls2.find((i) => i.code === 'E_LOT_FRONT_NOT_ADJ')).toBeUndefined();
+    expect(cls2.find((i) => i.code === 'W_COMPANY_REMOTE_FRONT')?.class).toBe('warn');
+    expect(cls2.every((i) => i.class !== 'error')).toBe(true);
   });
 
   it('pack 的 manifest 条目：hash 与 sha256、pending；未分类错误拒绝打包', () => {

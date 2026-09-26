@@ -1,0 +1,52 @@
+{
+  "kind": {
+    "property": "地产",
+    "plain": "空地",
+    "park": "公园",
+    "news": "新闻",
+    "fate": "命运",
+    "jail": "监狱",
+    "hospital": "医院",
+    "penguin": "企鹅挖宝",
+    "balloon": "七彩气球",
+    "xicong": "喜从天降",
+    "lottery": "乐透",
+    "points50": "得 50 点",
+    "points30": "得 30 点",
+    "points10": "得 10 点",
+    "card": "卡片",
+    "bank": "银行",
+    "shop": "百货公司",
+    "magic": "魔法屋"
+  },
+  "lot": {
+    "land": "住宅地",
+    "facility": "设施",
+    "company": "企业"
+  },
+  "landmark": {
+    "hospital": "医院",
+    "jail": "监狱",
+    "scenery": "景点"
+  },
+  "facility": {
+    "park": "公园",
+    "hotel": "旅馆",
+    "mall": "购物中心",
+    "gas": "加油站",
+    "lab": "研究所"
+  },
+  "industry": {
+    "airline": "航空",
+    "hotel": "饭店",
+    "electronics": "电子",
+    "insurance": "保险",
+    "auto": "汽车",
+    "oil": "石油",
+    "bank": "银行",
+    "dept": "百货",
+    "construction": "建设",
+    "sect": "宗教",
+    "unknown": "企业"
+  }
+}

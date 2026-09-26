@@ -1,0 +1,142 @@
+/* 全局基础样式与通用组件类（厚描边卡通风格） */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--c-sky);
+  color: var(--c-ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-title);
+  font-weight: 400;
+  margin: 0 0 var(--space-3);
+  letter-spacing: 0.02em;
+}
+
+a {
+  color: var(--c-blue);
+}
+
+code,
+pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.num {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 胖圆角按钮：按下时下沉 2px、阴影缩为 2px */
+.btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: 0 var(--space-4);
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--c-sun);
+  color: var(--c-ink);
+  font-family: var(--font-title);
+  font-size: 17px;
+  box-shadow: var(--shadow-chunky);
+  cursor: pointer;
+  transition:
+    transform 80ms ease-out,
+    box-shadow 80ms ease-out,
+    filter 120ms;
+  text-decoration: none;
+  user-select: none;
+}
+
+.btn:hover {
+  filter: brightness(1.05);
+}
+
+.btn:active,
+.btn[aria-pressed="true"] {
+  transform: translateY(2px);
+  box-shadow: var(--shadow-chunky-pressed);
+}
+
+.btn:disabled {
+  filter: grayscale(0.6) opacity(0.6);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn:focus-visible {
+  outline: 3px solid var(--c-blue);
+  outline-offset: 2px;
+}
+
+.btn--blue {
+  background: var(--c-blue);
+  color: var(--c-white);
+}
+
+.btn--green {
+  background: var(--c-green);
+}
+
+.btn--cream {
+  background: var(--c-cream);
+}
+
+.btn--sm {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  font-size: 14px;
+  border-radius: var(--radius-sm);
+}
+
+/* 奶油底厚描边面板 */
+.panel {
+  background: var(--c-cream);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-chunky);
+  padding: var(--space-4);
+}
+
+.select,
+.input {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--c-white);
+  color: var(--c-ink);
+  font: inherit;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

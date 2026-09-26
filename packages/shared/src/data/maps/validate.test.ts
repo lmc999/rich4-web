@@ -411,7 +411,65 @@ const MUTATIONS: Mutation[] = [
       link(d, 19, 4).blocked = true;
     },
   },
+  {
+    name: '企业的远端百货格（另有相邻前沿格）',
+    expect: 'W_COMPANY_REMOTE_FRONT',
+    warnOnly: true,
+    mutate: (d) => attachRemoteFront(d, 'C2', 8, 15),
+  },
 ];
+
+/** 把格 tileId 改成落点码 code 并挂为 lotId 的额外前沿格（格 8 与 C2、L1 的建筑都不相邻） */
+function attachRemoteFront(d: MapDef, lotId: LotId, tileId: TileId, code: number): void {
+  const t = tile(d, tileId);
+  t.landingCode = code;
+  t.kind = code === 14 ? 'bank' : code === 15 ? 'shop' : code === 16 ? 'magic' : t.kind;
+  t.ref = { lot: lotId };
+  lot(d, lotId).frontTiles.push(tileId);
+}
+
+describe('validateMap：企业远端前沿格（architecture §16.2）', () => {
+  it('远端银行格只报 W_COMPANY_REMOTE_FRONT，并带格号', () => {
+    const d = buildTestMap();
+    attachRemoteFront(d, 'C2', 8, 14);
+    const r = validateMap(d);
+    expect(r.ok).toBe(true);
+    const w = r.issues.filter((i) => i.code === 'W_COMPANY_REMOTE_FRONT');
+    expect(w).toHaveLength(1);
+    expect(w[0]!.severity).toBe('warn');
+    expect(w[0]!.tiles).toEqual([8]);
+    expect(w[0]!.path).toBe('companies[1].frontTiles[1]');
+    expect(r.issues.some((i) => i.code === 'E_LOT_FRONT_NOT_ADJ')).toBe(false);
+  });
+
+  it('落点码不是 14/15 的远端前沿格仍是 E_LOT_FRONT_NOT_ADJ', () => {
+    const d = buildTestMap();
+    attachRemoteFront(d, 'C2', 8, 16);
+    const r = validateMap(d);
+    expect(r.ok).toBe(false);
+    expect(r.issues.map((i) => i.code)).toContain('E_LOT_FRONT_NOT_ADJ');
+    expect(r.issues.map((i) => i.code)).not.toContain('W_COMPANY_REMOTE_FRONT');
+  });
+
+  it('企业没有任何相邻前沿格时，百货格不相邻也是错误', () => {
+    const d = buildTestMap();
+    attachRemoteFront(d, 'C2', 8, 15);
+    lot(d, 'C2').rect = { x: 10, y: 7, w: 1, h: 1 };
+    const r = validateMap(d);
+    expect(r.ok).toBe(false);
+    const errs = r.issues.filter((i) => i.code === 'E_LOT_FRONT_NOT_ADJ');
+    expect(errs.map((i) => i.tiles)).toEqual([[10], [8]]);
+    expect(r.issues.map((i) => i.code)).not.toContain('W_COMPANY_REMOTE_FRONT');
+  });
+
+  it('住宅地不适用：另有相邻前沿格时远端格仍是错误', () => {
+    const d = buildTestMap();
+    attachRemoteFront(d, 'L1', 8, 15);
+    const r = validateMap(d);
+    expect(r.ok).toBe(false);
+    expect(r.issues.find((i) => i.code === 'E_LOT_FRONT_NOT_ADJ')?.tiles).toEqual([8]);
+  });
+});
 
 describe('validateMap：变异命中预期 issue code', () => {
   it(`共 ${MUTATIONS.length} 种变异，覆盖全部 ${MAP_ISSUE_CODES.length} 个 code`, () => {

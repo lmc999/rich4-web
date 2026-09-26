@@ -49,7 +49,7 @@
 | 16 | 拍卖卡能拍哪些地 | 脚下任何地，包括自己的和无主的。钱归用卡者；流拍则该地变为无主 | — | 说明书 OCR |
 | 17 | 建设公司董事长加盖 | +1 级 ⚑ | `constructionChairmanLevels:2` | property 与 stocks 冲突 |
 | 18 | 电脑每回合用卡、用道具 | 由 AI 策略负责，引擎不限制 | — | 属于 AI 领域 |
-| 19 | 总资金默认档 | 300000 ⚑（有存档实证，但与索引 1 = 200000 冲突） | — | rules §1 |
+| 19 | 总资金默认档 | 200000（exe 默认档位下标 1，VERIFY V-E4；存档见到的 300000 推测来自沿用上局设置，实机待 V-R15） | — | rules §1、architecture §5.3 |
 | 20 | 联机：卡片、道具的目标范围 | `targetRange:'window'`：以使用者为中心、半宽 220 世界单位的方窗 | `'global'` | 原版为 440×440 视窗 |
 | 21 | 联机：时光机 | `timeMachine:'global'`：全局锚点，取最近一次真人座位掷骰前的世界 | `'perSeat'` 或 `'disabled'` | 见 §10.10 |
 | 22 | int32 溢出 | `intOverflow:'wrap'`（和程序一致） | `'saturate'` | property §2 |
@@ -340,7 +340,7 @@ export interface GameResult {
 ```ts
 export interface GameConfig {
   mapId: 'taiwan' | 'mini';
-  initialFund: 300000 | 200000 | 100000 | 50000 | 30000 | 10000;   // 默认 300000 ⚑
+  initialFund: 300000 | 200000 | 100000 | 50000 | 30000 | 10000;   // 默认 200000（V-E4）
   vehicle: 'walk' | 'moto' | 'car';
   tenure: 'unlimited' | '2y' | '1y' | '6m' | '3m' | '1m';
   timeLimitDays: 0 | 730 | 365 | 182 | 91 | 30;                    // 0 表示无限期（说明书默认）

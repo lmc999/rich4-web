@@ -1,0 +1,39 @@
+/**
+ * MOVE 帧：逐格移动（design/engine.md §7.5；docs/research/g_arbitration.md §2.l、§2.m）。
+ * 路过只触发三件事：银行 ATM、路障拦停、身上定时炸弹的倒数与转移（M4 / M6 钩子）；其余一律停下才触发。
+ * 岔路随机：候选为空掉头（不耗随机数），否则 候选[rand15()%n]（1 个候选也消耗一次）。
+ * 走完后把自身替换为 LAND(node, steps=total)。
+ */
+import type { Ctx } from '../core/ctx';
+import type { FrameHandler } from '../core/frameHandler';
+import { EngineInvariantError } from '../errors';
+import { nextTile } from '../rules/movement';
+import type { FrameOf } from '../types/frames';
+
+type MoveFrame = FrameOf<'MOVE'>;
+
+function emitSegment(ctx: Ctx, f: MoveFrame): void {
+  if (f.seg.length === 0) return;
+  const path = f.seg;
+  f.seg = [];
+  ctx.emit('MOVE_SEGMENT', { actor: f.actor, path, remaining: f.remaining });
+}
+
+export const MOVE: FrameHandler<MoveFrame> = {
+  step(ctx, f) {
+    if (f.actor.t !== 'seat') throw new EngineInvariantError('NOT_IMPLEMENTED', 'villain movement (M7)');
+    const p = ctx.player(f.actor.seat);
+    while (f.remaining > 0) {
+      const next = nextTile(ctx.map.index, p.node, p.prevNode, (n) => ctx.pick('fork', n));
+      p.prevNode = p.node;
+      p.node = next;
+      f.seg.push(next);
+      f.remaining -= 1;
+      // TODO(M6)：身上定时炸弹 fuse−1（到 0 爆炸 → emitSegment + CONFINE(hospital,5)；同格有人则转手）
+      // TODO(M6)：路障拦停（移除、回库存、ROADBLOCK_HIT、remaining=0）
+      // TODO(M4)：路过银行（未梦游、银行格无路障、remaining>0）→ emitSegment + 压 BANK(pass)，BANK 完成后回到本帧继续走
+    }
+    emitSegment(ctx, f);
+    ctx.replace(f, { k: 'LAND', actor: f.actor, node: p.node, steps: f.total, stage: 'beggar', skipSquare: false });
+  },
+};

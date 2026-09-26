@@ -278,7 +278,7 @@ export interface EngineApi {
 ```ts
 export interface GameConfig {
   mapId: string;                        // 'test' | 'test-allkinds' | 'taiwan'
-  initialFund: 300000|200000|100000|50000|30000|10000;   // 默认 300000（待核实 V-E4/V-R15）
+  initialFund: 300000|200000|100000|50000|30000|10000;   // 默认 200000（exe 默认档位下标 1，V-E4；实机待 V-R15）
   vehicle: 'walk'|'moto'|'car'; tenure: 'unlimited'|'2y'|'1y'|'6m'|'3m'|'1m';
   timeLimitDays: 0|730|365|182|91|30; winMultiple: 0|100|50|10|5|3;   // 0 表示无限（说明书默认值）；大厅另提供「快速局 1 年/10 倍」预设
   startDate: DateNum;                   // 服务器传入当天日期，引擎夹到 [19980101, 20100101]
@@ -863,7 +863,7 @@ ADMIN_TOKEN=<可选>  DEV_CORS_ORIGIN=<仅开发>  RICH4_TEST_MODE=0
 - **存档中座位和数据哈希的字段：net 用 SaveSeat.aiDifficulty 和单一 dataHash** → 改为 SaveSeat.ai?: SeatAiConfig；SaveFileV1 增加 mapRef{id, mapHash} 和 tablesHash。其余沿用 net §8.3（gzip JSON 加 HMAC 签名，导出为 R4S1 文本）
 - **定时炸弹倒计时：client 写的是每天减 1；engine 是每走一步 fuse 减 1，初值 38** → 以引擎为准。前端显示 post 里 player.bomb.fuse 的值
 - **时光机在联机中的默认模式：engine 列为待定** → RuleConfig.timeMachine 默认 'global'（原版行为）。房间 UI 在有 2 个以上真人时，提示它会回滚他人的操作，并推荐选 disabled。最终默认值请用户拍板
-- **默认总资金：300000（有存档实证）与 200000（选项表索引 1）冲突** → 暂定 300000，GameConfig 提供全部 6 档。V-E4/V-R15 核实后如果不同，只改默认值
+- **默认总资金：300000（有存档实证）与 200000（选项表索引 1）冲突** → 暂定 300000，GameConfig 提供全部 6 档。V-E4/V-R15 核实后如果不同，只改默认值。**更新（2026-09-27）**：D2 在两版 exe 中确认新开局把资金档位下标写为 1，默认值已改为 200000（g_arbitration §2.h、VERIFY V-E4）；300000 推测来自「沿用上局设置」分支，实机确认留给 V-R15
 
 ## milestones
 ### M0 脚手架与测试地图
@@ -973,3 +973,59 @@ ADMIN_TOKEN=<可选>  DEV_CORS_ORIGIN=<仅开发>  RICH4_TEST_MODE=0
 3. **分层**：shared/data 允许依赖 shared/geom（MapIndex.lotsInWindow 复用唯一的窗口判定实现）。
 4. **格点**：台湾图实测 T=48（拟合），不是 32；world 坐标 x 向东、y 向南（医院/澎湖在西，绿岛在东南）。前端等角视图应支持 4 个方向旋转（原版可 8 向旋转），默认方向在 M3/M9 对照原版截图确定。
 5. **台湾图 stocks/holidays**：由 D2 从 exe 股票模板表（v2.06 VA 0x47CE92；v3.11 VA 0x47F072，每项 36 字节 × 12 × 地图数）与节日表抽取后填入 MapDef；在此之前 DataRegistry 对 `manifest.pending` 中列出的缺项放行，但禁止用该图开局。
+
+## 17. M1/M2/D2/M3a 实施记录（2026-09-27）
+
+实际实现与本文件、design/*.md 不一致之处及原因。本节之后以代码和本节为准；未列出的部分按设计实现。标 ⚑ 的是缺证据时的暂定默认，结论见 VERIFY.md。
+
+### 17.1 契约层（shared 类型，M1/M2 的前置）
+
+- **分层迫使的放置**：MinigameId、MinigameParams、AiTraits、AiPreset、SeatAiConfig、Personality 定义在 `data/tables/ids.ts`（engine 不能依赖 ai/minigames，而 `resolveTraits` 在 data/tables）；`minigames/types.ts` 只能依赖 util，另有一份 MinigameId/MinigameParams，由类型测试保证一致。SeatControl 放在 `view/types.ts`，net 再导出。
+- **泛型代替跨层引用**：`DecisionForYou<K, Ticket>`（view 不能依赖 minigames），net 的 `YourDecision = DecisionForYou<DecisionKind, MinigameTicket>`，不按 kind 展开，收窄用 `asAnyDecision`/`isDecisionForYouOf`；`SaveFileV1<TRoomSettings, TChatMessage>`（save 与 net 互不依赖）。
+- **state 里只用 null**：凡进入 state 的可选字段改为必填 `| null`（`PendingDecision.budgetKey/minigame`、`publicInfo.lot/amount/labelKey`；`secret.timeAnchors` 必填，非 perSeat 时为 `[]`）。唯一例外是 `ROLL.dice` 与 `EventBase.post`。
+- **Intent 与事件**：PlayerIntent 按 type 拆成独立成员（否则 `Extract` 得到 never），zod 一律 strictObject。Party 统一为带标签对象 `{t:'seat'|'company'|'pool'|'bank'}`。`FACILITY_BUILT` 的载荷字段 `type` 改名 `facility`（与判别字段冲突）；`HOLIDAY` 不带 cards，圣诞送卡改发 `CARD_GAINED{source:'holiday'}`；redactCards 类事件固定为 CARD_GAINED/CARD_LOST/SHOP_TRADE/CHAIRMAN_GIFT，载荷为 `seat + card: CardId|null`；新增 `AI_TRAITS_CHANGED`、`DEBUG_APPLIED`（系统 action 改公开状态必须有事件公布，否则触发 SYNC）与 `POINTS_GAINED`（点券格、宝箱）；CONTROLLER_CHANGED、SYNC 归入 cat `'system'`。
+- **决策 options**：RESEARCH 不带 cost（调研结论：研发不收费）；MINIGAME 为 `{minigameId, maxScore}`，是否允许放弃由服务器按房间设置处理。`TurnMenuOptions` 增加 `menuActions`，估值上限用数组 `lotCaps`。
+- **默认总资金 200000**：exe 默认档位下标为 1（VERIFY V-E4、g_arbitration §2.h），§5.3 与 engine.md 已同步。
+- **validateMap**：`W_COMPANY_REMOTE_FRONT` 只对落点码 14/15 生效，且要求该企业至少一个前沿格与建筑相邻，其余不相邻前沿格仍报 `E_LOT_FRONT_NOT_ADJ`（§16.2 的完整含义）。
+- **net**：SystemMsgKey 用 camelCase（`playerJoined`）；`game:minigameWatch` 载荷为 `{ticket, mode, log}`；`room:assignSeat` v1 不实现；ErrorCode 增加 `MAP_UNAVAILABLE`、`GAME_OVER`；EngineRule 为已知码加开放字符串。
+
+### 17.2 M1 引擎（engine L0–L2）
+
+- ⚑ **坐牢释放回合**（V-R1）：按 M1 验证清单实现为「N 个受阻回合 + 1 个走回棋盘、不掷骰的回合（RETURNED）」。g_arbitration §3.3 引 MY/NU 认为释放当回合照常行动，两者冲突，待实机。
+- ⚑ **跳伞**（V-R2）：落地后不结算落点，随即照常进入回合菜单。⚑ 停留卡走 0 步时照常结算落点（按 engine.md；OA 认为不重复触发）。
+- ⚑ **满手**（V-R5）：`handFull='choose'` 在 M6 之前退回 autoCheapest，DISCARD_CARD 决策留给 M6。
+- **noHumansLeft 只在本局有真人座位时触发**：全电脑局（模拟、自对弈）否则第一次破产就结束。
+- **TOLL_PAID.amount 为实付金额**：付款人破产时小于报价，随后依次发 BANKRUPT、LIQUIDATION、BECAME_BEGGAR。
+- **EngineApi 扩充（原签名不变）**：`createEngine(reg, {devChecks?})`，开启后 deepFreeze 入参、出现 SYNC 抛 `EngineInvariantError('UNANNOUNCED_CHANGE')`（服务器在 RICH4_TEST_MODE 下开启）；internal 增加 `createGameWithEvents`、`explainState`、`checkInvariants`。DebugOp.teleport 增加可选 `prev`（决定之后的前进方向）。EngineRule 增加 BAD_CONFIG、BAD_FORCED_VALUE、BAD_STATE、BAD_STATE_VERSION。
+- **随机序列**：TURN 开始即刷新本人股票可买量（每支流通股 > 1000 的股票消耗一次 `'quota'`）；神明、礼物、宝箱的开局摆放留到 M6，届时随机序列与 golden 都会变。
+- **阶段位置**：`marketOpen` 暂在 DAY 的 `'date'` 阶段计算，M4 实现停市倒数后挪到 `'market'`。
+- **其他**：`selectors.streetLots(map, lot)` 的参数是地块 id（按街道 id 仍用 `MapIndex.streetLots`）；AI 买地保留额（5%、7000）放在 `data/tables/economy`，BasicAiPolicy 与原版 AI 共用；数据表的规范入口是 `@rich4/shared/data`，`@rich4/shared/engine` 原样再导出。
+
+### 17.3 M2 服务端联机骨架
+
+- **计时链**：「首次出现时间」取决策在客户端可见的时刻（now + 动画时长），下限为可见时刻 + 8 秒，动画不占思考时间；90 秒整回合上限随计时档位缩放（fast 45、slow 180）。测试专用 `timerScale` 同时缩放决策超时、链上下限、网络宽限、小游戏倒计时与宽限、恢复与解除托管的最短时间（不缩放小游戏游玩时长），生产为 1。
+- **小游戏**：截止时间不受 timerPreset 影响（off 档也有，票据的 deadlineAt 必填）。M8 之前没有裁判：`game:minigameInput/Submit` 返回 `MINIGAME_INVALID{reason:'refereeUnavailable'}`，到期执行 defaultIntent（MINIGAME_DECLINE）。
+- **M5 之前的存档事件**：返回明确错误而不是挂起（`room:loadSave`、`saves:delete` → SAVE_NOT_FOUND；`room:claimSeat` → BAD_REQUEST{noLoadedSave}；`game:save` → INTERNAL{persistenceUnavailable}；`saves:list` → []），不新增 ErrorCode。journal 只在内存。
+- **房间规则**：房主必须是座位上的真人（`RoomYou` 的观战分支写死 `isHost:false`），没有座位真人时房主为空。AI 连续失败 3 次（或兜底 intent 也被拒）以 `paused.reason='host'` 暂停并发 `aiPaused`（RoomView 只有 host/all_away）。暂停期间 deadlineAt 为 null；断线宽限期内显示 min(截止时间, 断线时间 + 宽限)。
+- **输入**：`chat:send` 的 schema 允许 800 字，清洗后截到 200 字（net §9「截断」而非拒绝）；握手 auth 用非 strict 的 `z.object`，其余 C2S 一律 strictObject。
+- **依赖与装配**：pino 不是依赖，`infra/logger.ts` 自写 pino 兼容 logger 作为 Fastify 的 loggerInstance；`RICH4_TEST_ENGINE=stub` 时 `src/app.ts` 动态 import `test/helpers` 的 stubEngine 与 localPolicy（默认 real；esbuild 产物也包含这段代码，但只在 stub 模式加载）。
+
+### 17.4 D2 数据（exe 表与台湾 MapDef）
+
+- **节日**：台湾写入 23 条而不是 24 条，停用的 slot 12（10/31，bit7）不输出（原版查找时跳过，放进 MapDef 会让按日期命中第一项得到错误结果），slot 保留原下标。HolidayDef 没有星期字段，kind 2 的星期暂存在 `flagsRaw` 16..23 位（`flagsRaw = flags0 | 事件位<<8 | 星期<<16`，与 fixture 的 flagsRaw 约定不同），closed/giveCard/bgm/lunar 总是显式输出；建议 M4 给 HolidayDef 增加 `weekday`。
+- **股票**：名称去掉排版空格；`volatility` 取 f32 的最短十进制，位型另存 `volatilityF32`；数据取自与基线同版本的 exe（台湾用 v2.06），并核对 v3.11 一致。
+- **范围**：额外抽取农历表（exe 只覆盖 1998–2020）；`build.ts` 删除已成死代码的 IssueClass `'contract'`；`extract verify` 不带参数时同时跑 `--samples` 与 `--tables`。
+
+### 17.5 M3a 前端工程与渲染基础
+
+- **深度排序**：`max(x+y) + bias` 只对边长 ≤ 2 的矩形 footprint 严格正确（台湾图只有 1×1 与 2×2），更大的地块需要拓扑排序。
+- **暂缓项**：默认旋转取方向 0，台湾默认朝向留到 M3/M9 对照截图；建筑遮挡淡化留到接入 EventPlayer。
+- **开发便利**：vite serve 专用中间件 `/__dev/maps/:id` 直读本机 rich4-data，不进构建产物；`client-browser` project 只在本机有 Playwright Chromium（或设 `RICH4_BROWSER_TESTS=1`、`RICH4_CHROMIUM_PATH`）时加入。
+- **重复定义**：CHARACTER_KEYS 在 `game/procedural/character/defs.ts` 复刻一份并由测试对照 shared；`@rich4/shared/data` 现已导出 tables，可以改为直接引用。
+
+### 17.6 联调修正（M1/M2/D2/M3a 接通）
+
+- **tablesHash**：`data/index.ts` 导出 `data/tables`；`fixtureRegistry` 与服务器 DataRegistry 都按 `TABLES` 计算 tablesHash（此前是空对象的哈希）。`state.dataRef.tablesHash` 与 simulate 的 finalHash 因此变化，对局过程不变（`simulate --map test --games 200 --policy random --time-limit 730` 仍是 217575 个 action，finalHash 由 abdc96bccfa0d444 变为 a9de9b5da078fcd8）。
+- **view 入口**：`@rich4/shared/view` 导出 `applyPostPatch`、`foldPosts`、`publicWorld`、`diffPublic`，供前端 viewReducer 使用。
+- **测试编排**：根 `vitest.config.ts` 直接内联前端三个 project（定义移到 `apps/client/vitest.projects.ts`，与 `apps/client/vitest.config.ts` 共用），根目录的 `--project client-unit` 等原名可用（Vitest 5 会给容器配置的子 project 加前缀）；新增 `server-real` project，用真实引擎（createEngine + BasicAiPolicy）再跑一遍 server 集成测试，`server` project 仍默认 stubEngine。
+- **文档同步**：§5.3、engine.md 的默认总资金；data-pipeline §8.4 的 issue code；minigames-ai §9.10 的 `view.clock.turnNo`；net.md 的 SystemMsgKey 示例；VERIFY 的 V-R1/V-R2/V-R5/V-R15 记下暂定实现。

@@ -1,0 +1,111 @@
+import { describe, expect, it } from 'vitest';
+import type { HolidayDef } from '../../data/maps/types';
+import {
+  addDays,
+  addTenure,
+  dayNumber,
+  daysBetween,
+  fromDayNumber,
+  holidayOn,
+  isLeapYear,
+  isMarketClosedDay,
+  isValidDate,
+  loanDueDate,
+  nextDate,
+  weekdayOf,
+} from './calendar';
+
+describe('calendar（design/engine.md §3「日期」）', () => {
+  it('1998-01-01 是星期四；已知日期的星期', () => {
+    expect(weekdayOf(19980101)).toBe(4);
+    expect(weekdayOf(19980104)).toBe(0);
+    expect(weekdayOf(20000101)).toBe(6);
+    expect(weekdayOf(20100101)).toBe(5);
+    expect(weekdayOf(20260927)).toBe(0);
+  });
+
+  it('闰年只看 %4：2000、2100 都是闰年', () => {
+    expect(isLeapYear(2000)).toBe(true);
+    expect(isLeapYear(2100)).toBe(true);
+    expect(isLeapYear(1999)).toBe(false);
+    expect(isValidDate(20000229)).toBe(true);
+    expect(isValidDate(21000229)).toBe(true);
+    expect(isValidDate(19990229)).toBe(false);
+    expect(nextDate(20040228)).toBe(20040229);
+    expect(nextDate(20040229)).toBe(20040301);
+    expect(nextDate(20031231)).toBe(20040101);
+  });
+
+  it('逐日推进与 dayNumber / 星期相互一致（1998..2012）', () => {
+    let d = 19980101;
+    let wd = weekdayOf(d);
+    for (let n = 0; n < 5500; n++) {
+      expect(dayNumber(d)).toBe(n);
+      expect(fromDayNumber(n)).toBe(d);
+      expect(weekdayOf(d)).toBe(wd);
+      d = nextDate(d);
+      wd = (wd + 1) % 7;
+    }
+    expect(daysBetween(19980101, 19990101)).toBe(365);
+    expect(daysBetween(20000101, 20010101)).toBe(366);
+    expect(addDays(20050131, 30)).toBe(20050302);
+  });
+
+  it('地契按月加、不夹日：1/31 + 1 个月 = 2/31，这一天永远不会到来', () => {
+    expect(addTenure(20050131, '1m')).toBe(20050231);
+    expect(isValidDate(20050231)).toBe(false);
+    expect(addTenure(20051130, '3m')).toBe(20060230);
+    expect(addTenure(20050115, '2y')).toBe(20070115);
+    expect(addTenure(20050115, 'unlimited')).toBe(0);
+    let d = 20050101;
+    for (let i = 0; i < 400; i++) {
+      expect(d).not.toBe(20050231);
+      d = nextDate(d);
+    }
+  });
+
+  it('休市：星期日与 closed 节日（农历节日暂不判定）；贷款到期日顺延到开市日', () => {
+    const holidays: HolidayDef[] = [
+      { slot: 0, month: 1, day: 1, kind: 0, flagsRaw: 1, closed: true },
+      { slot: 1, month: 12, day: 25, kind: 0, flagsRaw: 2, giveCard: true },
+      { slot: 2, month: 1, day: 3, kind: 0, flagsRaw: 1, closed: true, lunar: true },
+    ];
+    expect(isMarketClosedDay(19980104, 0, holidays)).toBe(true);
+    expect(isMarketClosedDay(19990101, weekdayOf(19990101), holidays)).toBe(true);
+    expect(isMarketClosedDay(19981225, weekdayOf(19981225), holidays)).toBe(false);
+    expect(isMarketClosedDay(19990105, weekdayOf(19990105), holidays)).toBe(false);
+    expect(holidayOn(19981225, holidays)?.slot).toBe(1);
+    expect(holidayOn(19990103, holidays)).toBeNull();
+    // 1998-10-04 + 89 天 = 1999-01-01（节日、星期五）→ 顺延到 1999-01-02（星期六）
+    expect(addDays(19981004, 89)).toBe(19990101);
+    expect(loanDueDate(19981004, 89, holidays)).toBe(19990102);
+    // 落在星期日顺延到星期一
+    expect(weekdayOf(addDays(19980101, 3))).toBe(0);
+    expect(loanDueDate(19980101, 3, holidays)).toBe(19980105);
+  });
+
+  it('kind 2（第 n 个星期 w）：day = n，星期在 flagsRaw 16..23 位；不再当作固定日期', () => {
+    // 台湾 slot 7：5 月第 2 个星期日（母亲节），flagsRaw 星期位 = 0
+    const mother: HolidayDef = { slot: 7, month: 5, day: 2, kind: 2, flagsRaw: 0, closed: false };
+    // 虚构：11 月第 4 个星期四，休市（感恩节式）
+    const thanks: HolidayDef = { slot: 3, month: 11, day: 4, kind: 2, flagsRaw: (4 << 16) | 1, closed: true };
+    const holidays = [mother, thanks];
+    expect(weekdayOf(19980502)).toBe(6);
+    expect(holidayOn(19980502, holidays)).toBeNull();
+    expect(weekdayOf(19990502)).toBe(0);
+    expect(holidayOn(19990502, holidays)).toBeNull(); // 1999 年 5 月第 1 个星期日
+    expect(holidayOn(19980510, holidays)?.slot).toBe(7);
+    expect(holidayOn(19990509, holidays)?.slot).toBe(7);
+    expect(holidayOn(19980503, holidays)).toBeNull(); // 第 1 个星期日
+    expect(holidayOn(19980517, holidays)).toBeNull(); // 第 3 个星期日
+    // 1998-11-26 是 11 月第 4 个星期四；11-04 只是日期巧合
+    expect(weekdayOf(19981126)).toBe(4);
+    expect(holidayOn(19981104, holidays)).toBeNull();
+    expect(holidayOn(19981126, holidays)?.slot).toBe(3);
+    expect(isMarketClosedDay(19981126, 4, holidays)).toBe(true);
+    expect(isMarketClosedDay(19981104, weekdayOf(19981104), holidays)).toBe(false);
+    // 贷款到期日落在 1998-11-26 → 顺延到 11-27（星期五）
+    expect(loanDueDate(19981125, 1, holidays)).toBe(19981127);
+    expect(loanDueDate(19981103, 1, holidays)).toBe(19981104);
+  });
+});

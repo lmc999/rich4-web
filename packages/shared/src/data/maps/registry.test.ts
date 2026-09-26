@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { canonicalJson } from '../../util/canonicalJson';
 import { fnv1a64 } from '../../util/hash';
 import { DataError } from '../errors';
+import { TABLES, tablesHash } from '../tables/index';
 import { computeMapDataHash, verifyMapDataHash, withDataHash } from './dataHash';
 import { buildTestMap, buildTestMapAllKinds } from './fixtures/testMap';
 import { computeTablesHash, createRegistry, fixtureRegistry } from './registry';
@@ -80,7 +81,8 @@ describe('DataRegistry', () => {
   });
 
   it('tablesHash = FNV-1a 64(规范化 TABLES)，与键顺序无关', () => {
-    expect(fixtureRegistry.tablesHash).toBe(fnv1a64('{}'));
+    expect(fixtureRegistry.tablesHash).toBe(computeTablesHash(TABLES));
+    expect(fixtureRegistry.tablesHash).toBe(tablesHash);
     expect(computeTablesHash({ b: [1, 2], a: 'x' })).toBe(computeTablesHash({ a: 'x', b: [1, 2] }));
     const reg = createRegistry([], { tables: { cards: [{ id: 1, price: 100 }] } });
     expect(reg.tablesHash).toBe(fnv1a64('{"cards":[{"id":1,"price":100}]}'));

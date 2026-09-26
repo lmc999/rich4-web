@@ -1,0 +1,65 @@
+.shell {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(var(--space-5), env(safe-area-inset-top)) max(var(--space-4), env(safe-area-inset-right))
+    max(var(--space-5), env(safe-area-inset-bottom)) max(var(--space-4), env(safe-area-inset-left));
+  background:
+    radial-gradient(circle at 18% 22%, rgb(255 255 255 / 0.35) 0 60px, transparent 61px),
+    radial-gradient(circle at 82% 70%, rgb(255 255 255 / 0.25) 0 90px, transparent 91px), var(--c-sky);
+}
+
+.card {
+  width: min(560px, 100%);
+  text-align: center;
+}
+
+.logo {
+  display: inline-grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  margin-bottom: var(--space-3);
+  border: var(--border);
+  border-radius: 18px;
+  background: var(--c-sun);
+  box-shadow: var(--shadow-chunky);
+  font-family: var(--font-num);
+  font-size: 40px;
+  font-weight: 600;
+}
+
+.title {
+  font-size: 34px;
+  margin-bottom: var(--space-2);
+}
+
+.tagline {
+  margin: 0 0 var(--space-4);
+  color: var(--c-ink-soft);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: center;
+  margin: var(--space-4) 0;
+}
+
+.note {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  border: 2px dashed var(--c-ink-soft);
+  border-radius: var(--radius-sm);
+  background: rgb(255 255 255 / 0.5);
+  font-size: 14px;
+}
+
+.devLinks {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: center;
+  margin-top: var(--space-4);
+}

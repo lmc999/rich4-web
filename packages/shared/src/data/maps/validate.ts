@@ -2,7 +2,10 @@ import { INT32_MAX } from '../../util/int32';
 import { cellKey, kindForLandingCode, LANDING_HOSPITAL, LANDING_JAIL } from './kinds';
 import type { AnyLot, Cell, LandLot, MapCounts, MapDef, MapLocale, Rect, TileDef, TileId, TileLink } from './types';
 
-/** issue code 全集（design/data-pipeline.md §8.4）：E_* 为错误，W_* 为警告（W_DIAGONAL_LINK 在 strict4 下升为错误） */
+/**
+ * issue code 全集（design/data-pipeline.md §8.4，另加 architecture §16.2 的 W_COMPANY_REMOTE_FRONT）：
+ * E_* 为错误，W_* 为警告（W_DIAGONAL_LINK 在 strict4 下升为错误）
+ */
 export type MapIssueCode =
   | 'E_ID_DUP'
   | 'E_LINK_TARGET'
@@ -29,7 +32,8 @@ export type MapIssueCode =
   | 'W_RENT_NONMONO'
   | 'W_DEADEND'
   | 'W_NAME_EMPTY'
-  | 'W_LINK_ONEWAY';
+  | 'W_LINK_ONEWAY'
+  | 'W_COMPANY_REMOTE_FRONT';
 
 export const MAP_ISSUE_CODES: readonly MapIssueCode[] = [
   'E_ID_DUP',
@@ -58,6 +62,7 @@ export const MAP_ISSUE_CODES: readonly MapIssueCode[] = [
   'W_DEADEND',
   'W_NAME_EMPTY',
   'W_LINK_ONEWAY',
+  'W_COMPANY_REMOTE_FRONT',
 ];
 
 export interface MapIssue {
@@ -82,6 +87,13 @@ export interface ValidateMapResult {
 
 /** via 连接格超过这个数量时报 W_VIA_LONG */
 export const VIA_LONG_THRESHOLD = 3;
+
+/**
+ * 企业的远端前沿格允许的落点码：14 银行格、15 百货格（原版大宇百貨的两个百货格分处台湾南北）。
+ * 企业至少有一个前沿格与建筑矩形相邻时，这些落点码的不相邻前沿格报 W_COMPANY_REMOTE_FRONT（warn），
+ * 其他不相邻前沿格仍报 E_LOT_FRONT_NOT_ADJ（architecture §16.2）。
+ */
+export const COMPANY_REMOTE_FRONT_CODES: readonly number[] = [14, 15];
 
 const TERRAIN_RE = /^[gwspm]*$/;
 const LOCALES: readonly MapLocale[] = ['zh-TW', 'zh-CN'];
@@ -395,6 +407,15 @@ function checkLotRefs(ctx: Ctx): void {
     }
     if (lot.frontTiles.length === 0) v.add('E_LOT_NO_FRONT', `${path}.frontTiles`, `lot ${lot.id} has no front tile`);
     const seen = new Set<TileId>();
+    const rectOk = rectValid(lot.rect);
+    // 企业只要有一个前沿格与建筑相邻，其余不相邻的银行格 / 百货格只报警告（architecture §16.2）
+    const companyAnchored =
+      lot.kind === 'company' &&
+      rectOk &&
+      lot.frontTiles.some((id) => {
+        const t = tileById.get(id);
+        return t !== undefined && isAdjacentToRect(t.cell, lot.rect);
+      });
     lot.frontTiles.forEach((id, j) => {
       const fpath = `${path}.frontTiles[${j}]`;
       if (seen.has(id)) v.add('E_TILE_REF_MISMATCH', fpath, `lot ${lot.id} lists front tile ${id} twice`);
@@ -407,11 +428,13 @@ function checkLotRefs(ctx: Ctx): void {
       if (tile.ref?.lot !== lot.id) {
         v.add('E_TILE_REF_MISMATCH', fpath, `tile ${id} does not reference lot ${lot.id}`, { tiles: [id] });
       }
-      if (rectValid(lot.rect) && !isAdjacentToRect(tile.cell, lot.rect)) {
-        v.add('E_LOT_FRONT_NOT_ADJ', fpath, `tile ${id} is not 4-adjacent to lot ${lot.id}`, {
-          tiles: [id],
-          cells: [tile.cell],
-        });
+      if (rectOk && !isAdjacentToRect(tile.cell, lot.rect)) {
+        const extra = { tiles: [id], cells: [tile.cell] };
+        if (companyAnchored && COMPANY_REMOTE_FRONT_CODES.includes(tile.landingCode)) {
+          v.add('W_COMPANY_REMOTE_FRONT', fpath, `company ${lot.id} front tile ${id} is far from its building`, extra);
+        } else {
+          v.add('E_LOT_FRONT_NOT_ADJ', fpath, `tile ${id} is not 4-adjacent to lot ${lot.id}`, extra);
+        }
       }
     });
   }

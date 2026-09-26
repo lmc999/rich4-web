@@ -5,6 +5,8 @@ export interface PeSectionSpec {
   virtualSize: number;
   rawSize: number;
   rawPointer: number;
+  /** 节属性（默认 0）：代码 0x60000020、已初始化数据 0xc0000040 */
+  characteristics?: number;
 }
 
 export function buildPe(
@@ -35,6 +37,7 @@ export function buildPe(
     dv.setUint32(o + 12, s.virtualAddress, true);
     dv.setUint32(o + 16, s.rawSize, true);
     dv.setUint32(o + 20, s.rawPointer, true);
+    dv.setUint32(o + 36, s.characteristics ?? 0, true);
   });
   return out;
 }

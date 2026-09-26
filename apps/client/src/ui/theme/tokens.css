@@ -1,0 +1,51 @@
+/* 设计 token（design/client.md §6.1）：明快卡通、3px 深棕厚描边、平涂 + 一阶高光/阴影 */
+:root {
+  /* 基础色板 */
+  --c-sky: #5ec8f2;
+  --c-sky-deep: #2f9fd0;
+  --c-sun: #ffd84d;
+  --c-cream: #fff6dc;
+  --c-cream-deep: #f5e3b3;
+  --c-ink: #3a2a1a;
+  --c-ink-soft: #6b5842;
+  --c-red: #f2545b;
+  --c-green: #5cc85a;
+  --c-blue: #3d8bfd;
+  --c-purple: #9b6bff;
+  --c-orange: #ff9f43;
+  --c-white: #ffffff;
+
+  /* 股市：红涨绿跌 */
+  --c-up: #e53935;
+  --c-down: #2e9e4f;
+
+  /* 玩家色（兼顾色弱：另配形状标记 ●▲■★） */
+  --c-p1: #e8453c;
+  --c-p2: #2f80ed;
+  --c-p3: #27ae60;
+  --c-p4: #f2b705;
+
+  /* 形状 */
+  --radius: 14px;
+  --radius-sm: 8px;
+  --border-w: 3px;
+  --border: var(--border-w) solid var(--c-ink);
+  --shadow-chunky: 0 4px 0 var(--c-ink);
+  --shadow-chunky-pressed: 0 2px 0 var(--c-ink);
+
+  /* 字体：站酷快乐体（标题）、Fredoka（数字），均为 OFL，经 @fontsource 按 unicode-range 分片加载 */
+  --font-title: "ZCOOL KuaiLe", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-num: "Fredoka", "ZCOOL KuaiLe", sans-serif;
+  --font-body: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+
+  /* 间距 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* 触控目标下限（手机横屏） */
+  --touch-min: 44px;
+}

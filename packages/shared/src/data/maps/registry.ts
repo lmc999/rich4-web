@@ -1,6 +1,7 @@
 import { canonicalJson } from '../../util/canonicalJson';
 import { fnv1a64 } from '../../util/hash';
 import { DataError } from '../errors';
+import { TABLES } from '../tables/index';
 import { computeMapDataHash } from './dataHash';
 import { buildFixtureMaps } from './fixtures/testMap';
 import { buildMapIndex, type MapIndex } from './mapIndex';
@@ -79,7 +80,7 @@ export function createRegistry(maps: readonly MapDef[], opts: CreateRegistryOpti
 
 let fixtureInner: DataRegistry | null = null;
 function fixtures(): DataRegistry {
-  fixtureInner ??= createRegistry(buildFixtureMaps());
+  fixtureInner ??= createRegistry(buildFixtureMaps(), { tables: TABLES });
   return fixtureInner;
 }
 
