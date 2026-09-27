@@ -125,3 +125,135 @@
 .warnTag {
   background: var(--c-orange);
 }
+
+.saveHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.saveHead h3 {
+  margin: 0;
+}
+
+.saveName {
+  overflow-wrap: anywhere;
+}
+
+.saveList li.saveNew {
+  border-color: var(--c-blue);
+}
+
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.saveHead label {
+  position: relative;
+  cursor: pointer;
+}
+
+.saveHead label:focus-within {
+  outline: 3px solid var(--c-blue);
+  outline-offset: 2px;
+}
+
+.disabled {
+  filter: grayscale(0.6) opacity(0.6);
+  pointer-events: none;
+}
+
+.danger {
+  background: var(--c-red);
+  color: var(--c-white);
+}
+
+.menuRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.confirmRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 2px solid var(--c-red);
+  border-radius: var(--radius-sm);
+  background: #fff0f0;
+  font-size: 14px;
+}
+
+/* 断线遮罩的托管倒计时 */
+.graceNote {
+  margin: var(--space-2) 0 0;
+  color: var(--c-ink-soft);
+  font-size: 14px;
+}
+
+.graceNote strong {
+  color: var(--c-ink);
+}
+
+/* 托管设置 */
+.trustee {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.trustee fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 2px solid var(--c-cream-deep);
+  border-radius: var(--radius-sm);
+}
+
+.trustee legend {
+  padding: 0 4px;
+  font-size: 14px;
+}
+
+.ratio {
+  display: grid;
+  grid-template-columns: 6em 1fr 3.5em;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 14px;
+}
+
+.ratio output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.help {
+  margin: 0;
+  color: var(--c-ink-soft);
+  font-size: 12px;
+}
+
+.status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--c-cream-deep);
+  font-size: 13px;
+}
+
+.statusOn {
+  background: var(--c-blue);
+  color: var(--c-white);
+}

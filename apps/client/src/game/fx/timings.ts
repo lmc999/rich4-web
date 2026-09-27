@@ -1,4 +1,5 @@
-// 棋盘特效的时长（1x，ms）：Fx 与演出预算测试共用（不依赖 Pixi）
+// 棋盘特效的时长（1x，ms）：Fx / BoardStage 与演出预算测试共用（不依赖 Pixi）。
+// handler 的节奏按这些常数编排，保证在 shared/view/pacing 的 EVENT_BUDGET_MS 之内（见 handlers/budget.test.ts）。
 export const FLOAT_MS = 1000;
 export const COIN_MS = 560;
 export const COIN_COUNT = 8;
@@ -8,3 +9,63 @@ export const COIN_FLIGHT_MS = (COIN_COUNT - 1) * COIN_STAGGER_MS + COIN_MS;
 export const FLAG_MS = 380;
 export const POP_MS = 420;
 export const HOP_MS = 260;
+
+// ───────── M6 / M7 演出（BoardStage 的阻塞时长） ─────────
+
+/** 路面物件从天而降并弹一下 */
+export const FX_DROP_MS = 420;
+/** 路面物件被移除（弹飞 / 淡出） */
+export const FX_REMOVE_MS = 360;
+/** 普通爆炸（地雷、身上的定时炸弹） */
+export const FX_EXPLODE_MS = 720;
+/** 飞弹：从天而降 + 3×3 冲击 */
+export const FX_MISSILE_FALL_MS = 520;
+export const FX_MISSILE_BLAST_MS = 820;
+export const FX_MISSILE_MS = FX_MISSILE_FALL_MS + FX_MISSILE_BLAST_MS;
+/** 核弹：蘑菇云 + 全屏白闪 + 震屏 */
+export const FX_NUKE_FALL_MS = 520;
+export const FX_NUKE_BLAST_MS = 1250;
+export const FX_NUKE_MS = FX_NUKE_FALL_MS + FX_NUKE_BLAST_MS;
+/** 光柱（神明降临、传送、显灵） */
+export const FX_PILLAR_MS = 600;
+/** 光束（出卡连到目标） */
+export const FX_BEAM_MS = 420;
+/** 时光机倒带滤镜 */
+export const FX_REWIND_MS = 900;
+/** 神明降临：光柱 + 缩小附身 */
+export const FX_GOD_ARRIVE_MS = 900;
+/** 神明离身：旋转上升 */
+export const FX_GOD_LEAVE_MS = 620;
+/** 路上出现神明 */
+export const FX_GOD_SPAWN_MS = 420;
+/** 神明发威：光环爆发 */
+export const FX_GOD_POWER_MS = 600;
+/** 神明显灵（地块升降级、夺地） */
+export const FX_MANIFEST_MS = 900;
+/** 恶犬咬人 / 被撞开 */
+export const FX_BITE_MS = 700;
+/** 救护车 / 警车开来接走 */
+export const FX_ESCORT_MS = 1050;
+/** 出狱 / 出院：开门闪光 */
+export const FX_RELEASE_MS = 480;
+/** 换乘交通工具 */
+export const FX_VEHICLE_MS = 450;
+/** 车毁 */
+export const FX_WRECK_MS = 620;
+/** 传送：两端光柱 */
+export const FX_TELEPORT_MS = 900;
+/** 魔法屋：女巫挥杖 + 魔法阵 */
+export const FX_MAGIC_MS = 1000;
+/** 定时炸弹转移：炸弹划弧飞到另一人身上 */
+export const FX_BOMB_PASS_MS = 520;
+/** 定时炸弹贴到身上 */
+export const FX_BOMB_ATTACH_MS = 480;
+/** 终局烟花（不阻塞，只给参考时长） */
+export const FX_FIREWORKS_MS = 2400;
+/** 施放姿势（出卡、用道具）的停顿 */
+export const FX_CAST_MS = 360;
+/** 乞丐挪窝 */
+export const FX_BEGGAR_MOVE_MS = 420;
+
+/** 画质档的粒子上限（design/client.md §8） */
+export const PARTICLE_LIMITS = { high: 400, mid: 150, low: 0 } as const;

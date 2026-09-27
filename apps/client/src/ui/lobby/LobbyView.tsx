@@ -1,13 +1,16 @@
 // 房间大厅（design/client.md §5.5）：座位、选角、邀请、设置（房主可改）、准备 / 开始、观战者、聊天。
+// 读档后（net.md §8.4）：顶部显示存档横幅（非官方 / 兼容性提示），角色与对局设置锁定，
+// 所有存档座位都有人（真人认领或补电脑）且真人都准备后才能开始。
 import type { RoomView } from '@rich4/shared/net';
 import { type ReactNode, useEffect, useState } from 'react';
 import { useClient } from '../../app/services';
 import { useTx } from '../../i18n/tx';
+import { formatDate } from '../../presentation/names';
 import { canStart, mySeatView } from '../../store/roomStore';
 import c from '../common/common.module.css';
 import { ChatPanel } from '../social/ChatPanel';
 import { SpectatorList } from '../social/SpectatorList';
-import { SaveLoadMenu } from '../system/SaveLoadMenu';
+import { SaveLoadMenu, warningText } from '../system/SaveLoadMenu';
 import { CharacterPicker } from './CharacterPicker';
 import { InviteLink } from './InviteLink';
 import l from './lobby.module.css';
@@ -89,7 +92,7 @@ function SettingsBox({ room }: { room: RoomView }): ReactNode {
               </div>
             ))}
           </dl>
-          {host && (
+          {host && room.loadedSave === undefined && (
             <button
               type="button"
               className="btn btn--sm btn--cream"
@@ -105,6 +108,37 @@ function SettingsBox({ room }: { room: RoomView }): ReactNode {
   );
 }
 
+/** 读档后还没人坐的存档座位 */
+export function unclaimedSeats(room: RoomView): number[] {
+  if (!room.loadedSave) return [];
+  return room.seats.filter((s) => s.savedSeat !== undefined && s.occupant === null).map((s) => s.index);
+}
+
+/** 读档横幅：存档名、游戏日期、天数；非官方存档与兼容性提示 */
+function LoadedSaveBanner({ room }: { room: RoomView }): ReactNode {
+  const t = useTx();
+  const ls = room.loadedSave;
+  if (!ls) return null;
+  return (
+    <div className={l.loadedBanner} role="status" data-testid="loaded-save" data-save={ls.saveId}>
+      <span>
+        💾 {t('lobby:saved.banner', { name: ls.name, date: ls.date ? formatDate(ls.date) : '', day: ls.gameDay })}
+      </span>
+      {!ls.verified && (
+        <span className={l.warnTag} data-testid="loaded-unofficial" title={t('ui:saveMenu.unofficialNote')}>
+          {t('hud:saves.unofficial')}
+        </span>
+      )}
+      {(ls.warnings ?? []).map((w) => (
+        <span key={w} className={l.warnTag} data-testid={`loaded-warn-${w}`}>
+          {warningText(t, w)}
+        </span>
+      ))}
+      <span className={l.note}>{t('lobby:saved.hint')}</span>
+    </div>
+  );
+}
+
 export function LobbyView({ room, onLeave }: { room: RoomView; onLeave(): void }): ReactNode {
   const t = useTx();
   const client = useClient();
@@ -112,7 +146,9 @@ export function LobbyView({ room, onLeave }: { room: RoomView; onLeave(): void }
   const me = mySeatView(room);
   const host = room.you.isHost;
   const ready = me?.occupant?.kind === 'human' && me.occupant.ready;
-  const startable = canStart(room);
+  const unclaimed = unclaimedSeats(room);
+  const startable = canStart(room) && unclaimed.length === 0;
+  const [savesOpen, setSavesOpen] = useState(false);
 
   return (
     <main className={l.lobby} data-testid="screen-room" data-phase={room.phase}>
@@ -121,6 +157,7 @@ export function LobbyView({ room, onLeave }: { room: RoomView; onLeave(): void }
         <InviteLink code={room.code} allowWatch={room.settings.allowSpectators} />
         {room.you.role === 'spectator' && <span className={l.specBadge}>👁 {t('lobby:room.spectating')}</span>}
       </header>
+      <LoadedSaveBanner room={room} />
       <div className={l.lobbyBody}>
         <div className={l.lobbyMain}>
           <SeatGrid room={room} />
@@ -171,16 +208,31 @@ export function LobbyView({ room, onLeave }: { room: RoomView; onLeave(): void }
               </button>
             )}
           </div>
-          {host && !startable && <p className={c.muted}>{t('lobby:room.startHint')}</p>}
-          <CharacterPicker room={room} />
+          {host && !startable && (
+            <p className={c.muted} data-testid="start-hint">
+              {unclaimed.length > 0
+                ? t('lobby:saved.startHint', { seats: unclaimed.map((i) => `${i + 1}P`).join('、') })
+                : t('lobby:room.startHint')}
+            </p>
+          )}
+          {room.loadedSave ? (
+            <p className={c.muted}>{t('lobby:saved.characterLocked')}</p>
+          ) : (
+            <CharacterPicker room={room} />
+          )}
         </div>
         <aside className={l.lobbySide}>
           <SettingsBox room={room} />
           <SpectatorList room={room} />
           {host && (
-            <details className={`panel ${l.savesBox}`} data-testid="lobby-saves">
-              <summary>{t('lobby:room.loadSave')}</summary>
-              <SaveLoadMenu mode="lobby" isHost={host} />
+            <details
+              className={`panel ${l.savesBox}`}
+              data-testid="lobby-saves"
+              open={savesOpen}
+              onToggle={(e) => setSavesOpen(e.currentTarget.open)}
+            >
+              <summary data-testid="lobby-saves-toggle">{t('lobby:room.loadSave')}</summary>
+              {savesOpen && <SaveLoadMenu mode="lobby" isHost={host} onLoaded={() => setSavesOpen(false)} />}
             </details>
           )}
           <ChatPanel room={room} className={l.lobbyChat} />

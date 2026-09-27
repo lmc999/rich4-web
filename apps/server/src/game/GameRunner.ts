@@ -9,6 +9,9 @@
  * - 序号：每应用一个 action seq+1；epoch 由 Room 在开局、rematch、读档、重启时递增后传入。
  * - 待决策与截止时间：新出现的决策按 Deadlines 计算截止时间（budgetKey 链、拍卖每人独立计时、小游戏票据）。
  * - 托管状态机（SeatControl）、断线宽限、连续超时进 AFK、暂停恢复、clientActionId 幂等（每座位 LRU 32）。
+ * - 小游戏（MinigameReferee）：MINIGAME 决策出现时开会话；输入流与提交经 minigameInput / minigameSubmit，
+ *   以服务器重放结果提交系统 action MINIGAME_RESULT；已开局后 MINIGAME_DECLINE 被拒、AI 不再代答，到期用已收到的输入结算；
+ *   暂停恢复时已开局的会话按已收到的输入结算，未开局的换新窗口（新 sessionId、新种子）。
  * - RingBuffer 256 个原始 batch 供 catchup；内存 journal 供重放校验；每条 journal 经 hooks.applied 交给房间持久化。
  * - 重启恢复与读档：init.seq 为起始序号（恢复时沿用快照 + journal 重放后的 seq），init.paused 以暂停状态开局（不计时）。
  * - 按观察者组装 game:batch / snapshot / catchup / pending / over 消息（投影在这里做，发送在 RoomBroadcaster）。
@@ -41,6 +44,10 @@ import {
   type GameCatchupMsg,
   type GameOverMsg,
   type GameSnapshotMsg,
+  type MinigameFramesMsg,
+  type MinigameInputMsg,
+  type MinigameSubmitMsg,
+  NET_GRACE_MS,
   ok,
   type PendingChangedMsg,
   type Result,
@@ -49,6 +56,7 @@ import {
   type TimerPreset,
   type YourDecision,
 } from '@rich4/shared/net';
+import { fnv1a32 } from '@rich4/shared/util';
 import {
   estimateAnimMs,
   type GameView,
@@ -75,6 +83,7 @@ import {
   shiftBudget,
   type TimingOptions,
 } from './Deadlines';
+import { MinigameReferee } from './MinigameReferee';
 import { RingBuffer } from './RingBuffer';
 
 /** 房间设置里 GameRunner 关心的部分（每次读取，保证与房间一致） */
@@ -191,6 +200,18 @@ function ruleOf(e: unknown): string | null {
   return null;
 }
 
+/** 本批里「玩过」的小游戏结算：seat → 分数（关闭会话时记入已结算列表） */
+/** 小游戏换窗口时的新种子（与引擎种子同范围 0..0x7fffffff；只由旧种子与新 sessionId 决定） */
+export function renewSeed(seed: number, sessionId: string): number {
+  return fnv1a32(`${seed}:${sessionId}`) & 0x7fffffff;
+}
+
+function playedMinigames(events: readonly GameEvent[]): Map<SeatIndex, number> {
+  const out = new Map<SeatIndex, number>();
+  for (const e of events) if (e.type === 'MINIGAME_ENDED' && e.mode === 'played') out.set(e.seat, e.score);
+  return out;
+}
+
 export class GameRunner {
   readonly epoch: number;
   private st: GameState;
@@ -206,6 +227,10 @@ export class GameRunner {
   private overFlag = false;
   private disposed = false;
   private mapIndex: MapIndex | null = null;
+  /** 小游戏裁判（会话随 MINIGAME 决策开关；网络层经它取观战票据与积压帧） */
+  readonly minigames: MinigameReferee;
+  /** 小游戏会话换窗口的次数（新 sessionId 的后缀） */
+  private minigameGen = 0;
 
   constructor(
     private readonly deps: GameRunnerDeps,
@@ -215,6 +240,7 @@ export class GameRunner {
     this.st = init.state;
     this.seqNo = init.seq ?? 0;
     this.pausedFlag = init.paused === true;
+    this.minigames = new MinigameReferee({ log: deps.log, graceMs: NET_GRACE_MS * deps.timing.timerScale });
     for (const s of init.seats) {
       this.seatRts.set(s.seat, {
         seat: s.seat,
@@ -325,6 +351,10 @@ export class GameRunner {
     if (intent.type === 'MINIGAME_DECLINE' && !this.deps.settings().allowMinigameDecline) {
       return fail('INVALID_ACTION', { rule: 'MINIGAME_DECLINE_DISABLED' });
     }
+    // 开局后（已收到 seq 0）不能再跳过：按已收到的输入结算
+    if (intent.type === 'MINIGAME_DECLINE' && this.minigames.started(decisionId)) {
+      return fail('MINIGAME_INVALID', { reason: 'started' });
+    }
     // 真人操作优先：托管中先解除（成功时后面马上有 batch，不单独发 game:pending）
     const released = isAutopilot(rt.control) && rt.control !== 'autopilot:left';
     if (released) this.setControl(rt, 'human', true);
@@ -379,7 +409,7 @@ export class GameRunner {
       this.overFlag = true;
       this.clearDecisions();
     } else {
-      this.syncPending(raw.animMs, pending);
+      this.syncPending(raw.animMs, pending, playedMinigames(next.events));
     }
     // 提交之后的广播：投影或发送出错只记日志并暂停房间，不回滚已经生效的 action
     this.hook('batch', seat, () => this.deps.hooks.batch(raw));
@@ -430,13 +460,21 @@ export class GameRunner {
   // ───────────────────────── 待决策与计时 ─────────────────────────
 
   /** pending 由调用方在提交前取好（引擎调用集中在 try 里） */
-  private syncPending(animMs: number, pending: readonly PendingDecision[]): void {
+  private syncPending(
+    animMs: number,
+    pending: readonly PendingDecision[],
+    played: ReadonlyMap<SeatIndex, number> = new Map(),
+  ): void {
     const { clock, timing } = this.deps;
     const live = new Set(pending.map((d) => d.id));
     for (const [id, dr] of this.decisions) {
       if (!live.has(id)) {
         dr.timer?.cancel();
         this.decisions.delete(id);
+        if (dr.ticket) {
+          const score = played.get(dr.d.seat);
+          this.minigames.close(id, score === undefined ? undefined : { score });
+        }
       }
     }
     const now = clock.now();
@@ -452,6 +490,7 @@ export class GameRunner {
         const w = minigameWindow(now, animMs, d.minigame.minigameId, timing);
         dr.ticket = this.makeTicket(d, w.startsAt, w.deadlineAt);
         dr.deadlineAt = w.deadlineAt;
+        this.minigames.open(dr.ticket);
       } else {
         const t = timingOf(d.kind);
         const key = d.budgetKey;
@@ -482,7 +521,7 @@ export class GameRunner {
     const m = d.minigame!;
     const t = MINIGAME_TIMING[m.minigameId];
     return {
-      sessionId: `mg-${this.epoch}-${d.id}`,
+      sessionId: this.sessionIdOf(d),
       decisionId: d.id,
       seat: d.seat,
       minigameId: m.minigameId,
@@ -497,6 +536,17 @@ export class GameRunner {
     };
   }
 
+  /** 会话 id：mg-<epoch>-<decisionId>，换窗口后加 .<n> */
+  private sessionIdOf(d: PendingDecision, renew = false): string {
+    const base = `mg-${this.epoch}-${d.id}`;
+    return renew ? `${base}.${++this.minigameGen}` : base;
+  }
+
+  /** 已开局的小游戏：不再由 AI / 超时代答，只等提交或到期结算 */
+  private minigameLocked(dr: DecisionRt): boolean {
+    return dr.ticket !== null && this.minigames.started(dr.d.id);
+  }
+
   /**
    * 按当前控制方为决策定时：真人 → 截止时间 + 网络宽限后超时；AI / 托管 → 等这批动画剩余的部分再加思考时间
    * （中途切到托管、离开、被踢时也不会抢在动画播完之前行动）。
@@ -509,7 +559,7 @@ export class GameRunner {
     const { scheduler, clock, timing } = this.deps;
     const id = dr.d.id;
     const seat = dr.d.seat;
-    if (!rt || rt.control === 'human') {
+    if (!rt || rt.control === 'human' || this.minigameLocked(dr)) {
       if (dr.deadlineAt === null) return;
       dr.timer = scheduler.after(
         fireAt(dr.deadlineAt, timing) - clock.now(),
@@ -530,6 +580,10 @@ export class GameRunner {
     const dr = this.decisions.get(id);
     if (!dr || this.pausedFlag || this.overFlag || this.disposed) return;
     dr.timer = null;
+    if (this.minigameLocked(dr)) {
+      this.settleMinigame(dr);
+      return;
+    }
     const rt = this.seatRts.get(dr.d.seat);
     if (rt && rt.control !== 'human') {
       this.schedule(dr);
@@ -558,6 +612,11 @@ export class GameRunner {
     const dr = this.decisions.get(id);
     if (!dr || this.pausedFlag || this.overFlag || this.disposed) return;
     dr.timer = null;
+    // 玩家已开局：不代答 decline，改等提交或到期
+    if (this.minigameLocked(dr)) {
+      this.schedule(dr);
+      return;
+    }
     const seat = dr.d.seat;
     const rt = this.seatRts.get(seat);
     const you = this.decisionFor(seat);
@@ -606,6 +665,7 @@ export class GameRunner {
     for (const dr of this.decisions.values()) dr.timer?.cancel();
     this.decisions.clear();
     this.budgets.clear();
+    this.minigames.clear();
   }
 
   private cancelAllTimers(): void {
@@ -734,11 +794,28 @@ export class GameRunner {
     this.pausedFlag = false;
     const { clock, timing } = this.deps;
     const now = clock.now();
+    const settle: DecisionRt[] = [];
     for (const dr of this.decisions.values()) {
+      if (dr.ticket && this.minigames.started(dr.d.id)) {
+        // 已开局的小游戏按已收到的输入结算（暂停期间的输入一律被拒）
+        settle.push(dr);
+        dr.remaining = null;
+        continue;
+      }
       if (dr.ticket) {
+        // 未开局：换新窗口、新 sessionId 与新种子（客户端据此重新倒计时）。旧种子已下发，暂停期间可能已被本地
+        // 「空跑」过（喜从天降的掉落序列、企鹅的宝物布局），沿用它等于让玩家免费预演同一局
         const w = minigameWindow(now, 0, dr.ticket.minigameId, timing);
-        dr.ticket = { ...dr.ticket, startsAt: w.startsAt, deadlineAt: w.deadlineAt };
+        const sessionId = this.sessionIdOf(dr.d, true);
+        dr.ticket = {
+          ...dr.ticket,
+          sessionId,
+          seed: renewSeed(dr.ticket.seed, sessionId),
+          startsAt: w.startsAt,
+          deadlineAt: w.deadlineAt,
+        };
         dr.deadlineAt = w.deadlineAt;
+        this.minigames.reopen(dr.ticket);
       } else if (dr.remaining !== null) {
         const before = dr.deadlineAt;
         dr.deadlineAt = resumeDeadline(now, dr.remaining, timing);
@@ -749,11 +826,66 @@ export class GameRunner {
       this.schedule(dr);
     }
     this.deps.hooks.pendingChanged();
+    for (const dr of settle) if (this.decisions.get(dr.d.id) === dr && !this.overFlag) this.settleMinigame(dr);
   }
 
   dispose(): void {
     this.disposed = true;
     this.cancelAllTimers();
+    this.minigames.clear();
+  }
+
+  // ───────────────────────── 小游戏 ─────────────────────────
+
+  /** 到期或恢复时结算：已开局 → MINIGAME_RESULT（服务器重放已收到的输入），未开局 → MINIGAME_DECLINE（超时） */
+  private settleMinigame(dr: DecisionRt): void {
+    const seat = dr.d.seat;
+    const decisionId = dr.d.id;
+    const s = this.minigames.settle(decisionId);
+    const r =
+      s.kind === 'result'
+        ? this.apply({ type: 'MINIGAME_RESULT', seat, decisionId, score: s.score, logHash: s.logHash }, 'system', seat)
+        : this.apply({ type: 'MINIGAME_DECLINE', seat, decisionId }, 'timeout', seat);
+    if (!r.ok) {
+      this.deps.log.error({ seat, decisionId, error: r.error }, 'minigame settlement rejected');
+      this.deps.hooks.aiStuck(seat);
+    }
+  }
+
+  /** game:minigameInput（seat 只从 session 取）：成功时返回转发给观战者的帧 */
+  minigameInput(seat: SeatIndex, msg: MinigameInputMsg): Result<MinigameFramesMsg> {
+    const rt = this.seatRts.get(seat);
+    if (!rt) return fail('NOT_A_PLAYER');
+    if (this.overFlag) return fail('GAME_OVER');
+    if (this.pausedFlag) return fail('GAME_PAUSED');
+    const s = this.minigames.sessionById(msg.sessionId);
+    const wasStarted = s?.started === true;
+    const r = this.minigames.input(seat, msg, this.deps.clock.now());
+    if (!r.ok || !s) return r;
+    const dr = this.decisions.get(s.ticket.decisionId);
+    if (!wasStarted && dr) {
+      // 真人开局：托管中先解除（离开除外），并把 AI 计时换成截止计时
+      if (isAutopilot(rt.control) && rt.control !== 'autopilot:left') this.setControl(rt, 'human');
+      else this.schedule(dr);
+    }
+    rt.timeouts = 0;
+    return r;
+  }
+
+  /** game:minigameSubmit：校验并重放，以服务器结果提交 MINIGAME_RESULT；返回服务器分数 */
+  minigameSubmit(seat: SeatIndex, msg: MinigameSubmitMsg): Result<{ score: number }> {
+    if (!this.seatRts.has(seat)) return fail('NOT_A_PLAYER');
+    if (this.overFlag) return fail('GAME_OVER');
+    if (this.pausedFlag) return fail('GAME_PAUSED');
+    const v = this.minigames.submit(seat, msg, this.deps.clock.now());
+    if (!v.ok) return v;
+    const { decisionId, score, logHash } = v.data;
+    if (!this.decisions.has(decisionId)) return fail('STALE_DECISION');
+    const r = this.apply({ type: 'MINIGAME_RESULT', seat, decisionId, score, logHash }, 'system', seat);
+    if (!r.ok) return r;
+    const rt = this.seatRts.get(seat);
+    if (rt) rt.timeouts = 0;
+    return ok({ score });
   }
 
   // ───────────────────────── 消息组装 ─────────────────────────

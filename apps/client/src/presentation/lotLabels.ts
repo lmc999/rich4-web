@@ -23,3 +23,44 @@ export function lotLabels(map: MapIndex, mapString: (k: string) => string): Map<
   cache.set(map, out);
   return out;
 }
+
+const frontCache = new WeakMap<MapIndex, Map<number, string>>();
+
+/** 路面格 → 以它为前沿格的第一块地（地产、设施、企业；没有则不在表里）。给没有名字的道路格起名用 */
+export function frontLotOfTile(map: MapIndex): Map<number, string> {
+  const hit = frontCache.get(map);
+  if (hit) return hit;
+  const out = new Map<number, string>();
+  for (const l of [...map.def.lots, ...map.def.companies]) {
+    let front: readonly number[] = [];
+    try {
+      front = map.lot(l.id).frontTiles;
+    } catch {
+      front = [];
+    }
+    for (const t of front) if (!out.has(t)) out.set(t, l.id);
+  }
+  frontCache.set(map, out);
+  return out;
+}
+
+/**
+ * 道路格的显示名：有地图文案用文案；普通道路格用旁边地块的名字（「台东县 1 旁」），都没有时用格子种类名。
+ * 调用方自行附加「#id」。
+ */
+export function tileLabel(
+  map: MapIndex,
+  id: number,
+  mapString: (k: string) => string | null,
+  kindName: (kind: string) => string,
+  near: (lot: string) => string,
+): string {
+  const tile = map.tile(id);
+  const named = tile.nameKey ? mapString(tile.nameKey) : null;
+  if (named) return named;
+  if (tile.kind === 'plain') {
+    const lot = frontLotOfTile(map).get(id);
+    if (lot) return near(lotLabels(map, (k) => mapString(k) ?? k).get(lot) ?? lot);
+  }
+  return kindName(tile.kind);
+}

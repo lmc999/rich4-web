@@ -13,6 +13,7 @@ import {
   PROTOCOL_VERSION,
   type Result,
   type RoomSettingsPatch,
+  type S2CPayload,
   type SaveSummary,
 } from '@rich4/shared/net';
 import type { GameView } from '@rich4/shared/view';
@@ -27,6 +28,7 @@ import {
   type HandlerMap,
   NULL_AUDIO,
   NULL_BOARD,
+  NULL_UI,
   type PresentationContext,
 } from '../presentation/types';
 import { createUiPresenter } from '../presentation/UiPresenter';
@@ -77,6 +79,17 @@ export type TrusteeSettings = NonNullable<C2SPayload<'game:autopilot'>['settings
 export const CLOCK_MAX_STEP_MS = 1000;
 export const CLOCK_FALLBACK_MS = 200;
 
+/**
+ * 小游戏模块安装前到达的观战票据与帧。刷新或中途加入时，服务器在 game:snapshot 之后、room:state 之前只补发一次，
+ * 早于对局页（lazy）挂载与 installMinigames；GameClient 先按到达顺序缓存，安装时由 takeMinigameBacklog 交出。
+ */
+export type MinigameBacklogItem =
+  | { event: 'game:minigameWatch'; payload: S2CPayload<'game:minigameWatch'> }
+  | { event: 'game:minigameFrames'; payload: S2CPayload<'game:minigameFrames'> };
+
+/** 缓存上限（超出丢最早的；每会话帧数约 1 秒 5 批 × 20 秒） */
+export const MINIGAME_BACKLOG_MAX = 1200;
+
 /** 构建号缺省值（只用于服务器日志） */
 export const CLIENT_VERSION_FALLBACK = 'dev';
 
@@ -103,6 +116,8 @@ export class GameClient {
   private lastFrame = 0;
   private readonly ui = createUiPresenter({ wait: (ms, s) => this.anim.wait(ms, s) });
   private readonly t: LooseT;
+  /** 小游戏模块接管前的缓存；null = 已被 installMinigames 接管（之后由它直接监听） */
+  private mgBacklog: MinigameBacklogItem[] | null = [];
 
   constructor(private readonly o: GameClientOptions) {
     this.transport = o.transport;
@@ -206,12 +221,10 @@ export class GameClient {
         },
         'game:pending': (p) => this.player.applyPending(p),
         'game:over': (p) => useGameStore.getState().setOver(p),
-        'game:minigameWatch': () => {
-          // M8：小游戏观战
-        },
-        'game:minigameFrames': () => {
-          // M8：小游戏输入帧
-        },
+        // 小游戏的观战票据与输入帧由 minigames/index.ts 的 installMinigames 经 transport.on 直接监听
+        // （对局页进入时安装）；安装之前到达的先缓存，安装时交出（takeMinigameBacklog）
+        'game:minigameWatch': (p) => this.holdMinigame({ event: 'game:minigameWatch', payload: p }),
+        'game:minigameFrames': (p) => this.holdMinigame({ event: 'game:minigameFrames', payload: p }),
         'chat:message': (m) => {
           useChatStore.getState().add(m);
           if (m.system && TOAST_SYSTEM_KEYS.has(m.system.key)) {
@@ -498,14 +511,20 @@ export class GameClient {
   private makeContext(signal: AbortSignal, view: () => GameView): PresentationContext {
     const room = useRoomStore.getState().room;
     const self = this;
+    const epoch = this.player.abortEpoch;
     return {
       signal,
       wait: (ms) => this.anim.wait(ms, signal),
-      // 每次访问取当前棋盘：handler 执行中棋盘被卸载后，后续调用落到 NULL_BOARD 而不是已销毁的棋盘
+      // 每次访问取当前棋盘：handler 执行中棋盘被卸载后，后续调用落到 NULL_BOARD 而不是已销毁的棋盘；
+      // 演出被中止（reset / skipAll / dispose）之后上下文失效，同样落到 NULL_BOARD——被中止的 handler 在之后的
+      // 微任务里收尾时，不会用旧时间线的状态覆盖刚同步好的棋盘，也不再新建特效
       get board() {
-        return self.board;
+        return signal.aborted || self.player.abortEpoch !== epoch ? NULL_BOARD : self.board;
       },
-      ui: this.ui,
+      get ui() {
+        return signal.aborted || self.player.abortEpoch !== epoch ? NULL_UI : self.ui;
+      },
+      animSpeed: () => this.anim.speed,
       audio: NULL_AUDIO,
       me: mySeat(room),
       role: room?.you.role === 'player' ? 'player' : 'spectator',
@@ -550,8 +569,23 @@ export class GameClient {
     useRoomStore.getState().setClosed(code, reason);
   }
 
+  private holdMinigame(m: MinigameBacklogItem): void {
+    const b = this.mgBacklog;
+    if (b === null) return;
+    b.push(m);
+    if (b.length > MINIGAME_BACKLOG_MAX) b.splice(0, b.length - MINIGAME_BACKLOG_MAX);
+  }
+
+  /** 小游戏模块接管：交出安装前缓存的票据与帧（按到达顺序），此后不再缓存 */
+  takeMinigameBacklog(): MinigameBacklogItem[] {
+    const b = this.mgBacklog ?? [];
+    this.mgBacklog = null;
+    return b;
+  }
+
   private resetRoomState(): void {
     this.roomCode = null;
+    if (this.mgBacklog !== null) this.mgBacklog = [];
     this.player.dispose();
     useGameStore.getState().clear();
     useChatStore.getState().clear();

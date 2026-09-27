@@ -4,6 +4,10 @@ import type { SeatIndex } from '@rich4/shared/engine';
 import { formatEvent } from '../logFormat';
 import type { EventHandler, PresentationContext } from '../types';
 import { showAllDeltas, syncFromPost } from './common';
+import { playerRef, showPopup } from './popups';
+
+/** LotteryDrawPopup 的展示时长（1x） */
+export const LOTTERY_POPUP_MS = 2800;
 
 /** 企业的董事长（显示态）；没有则 null */
 function chairmanOf(ctx: PresentationContext, company: string): SeatIndex | null {
@@ -56,13 +60,21 @@ export const LOTTERY_DRAW: EventHandler<'LOTTERY_DRAW'> = async (e, ctx) => {
             who: ctx.names.seat(e.winner),
             amount: ctx.names.money(e.prize),
           });
-  const banner = ctx.ui.banner(
-    { kind: 'info', title: ctx.t('events:show.lottery'), subtitle, ...(e.winner === null ? {} : { seat: e.winner }) },
-    2400,
-    ctx.signal,
+  // LotteryDrawPopup：摇奖球滚动后落到开出的号码（M7）；文案与原横幅相同
+  const popup = showPopup(
+    ctx,
+    {
+      kind: 'lottery',
+      title: ctx.t('events:show.lottery'),
+      number: e.number === null ? null : e.number + 1,
+      winner: playerRef(ctx, e.winner),
+      subtitle,
+    },
+    LOTTERY_POPUP_MS,
+    1600,
   );
   if (e.winner !== null) ctx.board.setActorPose(e.winner, 'cheer');
-  await banner;
+  await popup;
   showAllDeltas(ctx, e);
   if (e.winner !== null) ctx.board.setActorPose(e.winner, 'idle');
   await ctx.wait(300);

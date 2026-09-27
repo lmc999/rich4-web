@@ -1,5 +1,7 @@
 // 4 个座位（design/client.md §5.5）：空（坐下 / 补电脑）、真人（头像、昵称、准备、离线、房主）、电脑（预设）、离线。
 // 房主可以踢人、补电脑、改电脑预设、转让房主。
+// 读档后（net.md §8.4）：存档里的座位显示「原：角色 / 昵称」，没人坐的标「待认领」；可认领的座位给出认领按钮
+// （room:claimSeat：自己的存档座位可以把占座者让到观战），房主可给待认领的座位补电脑；不在存档里的座位不可用。
 import { AI_PRESETS, type AiPreset, CHARACTER_KEYS, type CharacterId, type SeatIndex } from '@rich4/shared/engine';
 import type { Result, RoomView, SeatView } from '@rich4/shared/net';
 import clsx from 'clsx';
@@ -30,11 +32,16 @@ function SeatCard({ seat, room }: { seat: SeatView; room: RoomView }): ReactNode
   const iAmSpectator = room.you.role === 'spectator';
   const mine = room.you.role === 'player' && room.you.seat === i;
   const charName = seat.characterId === null ? null : t(`characters:${charKey(seat.characterId)}.name`);
+  const loaded = room.loadedSave !== undefined;
+  const ss = seat.savedSeat;
+  /** 读档后不在存档里的座位：不能坐、不能补电脑 */
+  const outOfSave = loaded && !ss;
   return (
     <li
-      className={clsx(l.seat, mine && l.seatMine, !o && l.seatEmpty)}
+      className={clsx(l.seat, mine && l.seatMine, !o && l.seatEmpty, outOfSave && l.seatUnused)}
       data-testid={`seat-${i}`}
       data-kind={o ? o.kind : 'empty'}
+      data-saved={ss ? (o === null ? 'unclaimed' : 'claimed') : undefined}
       style={{ borderColor: `var(--c-p${i + 1})` }}
     >
       <div className={l.seatHead}>
@@ -48,7 +55,24 @@ function SeatCard({ seat, room }: { seat: SeatView; room: RoomView }): ReactNode
         {mine && <span className={l.tag}>{t('lobby:seat.you')}</span>}
       </div>
       <Avatar character={seat.characterId} size={64} seat={i} dim={o?.kind === 'human' && !o.connected} />
-      {o === null && <div className={l.seatName}>{t('lobby:seat.empty')}</div>}
+      {ss && (
+        <div className={l.savedOrigin} data-testid={`seat-${i}-origin`}>
+          {t('lobby:saved.origin', {
+            character: t(`characters:${charKey(ss.characterId)}.name`),
+            nickname: ss.wasHuman ? ss.nickname : t('lobby:seat.ai'),
+          })}
+        </div>
+      )}
+      {o === null && !ss && (
+        <div className={l.seatName}>{outOfSave ? t('lobby:saved.notInSave') : t('lobby:seat.empty')}</div>
+      )}
+      {o === null && ss && (
+        <div className={l.seatStatus}>
+          <span className={l.badgeUnclaimed} data-testid={`seat-${i}-unclaimed`}>
+            {t('lobby:saved.unclaimed')}
+          </span>
+        </div>
+      )}
       {o?.kind === 'human' && (
         <>
           <div className={l.seatName} data-testid={`seat-${i}-name`}>
@@ -94,17 +118,27 @@ function SeatCard({ seat, room }: { seat: SeatView; room: RoomView }): ReactNode
         </>
       )}
       <div className={l.seatActions}>
-        {o === null && host && (
+        {ss?.claimableByYou && (
+          <button
+            type="button"
+            className="btn btn--sm btn--green"
+            onClick={() => void run(client.claimSeat(i as SeatIndex))}
+            data-testid={`seat-${i}-claim`}
+          >
+            {t('lobby:saved.claim')}
+          </button>
+        )}
+        {o === null && host && !outOfSave && (
           <button
             type="button"
             className="btn btn--sm btn--blue"
             onClick={() => void run(client.setSeatAi(i, { preset: 'character' }))}
             data-testid={`seat-${i}-add-ai`}
           >
-            {t('lobby:seat.addAi')}
+            {loaded ? t('lobby:saved.fillAi') : t('lobby:seat.addAi')}
           </button>
         )}
-        {o === null && (iAmSpectator || (room.you.role === 'player' && !mine)) && (
+        {o === null && !loaded && (iAmSpectator || (room.you.role === 'player' && !mine)) && (
           <button
             type="button"
             className="btn btn--sm btn--cream"

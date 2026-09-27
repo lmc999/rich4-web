@@ -1,0 +1,14 @@
+0x00000000   1                       50  push eax
+0x00000001   1                       51  push ecx
+0x00000002   2                     89c8  mov eax, ecx
+0x00000004   3                   c1e803  shr eax, 3
+0x00000007   4                 0fb60406  movzx eax, byte [esi + eax]
+0x0000000b   3                   83e107  and ecx, 7
+0x0000000e   2                     d3e8  shr eax, cl
+0x00000010   3                   83e001  and eax, 1
+0x00000013   1                       59  pop ecx
+0x00000014   1                       41  inc ecx
+0x00000015   2                     85c0  test eax, eax
+0x00000017   1                       58  pop eax
+0x00000018   6             0f840238c5ef  je 0xefc53820
+0x0000001e   5               e91138c5ef  jmp 0xefc53834

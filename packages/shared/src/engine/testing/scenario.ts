@@ -12,12 +12,13 @@
  * 每个动作后可选跑 validateState（默认开启），不变量不成立立即抛错。
  */
 
+import { GODS } from '../../data/tables/gods';
 import type { EngineInternalApi } from '../api';
 import type { DecisionKind, PendingDecision } from '../types/decision';
 import type { GameEvent, GameEventType } from '../types/events';
-import type { CardId, ItemId, RandPurpose, SeatIndex, TileId } from '../types/ids';
-import type { DebugOp, GameAction, PlayerIntent } from '../types/intent';
-import type { GameState, PlayerState } from '../types/state';
+import type { CardId, GodKind, ItemId, RandPurpose, SeatIndex, TileId } from '../types/ids';
+import type { DebugOp, GameAction, PlayerIntent, UseTarget } from '../types/intent';
+import type { GameState, PlayerState, RoadObjectKind } from '../types/state';
 import { type NewGameOptions, newGame, pendingOf } from './builders';
 import { dbg, sysDebug } from './debug';
 
@@ -25,6 +26,8 @@ export interface ScenarioOptions extends NewGameOptions {
   /** 每步之后做 explainState（默认 true） */
   checkInvariants?: boolean;
 }
+
+/** 场景默认用干净的棋盘（board: 'clear'）：路上的神明、礼物、宝箱不会干扰强制结果；需要物件时用 edit 摆放 */
 
 export class ScenarioError extends Error {
   override name = 'ScenarioError';
@@ -40,7 +43,7 @@ export class Scenario {
   private readonly check: boolean;
 
   constructor(o: ScenarioOptions = {}) {
-    const g = newGame(o);
+    const g = newGame({ board: 'clear', ...o });
     this.engine = g.engine;
     this.state = g.state;
     this.events = g.events;
@@ -77,6 +80,10 @@ export class Scenario {
     return this.apply(dbg.setCash(seat, cash, deposit));
   }
 
+  setPoints(seat: SeatIndex, points: number): this {
+    return this.apply(dbg.setPoints(seat, points));
+  }
+
   teleport(seat: SeatIndex, node: TileId, prev?: TileId): this {
     return this.apply(dbg.teleport(seat, node, prev));
   }
@@ -92,6 +99,66 @@ export class Scenario {
     this.state = draft;
     this.verify('edit');
     return this;
+  }
+
+  // ───────────────────────── M6：路面物件、神明、用卡用道具 ─────────────────────────
+
+  /** 把某种神放到路上（搭档一并收走，保持「每对至多一个在场」） */
+  placeGod(kind: GodKind, node: TileId): this {
+    return this.edit((s) => {
+      const def = GODS[kind];
+      for (const g of s.gods) {
+        if (g.kind === def.partner && g.where.t === 'road') g.where = { t: 'absent' };
+      }
+      const slot = s.gods.find((g) => g.kind === kind && g.where.t !== 'attached');
+      if (!slot) throw new ScenarioError(`no free slot for god ${kind}`);
+      slot.where = { t: 'road', node };
+    });
+  }
+
+  /** 让 seat 直接附身某种神（不发威；搭档一并收走） */
+  attachGod(seat: SeatIndex, kind: GodKind, days?: number): this {
+    return this.edit((s) => {
+      const def = GODS[kind];
+      for (const g of s.gods) {
+        if ((g.kind === def.partner || g.kind === kind) && g.where.t === 'road') g.where = { t: 'absent' };
+      }
+      const slot = s.gods.find((g) => g.kind === kind && g.where.t === 'absent');
+      if (!slot) throw new ScenarioError(`no free slot for god ${kind}`);
+      const p = s.players.find((x) => x.seat === seat)!;
+      slot.where = { t: 'attached', seat };
+      p.god = { kind, days: days ?? def.days };
+      p.luck = {
+        bad: p.luck.bad + def.luck.bad,
+        wealth: p.luck.wealth + def.luck.wealth,
+        fortune: p.luck.fortune + def.luck.fortune,
+      };
+    });
+  }
+
+  /** 在格上放一个路面物件（路障、地雷、炸弹从共享库存扣）；返回物件 id 写进 lastObjectId */
+  placeObject(kind: RoadObjectKind, node: TileId, placedBy: SeatIndex | null = null): this {
+    return this.edit((s) => {
+      s.counters.object += 1;
+      const item = kind === 'roadblock' ? 2 : kind === 'mine' ? 3 : kind === 'bomb' ? 4 : null;
+      if (item !== null) s.pools.items[item] = s.pools.items[item]! - 1;
+      s.objects.push({ id: s.counters.object, kind, node, placedBy });
+      this.lastObjectId = s.counters.object;
+    });
+  }
+
+  /** 最近一次 placeObject 的物件 id */
+  lastObjectId = 0;
+
+  /** 以 seat 在 TURN_MENU 用手里的第一张 card */
+  useCard(seat: SeatIndex, card: CardId, target: UseTarget = { t: 'none' }): this {
+    const slot = this.player(seat).cards.indexOf(card);
+    if (slot < 0) throw new ScenarioError(`seat ${seat} has no card ${card}`);
+    return this.act(seat, { type: 'USE_CARD', slot, card, target });
+  }
+
+  useItem(seat: SeatIndex, item: ItemId, target: UseTarget = { t: 'none' }): this {
+    return this.act(seat, { type: 'USE_ITEM', item, target });
   }
 
   pending(seat: SeatIndex): PendingDecision {

@@ -17,12 +17,12 @@ import type { Ctx } from '../core/ctx';
 import type { FrameHandler } from '../core/frameHandler';
 import { weightedIndex } from '../core/random';
 import { buildShop, fullDeckShelf, shopHasChoice } from '../decisions/economy';
+import { gainCard } from '../effects/common';
 import { EngineRuleError } from '../errors';
 import {
   drawFromDeck,
   HAND_MAX,
   ITEM_MAX,
-  makeRoomForCard,
   receiveItem,
   removeItem,
   returnCardToDeck,
@@ -51,10 +51,7 @@ function chairmanGift(ctx: Ctx, f: ShopFrame): void {
   if (kind === 0) {
     const card = drawFromDeck(ctx.s);
     if (card === null) return;
-    const discarded = makeRoomForCard(ctx.s, f.seat);
-    if (discarded !== null) ctx.emit('CARD_LOST', { seat: f.seat, card: discarded, cause: 'discard' });
-    ctx.player(f.seat).cards.push(card);
-    ctx.emit('CHAIRMAN_GIFT', { seat: f.seat, card, item: null });
+    gainCard(ctx, f.seat, card, 'chairmanGift', () => ctx.emit('CHAIRMAN_GIFT', { seat: f.seat, card, item: null }));
     return;
   }
   const item = drawPoolItem(ctx, 'chairmanGift');

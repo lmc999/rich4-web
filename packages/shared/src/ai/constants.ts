@@ -46,3 +46,29 @@ export const SHOP_TOOL_ORDER = [8, 2, 7, 1, 4, 3] as const;
 /** 骰子颗数：身背定时炸弹引信 < 15 时只掷 1 颗；前瞻 5 格（@0x4221c0） */
 export const DICE_BOMB_FUSE = 15;
 export const DICE_LOOKAHEAD = 5;
+
+// ───────────────────────── M6：卡片与道具（design/minigames-ai.md §9.5–§9.7） ─────────────────────────
+
+/** 连锁店过路费基数（与引擎 ECON.CHAIN_TOLL 相同，AI 估算同街过路费用） */
+export const CHAIN_TOLL_BASE = 2000;
+/** 每回合用卡最多看 8 张候选，用道具最多看 4 种（时光机不计）（@0x418e18） */
+export const CARD_RING = 8;
+export const ITEM_RING = 4;
+/** AI 从不主动出的卡：换屋、转向与四张被动卡 */
+export const AI_NEVER_PLAYS: readonly number[] = [5, 6, 18, 19, 20, 21];
+/** 均富：平均现金 > 我的现金 × 10 且我的现金 < 3000·PI */
+export const EQUAL_WEALTH_RATIO = 10;
+export const EQUAL_WEALTH_CASH = 3000;
+/** 均贫 / 查税：最恨的人现金 > 30000·PI；否则视野内对手现金 > 50000·PI */
+export const HATED_CASH = 30000;
+export const RIVAL_CASH = 50000;
+/** 免费卡：金额 > 现金，或金额 > (rng%3000+3000)·PI；嫁祸（过路费、罚款）：金额 > (rng%4000+4000)·PI */
+export const FREE_CARD_BASE = 3000;
+export const SCAPEGOAT_BASE = 4000;
+/** 嫁祸（查税）：我的现金 ≥ 20000·PI 才用 */
+export const SCAPEGOAT_TAX_CASH = 20000;
+/** 保释：点券 > 30 才保释玩家；≥ 700 才雇恶人（实际收 300）（@0x43d3d8） */
+export const BAIL_MIN_POINTS = 30;
+export const HIRE_MIN_POINTS = 700;
+/** 通用资金门槛：现金 + 存款 > 10000 */
+export const MONEY_FLOOR = 10000;

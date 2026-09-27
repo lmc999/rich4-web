@@ -34,4 +34,7 @@ export const dbg = Object.freeze({
   setDate(date: DateNum): SystemAction {
     return sysDebug({ op: 'setDate', date });
   },
+  clearBoard(): SystemAction {
+    return sysDebug({ op: 'clearBoard' });
+  },
 });

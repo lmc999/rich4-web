@@ -11,15 +11,18 @@ import { tx } from '../../i18n/tx';
 import { selfPlay } from '../../test/selfPlay';
 import { BUDGET_TOLERANCE } from '../EventPlayer';
 import { makeNames } from '../names';
-import type { BoardPort, PresentationContext } from '../types';
+import type { BoardPort, EventHandler, PresentationContext } from '../types';
 import { createUiPresenter } from '../UiPresenter';
-import { HANDLERS } from '.';
+import { HANDLERS, RAW_HANDLERS } from '.';
+import type { StagePort } from './stage';
+import { recordingStage } from './testStage';
+import { wrapHandler } from './wrap';
 
 beforeAll(() => {
   initI18n('original');
 });
 
-function timedBoard(clock: AnimClock): BoardPort {
+function timedBoard(clock: AnimClock, withStage = false): BoardPort & { stage?: StagePort } {
   const noop = (): void => {};
   const wait = (ms: number) => (_a?: unknown, _b?: unknown, s?: unknown) =>
     clock.wait(ms, s instanceof AbortSignal ? s : undefined);
@@ -40,17 +43,22 @@ function timedBoard(clock: AnimClock): BoardPort {
     pulseTile: noop,
     shake: noop,
     clearFx: noop,
+    ...(withStage ? { stage: recordingStage([], clock) } : {}),
   };
 }
 
-/** 在 1x 时钟下运行一个 handler，返回用掉的时钟毫秒 */
-async function measure(e: GameEvent, view: GameView): Promise<number> {
+/** 在 1x 时钟下运行一个 handler，返回用掉的时钟毫秒（raw：不经包装，测「自然」时长；stage：接上计时舞台） */
+async function measure(
+  e: GameEvent,
+  view: GameView,
+  o: { raw?: boolean; stage?: boolean; handler?: EventHandler<GameEvent['type']> } = {},
+): Promise<number> {
   const clock = new AnimClock();
   const signal = new AbortController().signal;
   const ctx: PresentationContext = {
     signal,
     wait: (ms) => clock.wait(ms, signal),
-    board: timedBoard(clock),
+    board: timedBoard(clock, o.stage ?? false),
     ui: createUiPresenter({ wait: (ms, s) => clock.wait(ms, s) }),
     audio: { play: () => {} },
     me: 0,
@@ -60,7 +68,8 @@ async function measure(e: GameEvent, view: GameView): Promise<number> {
     names: makeNames({ t: tx, view: () => view, map: () => null }),
     t: tx,
   };
-  const h = HANDLERS[e.type] as unknown as (x: GameEvent, c: PresentationContext) => Promise<void>;
+  const table = o.raw ? RAW_HANDLERS : HANDLERS;
+  const h = (o.handler ?? table[e.type]) as unknown as (x: GameEvent, c: PresentationContext) => Promise<void>;
   let done = false;
   const p = h(e, ctx).then(() => {
     done = true;
@@ -146,5 +155,129 @@ describe('handler 用时 ≤ EVENT_BUDGET_MS', () => {
       { type: 'SUBSCRIBED', seat: 0, stock: 1, shares: 100, unit: 50 },
     ] as GameEvent[];
     for (const e of events) within(e, await measure(e, view));
+  });
+
+  it('M6/M7 全部新 handler（接上计时舞台，不经封顶包装）', async () => {
+    const base = selfPlay({ seed: 1, steps: 2 }).initial.view;
+    const view: GameView = { ...base, beggars: [{ seat: 3, node: 7 }] };
+    const cause = { k: 'card', ref: 17, by: 0 } as const;
+    const obj = { id: 1, kind: 'mine', node: 6, placedBy: 0 } as const;
+    const result = {
+      reason: 'timeLimit',
+      code: 3,
+      winner: 1,
+      date: 19990101,
+      elapsedDays: 365,
+      ranking: [
+        { seat: 1, netWorth: 500000, alive: true },
+        { seat: 0, netWorth: 300000, alive: true },
+        { seat: 2, netWorth: 100000, alive: true },
+        { seat: 3, netWorth: 0, alive: false },
+      ],
+    } as const;
+    const events = [
+      { type: 'CARD_USED', seat: 0, card: 17, target: { t: 'seat', seat: 1 } },
+      { type: 'CARD_USED', seat: 0, card: 9, target: { t: 'lot', lot: 'L1', facility: null } },
+      { type: 'CARD_NO_EFFECT', seat: 0, card: 22 },
+      { type: 'PASSIVE', seat: 1, card: 21, context: 'frame' },
+      { type: 'ITEM_USED', seat: 0, item: 2, target: { t: 'node', node: 5 } },
+      { type: 'VEHICLE', seat: 0, vehicle: 'car', dice: 3 },
+      { type: 'VEHICLE_DESTROYED', seat: 0, vehicle: 'moto' },
+      { type: 'OBJECT_PLACED', obj },
+      { type: 'OBJECT_REMOVED', obj, cause: { k: 'object', ref: null, by: null } },
+      { type: 'DOLL_WALK', seat: 0, path: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11], clearedObjects: [1], clearedGods: [7] },
+      { type: 'BOMB_ATTACHED', seat: 1, fuse: 38 },
+      { type: 'BOMB_TRANSFERRED', from: 1, to: 2, fuse: 30 },
+      { type: 'BOMB_EXPLODED', seat: 2, node: 6, lot: 'L2' },
+      { type: 'STRIKE', kind: 'missile', center: 6, half: 100, lots: ['L1', 'L2'], actors: [{ t: 'seat', seat: 1 }] },
+      { type: 'STRIKE', kind: 'nuke', center: 6, half: 220, lots: ['L1'], actors: [] },
+      { type: 'STRIKE', kind: 'typhoon', center: 6, half: 100, lots: [], actors: [] },
+      {
+        type: 'TELEPORTED',
+        by: 0,
+        source: { k: 'actor', actor: { t: 'seat', seat: 1 } },
+        dest: { k: 'road', node: 9 },
+      },
+      { type: 'TIME_REWOUND', bySeat: 0, toTurnNo: 3 },
+      { type: 'GOD_SPAWNED', kind: 1, node: 8 },
+      { type: 'GOD_ATTACHED', seat: 0, kind: 2, displaced: null },
+      { type: 'GOD_POWER', seat: 0, kind: 2, slot: null, transfers: [{ seat: 0, amount: 1000 }] },
+      {
+        type: 'GOD_POWER',
+        seat: 0,
+        kind: 6,
+        slot: { digits: 4, value: 3721 },
+        transfers: [
+          { seat: 0, amount: -3721 },
+          { seat: 1, amount: 3721 },
+        ],
+      },
+      { type: 'GOD_LEFT', seat: 0, kind: 2, reason: 'expired' },
+      { type: 'GOD_LEFT', seat: null, kind: 7, reason: 'swept' },
+      { type: 'GOD_MANIFEST', seat: 0, kind: 12, lot: 'L1', effect: 'seize' },
+      { type: 'DOG_BITE', seat: 1, node: 7 },
+      { type: 'DOG_KNOCKED', seat: 1, node: 7 },
+      { type: 'DEATH_GOD_SUMMONED', by: 0, target: 1 },
+      { type: 'CONFINED', actor: { t: 'seat', seat: 1 }, where: 'jail', days: 5, total: 5, cause },
+      { type: 'CONFINED', actor: { t: 'seat', seat: 2 }, where: 'hospital', days: 3, total: 3, cause },
+      { type: 'CONFINED', actor: { t: 'seat', seat: 2 }, where: 'away', days: 3, total: 3, cause },
+      { type: 'CONFINED', actor: { t: 'villain', kind: 'thief' }, where: 'jail', days: 3, total: 3, cause },
+      { type: 'RELEASED', actor: { t: 'seat', seat: 1 }, from: 'jail' },
+      { type: 'RETURNED', seat: 1, node: 14 },
+      { type: 'BLESSING', seat: 0, category: 'misfortune', result: 'high' },
+      { type: 'STATUS_SET', actor: { t: 'seat', seat: 1 }, status: 'hibernate', value: 5 },
+      { type: 'ALLIANCE_FORMED', a: 0, b: 1, days: 7 },
+      { type: 'ALLIANCE_BROKEN', a: 0, b: 1, reason: 'hostility' },
+      { type: 'ALLIANCE_EXPIRED', a: 0, b: 1 },
+      { type: 'BAIL', by: 0, seat: 1, cost: 30 },
+      { type: 'NEWS', id: 8, params: { seat: 1, amount: 10000 }, affected: [1] },
+      { type: 'NEWS', id: 27, params: { stock: 2 }, affected: [] },
+      { type: 'FATE', seat: 0, id: 25, amount: 10000, blessing: 'high' },
+      { type: 'FATE', seat: 0, id: 34, amount: null, blessing: null },
+      { type: 'MAGIC_CONDITION', caster: 0, cond: 3, targets: [1, 2] },
+      { type: 'MAGIC_CAST', caster: 0, effect: 2, targets: [1, 2] },
+      { type: 'LOTTERY_DRAW', number: 11, winner: 2, prize: 36000 },
+      { type: 'VILLAIN_HIRED', by: 0, kind: 'robber', cost: 3000 },
+      { type: 'VILLAIN_ACTION', kind: 'robber', employer: 0, victim: 1, what: 'robDeposit', amount: 4000 },
+      { type: 'VILLAIN_ACTION', kind: 'thief', employer: null, victim: null, what: 'stealObject', amount: 0 },
+      { type: 'VILLAIN_HOME', kind: 'robber' },
+      { type: 'MOVE_SEGMENT', actor: { t: 'villain', kind: 'thief' }, path: [3, 4, 5, 6], remaining: 0 },
+      { type: 'BEGGAR_ALMS', payer: 0, beggar: 3, amount: 1000, newNode: 11 },
+      { type: 'AUCTION_STARTED', lot: 'L1', seller: 0, source: 'card', start: 2000, bidders: [1, 2, 3] },
+      { type: 'AUCTION_BID', seat: 1, price: 2500 },
+      { type: 'AUCTION_PASS', seat: 2 },
+      { type: 'AUCTION_QUIT', seat: 3 },
+      { type: 'AUCTION_ENDED', lot: 'L1', winner: 1, price: 2500 },
+      { type: 'LISTING_ADDED', listing: { id: 1, seller: 0, price: 5000, asset: { t: 'card', card: 3 } } },
+      { type: 'LISTING_REMOVED', listingId: 1, reason: 'delisted' },
+      { type: 'LISTING_SOLD', listingId: 1, seller: 0, buyer: 1, price: 5000 },
+      { type: 'SURRENDERED', seat: 3 },
+      { type: 'GAME_OVER', result },
+    ] as unknown as GameEvent[];
+    // 编排确实在跑（不是空转通过）：这些事件的自然时长至少有预算的一半
+    const substantial = new Set(['NEWS', 'FATE', 'GAME_OVER', 'CONFINED', 'GOD_ATTACHED', 'CARD_USED', 'LOTTERY_DRAW']);
+    const seen = new Set<string>();
+    for (const e of events) {
+      seen.add(e.type);
+      const used = await measure(e, view, { raw: true, stage: true });
+      within(e, used);
+      if (substantial.has(e.type) && !(e.type === 'CONFINED' && e.actor.t !== 'seat')) {
+        expect(used, `${e.type} 只用了 ${used}ms`).toBeGreaterThanOrEqual(eventBudgetMs(e) / 2);
+      }
+    }
+    expect(seen.size).toBeGreaterThan(50);
+  });
+
+  it('包装后的 handler 一律封顶在预算内（慢 handler 到点被中止）', async () => {
+    const view = selfPlay({ seed: 1, steps: 2 }).initial.view;
+    const e = { type: 'BLESSING', seat: 0, category: 'reward', result: 'high' } as GameEvent;
+    let finished = false;
+    const slow: EventHandler<'BLESSING'> = async (_e, ctx) => {
+      await ctx.wait(10_000);
+      finished = true;
+    };
+    const used = await measure(e, view, { handler: wrapHandler(slow) as EventHandler<GameEvent['type']> });
+    expect(finished).toBe(true);
+    expect(used).toBeLessThanOrEqual(eventBudgetMs(e) + 20);
   });
 });

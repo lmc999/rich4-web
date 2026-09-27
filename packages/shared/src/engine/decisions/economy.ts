@@ -167,7 +167,9 @@ export function buildFacilityType(
   facIdx: number,
 ): FacilityTypeOptions | null {
   const f = s.facilities[facIdx];
-  if (!f || f.owner !== seat || f.level !== 0) return null;
+  // 不看归属：福神（自己买下的空地）、天使显灵与天使卡（不论谁的空地）都走这里；只要求仍是 0 级
+  if (f?.level !== 0) return null;
+  void seat;
   return { lot: f.id, types: facilityTypeRows(s, em, facIdx, 1) };
 }
 

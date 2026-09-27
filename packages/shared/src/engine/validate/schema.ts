@@ -128,7 +128,8 @@ const PlayerSchema = z.strictObject({
   bomb: z.strictObject({ fuse: nonneg }).nullable(),
   luck: z.strictObject({ bad: int, wealth: int, fortune: int }),
   hostility: z.tuple([int, int, int, int]),
-  cards: z.array(z.literal(CARD_IDS)).max(15),
+  // 手牌上限 15 由不变量检查；handFull='choose' 时等待 DISCARD_CARD 期间可以暂时超出
+  cards: z.array(z.literal(CARD_IDS)).max(30),
   items: z.array(z.int().min(0).max(99)).length(14),
   holdings: z.array(z.strictObject({ shares: nonneg, costCents: nonneg })),
   quota: z.array(nonneg),

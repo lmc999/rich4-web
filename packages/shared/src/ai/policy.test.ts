@@ -365,7 +365,9 @@ describe('TURN_MENU：股票与骰子颗数', () => {
       });
       // 改过行情后按新状态重建 TURN_MENU 的 options（引擎在下一次发 TURN_MENU 时也会这样算）
       const d = { ...s.pending[0]!, options: buildTurnMenu(s, engineMap(map), 0) };
-      const intent = OriginalAiPolicy.decide(view(s), decisionForSeat(d) as DecisionForYou, ctxFor(s, 0, d.id));
+      // 只看股票这一步：关掉用卡 / 用道具（硬币那一步由 cards / items 的用例覆盖）
+      const noUse = { useCards: false, useItems: false };
+      const intent = OriginalAiPolicy.decide(view(s), decisionForSeat(d) as DecisionForYou, ctxFor(s, 0, d.id, noUse));
       if (intent.type === 'STOCK_BUY') {
         bought++;
         expect(intent.shares).toBeGreaterThan(0);
@@ -389,7 +391,7 @@ describe('TURN_MENU：股票与骰子颗数', () => {
       OriginalAiPolicy.decide(
         view(walk.state),
         decisionForSeat(dw) as DecisionForYou,
-        ctxFor(walk.state, 0, dw.id, { stockRatio: 0 }),
+        ctxFor(walk.state, 0, dw.id, { stockRatio: 0, useCards: false, useItems: false }),
       ),
     ).toEqual({
       type: 'ROLL',
@@ -397,7 +399,7 @@ describe('TURN_MENU：股票与骰子颗数', () => {
     const car = OriginalAiPolicy.decide(
       view(g.state),
       decisionForSeat(d) as DecisionForYou,
-      ctxFor(g.state, 0, d.id, { stockRatio: 0 }),
+      ctxFor(g.state, 0, d.id, { stockRatio: 0, useCards: false, useItems: false }),
     );
     expect(car.type).toBe('ROLL');
     const bomb = editState(g.state, (x) => {
@@ -408,7 +410,7 @@ describe('TURN_MENU：股票与骰子颗数', () => {
       OriginalAiPolicy.decide(
         view(bomb),
         decisionForSeat(d) as DecisionForYou,
-        ctxFor(bomb, 0, d.id, { stockRatio: 0 }),
+        ctxFor(bomb, 0, d.id, { stockRatio: 0, useCards: false, useItems: false }),
       ),
     ).toEqual({
       type: 'ROLL',

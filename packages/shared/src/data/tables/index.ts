@@ -1,12 +1,13 @@
 /**
  * 手录全局数据表的入口（architecture §2 data/tables）。
  * TABLES 的规范化 JSON 做 FNV-1a 64 得到 tablesHash（state.dataRef.tablesHash；读档时不符只告警）。
- * M4 加入 facilities（设施与企业收费表）；M6+ 追加 gods、news、fate、magic、emotes 时同步加入 TABLES。
+ * M4 加入 facilities（设施与企业收费表）；M6 加入 gods（神明表）与 combat（对抗常数）；M7+ 追加 news、fate、magic 时同步加入 TABLES。
  */
 import { canonicalJson } from '../../util/canonicalJson';
 import { fnv1a64 } from '../../util/hash';
 import { CARDS } from './cards';
 import { CHARACTERS } from './characters';
+import { COMBAT } from './combat';
 import { ECONOMY } from './economy';
 import {
   AIRLINE_WHEEL,
@@ -17,6 +18,7 @@ import {
   MALL_WHEEL,
   VEHICLE_FEE_FACTOR,
 } from './facilities';
+import { GODS } from './gods';
 import { ITEMS } from './items';
 import {
   INITIAL_FUND_TABLE,
@@ -32,8 +34,10 @@ import {
 
 export * from './cards';
 export * from './characters';
+export * from './combat';
 export * from './economy';
 export * from './facilities';
+export * from './gods';
 export * from './ids';
 export * from './items';
 export * from './setup';
@@ -43,6 +47,8 @@ export const TABLES = Object.freeze({
   items: ITEMS,
   characters: CHARACTERS,
   economy: ECONOMY,
+  combat: COMBAT,
+  gods: GODS,
   facilities: Object.freeze({
     caps: FACILITY_CAPS,
     hotelWheel: HOTEL_WHEEL,

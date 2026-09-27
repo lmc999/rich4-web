@@ -215,7 +215,8 @@ describe('PlayerIntent 与 PlayerIntentSchema', () => {
       { type: 'PICK_LOT', lot: 'X1' },
       { type: 'PICK_LOT', lot: 'L0' },
       { type: 'BID', inc: 200 },
-      { type: 'BAIL', seat: 4 },
+      { type: 'BAIL', target: 4 },
+      { type: 'BAIL', seat: 1 },
       { type: 'LOTTERY_BUY', number: 36 },
     ];
     for (const i of bad) expect(PlayerIntentSchema.safeParse(i).success, JSON.stringify(i)).toBe(false);

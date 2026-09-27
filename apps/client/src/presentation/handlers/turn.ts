@@ -1,6 +1,8 @@
-// 回合与移动类事件演出（design/client.md §4.5）：回合横幅 + 镜头飞向玩家、跳伞、骰子、逐格行走（镜头跟随）
+// 回合与移动类事件演出（design/client.md §4.5）：回合横幅 + 镜头飞向玩家、跳伞、骰子、逐格行走（镜头跟随）、
+// 四大恶人的棋子行走、撞上路障、回到棋盘。出狱 / 出院（RELEASED）见 status.ts。
 import type { EventHandler } from '../types';
 import { brief, syncFromPost } from './common';
+import { stageOf } from './stage';
 
 export const GAME_STARTED: EventHandler<'GAME_STARTED'> = async (e, ctx) => {
   await ctx.ui.banner(
@@ -49,11 +51,10 @@ export const TURN_BLOCKED: EventHandler<'TURN_BLOCKED'> = async (e, ctx) => {
   ctx.board.setActorPose(e.seat, 'idle');
 };
 
-export const RELEASED = brief<'RELEASED'>(700);
-
 export const RETURNED: EventHandler<'RETURNED'> = async (e, ctx) => {
   ctx.board.placeActor(e.seat, e.node);
   ctx.board.setActorPose(e.seat, 'idle');
+  stageOf(ctx).burst({ seat: e.seat }, 0xfff3b0, 10);
   await ctx.board.hop(e.seat, ctx.signal);
   await ctx.wait(300);
 };
@@ -66,8 +67,11 @@ export const DICE_ROLLED: EventHandler<'DICE_ROLLED'> = async (e, ctx) => {
 
 export const MOVE_SEGMENT: EventHandler<'MOVE_SEGMENT'> = async (e, ctx) => {
   if (e.actor.t !== 'seat') {
-    // 恶人棋子在 M7 渲染
-    await ctx.wait(Math.min(600, e.path.length * 60));
+    // 四大恶人：从当前节点出发沿路走（棋子由路面层管理）
+    const kind = e.actor.kind;
+    const v = ctx.view().villains.find((x) => x.kind === kind);
+    const start = v?.onBoard && v.node > 0 ? [v.node] : [];
+    await stageOf(ctx).walkVillain(kind, [...start, ...e.path], ctx.signal);
     return;
   }
   const seat = e.actor.seat;
@@ -78,7 +82,16 @@ export const MOVE_SEGMENT: EventHandler<'MOVE_SEGMENT'> = async (e, ctx) => {
   await ctx.board.walk(seat, [...start, ...e.path], ctx.signal);
 };
 
-export const ROADBLOCK_HIT = brief<'ROADBLOCK_HIT'>(600);
+export const ROADBLOCK_HIT: EventHandler<'ROADBLOCK_HIT'> = async (e, ctx) => {
+  const stage = stageOf(ctx);
+  const at = e.actor.t === 'seat' ? { seat: e.actor.seat } : stage.villainAnchor(e.actor.kind);
+  if (at) stage.bubble(at, ctx.t('events:bubble.roadblock'), 700);
+  if (e.actor.t === 'seat') ctx.board.setActorPose(e.actor.seat, 'hurt');
+  ctx.board.pulseTile(e.node);
+  ctx.board.shake(3, 180);
+  await ctx.wait(550);
+  if (e.actor.t === 'seat') ctx.board.setActorPose(e.actor.seat, 'idle');
+};
 
 export const REVERSED = brief<'REVERSED'>(400);
 

@@ -1,6 +1,7 @@
-// 表情（design/client.md §5.6）：16 个表情 4×4，发出后在该玩家角色头顶弹出（冷却 1.5 秒，与服务器一致）
+// 表情（design/client.md §5.6）：16 个表情 4×4，发出后在该玩家角色头顶弹跳 2 秒（由角色层订阅 socialStore 的
+// onHeadBubble 渲染）；前端冷却 1.5 秒（与服务器一致）。点面板外或按 Esc 收起。
 import { EMOTE_COOLDOWN_MS } from '@rich4/shared/net';
-import { type ReactNode, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useClient } from '../../app/services';
 import { useTx } from '../../i18n/tx';
 import { EMOTES } from '../../store/chatStore';
@@ -12,6 +13,23 @@ export function EmotePicker({ disabled }: { disabled?: boolean }): ReactNode {
   const client = useClient();
   const [open, setOpen] = useState(false);
   const last = useRef(0);
+  const wrap = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent): void => {
+      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
 
   const send = async (id: string): Promise<void> => {
     const now = Date.now();
@@ -26,13 +44,15 @@ export function EmotePicker({ disabled }: { disabled?: boolean }): ReactNode {
   };
 
   return (
-    <span className={s.emoteWrap}>
+    <span className={s.emoteWrap} ref={wrap}>
       <button
         type="button"
         className="btn btn--sm btn--cream"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        aria-haspopup="menu"
         aria-label={t('hud:chat.emote')}
+        title={t('hud:chat.emote')}
         disabled={disabled}
         data-testid="emote-open"
       >

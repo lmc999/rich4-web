@@ -7,8 +7,9 @@
  *   开局道具 1,2,3,4,8,9 各 1 件（1..8 从共享库存扣）；机车 / 汽车从库存扣，骰子数 = 交通工具上限
  * 4 恶人：小偷、强盗在监狱，流氓、间谍在医院（关押格），不在场
  * 5 地块、设施、企业、股票按地图初始化（公司保留股 = 10000 − 流通股）
- * 6 牌堆 100 张；神明 14 槽（开局随机摆放神明、礼物、宝箱属于 M6，这里全部不在场）
+ * 6 牌堆 100 张；神明 14 槽
  * 7 secret：新闻 36 张、命运 37 张各洗一次；aiSeed
+ * 7b 随机摆放小财神、小福神、小穷神、小衰神、天使、恶犬、礼物、宝箱（互不重叠的空道路格，purpose 'place'）
  * 8 flow = [ROOT]，由调用方 run 到第一个待决策（首回合跳伞在那时发生）
  */
 import type { DataRegistry } from '../../data/maps/registry';
@@ -20,6 +21,7 @@ import { initialItemPool } from '../../data/tables/items';
 import { START_FUND_SPLIT, START_ITEMS, VEHICLE_ITEM } from '../../data/tables/setup';
 import { divTrunc } from '../../util/int32';
 import { seedFromHex } from '../../util/rng/xoshiro';
+import { placeInitialObjects } from '../effects/objects';
 import { EngineRuleError } from '../errors';
 import { applyCalendar } from '../flow/day';
 import { freshTurnState } from '../flow/turn';
@@ -229,6 +231,6 @@ export function createInitialState(
   s.secret.newsOrder = shuffle(s, 'news', NEWS_IDS.slice());
   s.secret.fateOrder = shuffle(s, 'fate', FATE_IDS.slice());
   s.secret.aiSeed = next32(s, 'aiSeed');
-  // TODO(M6)：随机摆放小财神、小福神、小穷神、小衰神、天使、恶犬、礼物、宝箱（互不重叠的可放置格，purpose 'place'）
+  placeInitialObjects(s, em);
   return { s, em };
 }

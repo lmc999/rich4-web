@@ -1,4 +1,4 @@
-// 日期推进、股市、银行 / 商店 / 乐透提示、破产与终局演出（design/client.md §4.5）
+// 日期推进、股市、破产与乞丐演出（design/client.md §4.5）；拍卖、公布栏、投降与终局见 endgame.ts
 import { formatEvent } from '../logFormat';
 import type { EventHandler } from '../types';
 import { brief, syncFromPost } from './common';
@@ -35,16 +35,6 @@ export const SUSPENDED = brief<'SUSPENDED'>(600);
 export const RESUMED = brief<'RESUMED'>(400);
 export const MARKET_TICK: EventHandler<'MARKET_TICK'> = async () => {};
 export const MARKET_CLOSED: EventHandler<'MARKET_CLOSED'> = async () => {};
-export const LISTING_ADDED = brief<'LISTING_ADDED'>(400);
-export const LISTING_REMOVED: EventHandler<'LISTING_REMOVED'> = async () => {};
-export const LISTING_SOLD = brief<'LISTING_SOLD'>(600);
-
-// 拍卖
-export const AUCTION_STARTED = brief<'AUCTION_STARTED'>(1000);
-export const AUCTION_BID = brief<'AUCTION_BID'>(300, false);
-export const AUCTION_PASS: EventHandler<'AUCTION_PASS'> = async () => {};
-export const AUCTION_QUIT = brief<'AUCTION_QUIT'>(200, false);
-export const AUCTION_ENDED = brief<'AUCTION_ENDED'>(1000);
 
 // 终局
 export const BANKRUPT: EventHandler<'BANKRUPT'> = async (e, ctx) => {
@@ -65,17 +55,3 @@ export const LIQUIDATION: EventHandler<'LIQUIDATION'> = async (e, ctx) => {
 };
 
 export const BECAME_BEGGAR = brief<'BECAME_BEGGAR'>(800);
-export const SURRENDERED = brief<'SURRENDERED'>(1200);
-
-export const GAME_OVER: EventHandler<'GAME_OVER'> = async (e, ctx) => {
-  const w = e.result.winner;
-  await ctx.ui.banner(
-    {
-      kind: 'gameOver',
-      title: ctx.t('events:show.gameOver'),
-      ...(w === null ? {} : { subtitle: ctx.t('events:show.winner', { who: ctx.names.seat(w) }), seat: w }),
-    },
-    2400,
-    ctx.signal,
-  );
-};

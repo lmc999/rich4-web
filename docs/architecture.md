@@ -1111,3 +1111,82 @@ RICH4_AI_POLICY=original|basic  RICH4_TIMER_SCALE=<(0,1]，仅 RICH4_TEST_MODE=1
 - **前端**：服务器主动断开（停机 / 重启）后按 `reconnectInMs` 自动重连；被顶替时请求立即返回 replaced，首页与单机页也挂接管遮罩；昵称变化且不在对局中时重连让握手带上新昵称；时钟只在连接打开时采样、连上后补采 3 次；决策提交锁同时看 `gameStore.submitting`；toast 各自计时；棋盘卸载时 EventPlayer skipAll、handler 的 board 改为实时取值，动画时钟帧回调互相隔离、rAF 先续订后推进，补间出错必 resolve，PlayerActor / Camera 销毁后不再写 Pixi 对象。
 - **E2E**：夹具 URL 加 `?test=1`（生产构建也开批尾对账，不一致走 console.error 判失败）；新增 `anim-unmount.spec.ts`（不带 anim=instant，行走中后退 / 前进）。
 
+
+## 20. M6 / M8 第二部分实施记录与整合实测（2026-09-27）
+
+本轮并行完成 M6「对抗系统」（引擎 L4 + 原版 AI 的卡片 / 道具 / 被动卡判据，ENGINE_VERSION 0.3.0）、M6/M7 事件的前端演出（F3/F4）、M8 第二部分（小游戏引擎决策、服务端裁判、前端宿主）与 M5 的前端（聊天、观战、存档、托管、断线），随后统一接通、修复与实机测试。以下只列与本文件、design/*.md 不一致的实现与原因；标 ⚑ 的是缺证据时的暂定默认，结论见 VERIFY.md；行为上有意与原版不同的已进 DEVIATIONS.md。
+
+### 20.1 契约变更
+
+- **PlayerIntent**：`BAIL{seat}` → `BAIL{target}`，`DEATH_GOD_TARGET{seat}` → `DEATH_GOD_TARGET{target}`（服务器按 `{...intent, seat: 会话座位, decisionId}` 组装 GameAction，intent 里的 seat 会被覆盖，目标座位传不到引擎）。前端 BailDialog / DeathGodTargetDialog 已同步。**GameEvent 载荷与 view/pacing.ts 本轮均未改动。**
+- **DebugOp 新增 `clearBoard`**（只在 RICH4_TEST_MODE）：路上的神明回到场外、路面物件收走（路障 / 地雷 / 炸弹回共享库存），经 DEBUG_APPLIED 的 post 公布。E2E 夹具 `startGame` 开局后默认调用，排除开局随机摆放（6 位路面神 + 礼物 + 宝箱）对强制骰子路线的干扰。
+- **SYS_DEBUG 重发回合菜单**：`give / setCash / setPoints / clearBoard` 之后，若回合菜单是唯一待决策且 TURN 帧停在 menu 阶段，撤掉它由 run 循环按新状态重新发出（新 decisionId），否则调试发的卡要到下一回合才出现在菜单里。`teleport / forceNext / setDate` 不重发（场景测试常用它们摆局面后再掷骰；需要按新位置算目标时先 teleport 再 give）。只影响测试模式，正式对局与 simulate 不变。
+- **反作弊断言**：live 观战（默认设置）按设计经 `game:minigameWatch.ticket.seed` 下发种子（§5.10 已接受的风险）。anti-cheat 集成测试改为：观战者除 minigameWatch 以外的消息不得出现 seed / yourDecision / minigame；观战票据一律 `role='spectator'` 且不会发给本人座位；玩家收到的种子只在 `yourDecision.minigame.seed`。
+
+### 20.2 引擎（M6）要点与暂定默认
+
+- 30 张卡 `effects/cards/*`（CARD_EFFECTS 对 CardId 穷举）、13 种道具 `effects/items/*`、路面物件 `effects/objects.ts`、13 种神明 `data/tables/gods.ts` + `effects/gods/*`；对抗常数表 `data/tables/combat.ts`（combat、gods 进 TABLES，tablesHash 变化）。目标候选统一在 `decisions/targets.ts`，`targetMatches` 同时供引擎校验、AI 自检与前端 TargetPicker 对拍。
+- **CONFINE 阶段顺序**：hostility → bless → exempt → scapegoat → apply → revenge（加持判定在查被动卡之前，g_villains §6）。陷害 / 梦游 / 查税的敌意在 `Effect.before` 钩子记账、随 CARD_USED 的 post 公布；CONFINE 的敌意推迟到链中下一次 emit 之前（避免紧接着发出决策时出现未公布的变化 → SYNC）。
+- **被动卡询问门槛**：过路费、设施费、企业收费、PAYX、查税在金额 ≥ 2000 × PI 或金额 > 现金 + 存款时问免费卡 → 嫁祸卡；旅馆住宿不能用免费卡。USE_FREE_CARD / SCAPEGOAT 由被收费或被害的一方在出卡者的回合里回答。
+- ⚑ 嫁祸只改变谁付钱：旅馆住宿、航空出国、保险投保仍落在落点者身上；设施费、企业费用了免费卡时住宿 / 出国 / 投保一并取消（V-R23）。
+- ⚑ 换地卡连同地契期限一起交换；换地、换屋、改建、购地、土地公强占导致研究所换主或改类型时，进行中的研发作废（V-R16）。
+- ⚑ 复仇卡触发后出卡者直接受罚 5 天，不再检查出卡者自己的被动卡（V-R24）；⚑ 同盟期间的敌意衰减 −20 × PI 夹到不低于 0，同盟任一方到期即双方同时解除（V-R25）。
+- ⚑ 破产时身上的炸弹先放回所在格（格上已有东西或不可放置时回库存并发 `ITEM_LOST{bankrupt}`），然后附身神离场、搭档刷出，再解除同盟（V-R26）。
+- ⚑ 传送机的被传送物与目的地都限定在 targetRange 窗口内；搬房屋时地主、等级、类型、地契、研发一起搬（V-R27）。⚑ MANUAL 预设下红黑卡按自然日倒数 3 天、异色互相抵消为 0（V-R11）。⚑ 梦游者停下时照样触发物件、神明与显灵（V-R3）。
+- 死神附身者代付别人的过路费（`TollMod` 带 `deathPays`）；住宅过路费的同盟分账用 fround 比例，先付地主再付盟友。`handFull='choose'` 时满手先入手，再压 `ASK DISCARD_CARD`（弹出时手牌暂为 16 张）。
+- 路过触发：路障拦停；身上炸弹每步引信 −1、同格有人时转手（V-C3 暂按「先倒数后转手」）。停下触发：地雷、恶犬、地面炸弹拾取、礼物、宝箱、神明。炸弹爆炸分 program / manual3x3；`strike()` 供飞弹、核弹以及 M7 的新闻 4、20 复用。每月 1 日重摆礼物与宝箱。
+- 神明：GOD 帧按挤走旧神 → 附身 → 发威；回合开始时神明任期 −1、工程车倒数、同盟两段式倒数；搭档重生在距离 ≥ 300 的格上，试 64 次后放宽（DEV-08）；乞丐换位沿用同一规则（原版候选为 0 时会除零崩溃）。
+- M7 之前的占位：拍卖卡（AUCTION 帧）菜单里不可用；时光机不可用（原因 `noAnchor`）；BAIL 里雇恶人（HIRE）一律拒绝，options 的恶人全部 `available=false`；恶人的 MOVE / LAND / VILLAIN 帧仍为 NOT_IMPLEMENTED（本期恶人不会上场）。
+- 场景 DSL `scenario()` 默认 `board:'clear'`（M1–M4 的场景测试稳定），`newGame` 仍默认 `'random'`（与正式开局一致）；开局跳伞避开神明所在格。
+- **AI**：`ai/preRoll.ts` 硬币 rand & 1 在用卡与用道具之间二选一，候选卡最多 8 张、道具最多 4 种（环形取），过 f7 个性闸门，从不用时光机与被动卡；`ai/cards.ts`、`ai/items.ts` 覆盖 30 张卡与 13 种道具的判据；被动卡与保释在 `ai/decisions/passive.ts`。简化：乌龟卡只对自己使用；涨价卡原版 esi 残值怪癖按有意简化处理；AI 视野固定半宽 220（DEV-03/04）。
+
+### 20.3 小游戏（M8 第二部分）
+
+- **引擎** `squares/minigame.ts`：电脑座位或 `minigames='skip'` 走不玩分支（score = 50 + rand15 % 20、speechSlot = rand15 & 1，恰好 2 次 `'minigameSkip'`，只发 `MINIGAME_ENDED{skipped}`）；真人座位取种子 `next32('minigameSeed') & 0x7fffffff`，发 `MINIGAME_STARTED` 并压 ASK MINIGAME（种子只在 PendingDecision.minigame）。系统 action MINIGAME_RESULT 结束决策；分数截断并夹到各游戏上限（`MINIGAME_SCORE_CAP`，由测试对照 spec.scoreSanityMax）。梦游者不触发。`MINIGAME_RESULT.logHash` 是输入日志的 FNV-1a（`hashLog`），不是终局状态哈希。
+- **服务端** `MinigameReferee`：输入 seq 连续、tick 单调且不超前（horizon + 20）、日志合法；提交必须以已上传的流为前缀，结果一律以服务器 replay 为准（客户端分数不一致只记日志）。已开局的会话不再由 AI / 托管 / 超时代答，到期按已收到的输入重放结算（by=system）；真人开局时自动解除托管；开局后 decline 返回 `MINIGAME_INVALID{started}`。会话不随持久化保存：服务器重启后已开局的小游戏按新窗口、新 sessionId 从头开始；同进程暂停期间输入返回 GAME_PAUSED，继续时已开局的按已收到输入结算。
+- **投递在传输层**：io.ts 的 emitter 每发一条对局消息就调用 `MinigameRelay.afterEmit`（不经 Room / RoomBroadcaster）——live 模式给其他座位与观战者补发观战票据与已接受的帧，迟到者、重连者自动补发，玩家本人的新连接补发自己的帧用于续玩；replay 模式在「玩过」的结算批次之后下发带完整日志的票据。
+- **前端**：`installMinigames(client)` 改为**对局页进入时安装**（GameScreen 的 effect，幂等）；此前只有本人的 MinigameIntro 渲染时才装上，观战者与其他玩家收不到直播遮罩，刷新后服务器补发的自己的帧也会在安装前丢失。宿主在决策出现时后台创建、到 startsAt 才显示；观战遮罩在 startsAt − 3 秒弹出。
+- **修复（严重）**：`MiniGameHost` 用 `app.destroy(true)` 销毁小游戏的 Pixi 应用，`true` 会调用 `GlobalResourceRegistry.release()` 清空**整个页面共享**的 Batch 池 / 纹理池，同页还在渲染的棋盘随后执行旧指令时抛「Cannot read properties of null (reading 'geometry' / 'clear')」并停止渲染。本人的小游戏或观战的直播遮罩一关闭就触发（E2E minigame、reconnect 首次整合时复现）。改为 `destroy({ removeView: true }, { children: true })`；client-browser 新增回归用例（旧写法下必现）。
+- 点券一律按 u16 饱和累加，不跟随 `rules.intOverflow`（DEV-16）。
+
+### 20.4 前端演出与接通
+
+- **弹窗层**：GameScreen 挂载 `<PopupLayer />`（z-index 50：决策层 40 之上、骰子 55 / 横幅 60 之下），新闻、命运、出卡、神明、乐透、魔法屋、终局弹窗与公开竞价横幅由 handlers 经 `showPopup` 打开；最短展示时间过后出现「跳过」按钮。GAME_OVER 演出期间显示 GameOverScreen，之后由 hud/GameOverPanel 接手。
+- **舞台同步**：BoardController 暴露 `stage`（`fx.stageFor(this)` 懒创建的 BoardStage），`syncView` 末尾调用 `stage.syncWorld(view)`：reset / 快照、`?anim=instant`、后台标签页与 TIME_REWOUND 之后，路面物件、神明、恶人、乞丐与角色状态外观立即追上（此前只在 handler 前后同步）。handler 仍经 `wrapHandler` 包装（事件前后同步舞台、时长硬封顶在 EVENT_BUDGET_MS）。
+- **粒子预算**：`GameRenderer.particleLimit`（画质档 high 400 / mid 150 / low 0）传给 FxSystem，不再按帧率推断。
+- **头顶气泡接通**：ui/social 的 `onHeadBubble`（已过滤屏蔽名单；表情 2 秒、聊天 3 秒）→ BoardCanvas → `BoardController.say` → `PlayerActor.say`：气泡挂在角色上随行走移动，表情放大显示字形，聊天超过 18 字截断；按真实时间消失，同一角色新气泡替换旧的。玩家条的 DOM 气泡改用 `useHeadBubble`（屏蔽名单生效）。
+- **镜头锁定**：观战栏「跟随」写 `uiStore.followSeat`；BoardController 增加 `pinned()` 选项，锁定时镜头一直跟该座位，回合切换的 follow 调用不再覆盖；改回「自动」即恢复跟随当前行动者。
+- **外观修正**（实机发现）：坐牢 / 住院的窗口气泡抬到楼顶上方（`CONFINE_LIFT` 96 像素），关押期间角色整体深度加 `CONFINED_Z`，不再被医院 / 监狱屋顶挡住；名牌跟着窗口气泡走；同楼多人左右错开 64 像素。附身神明挂到名牌上方（此前被名牌挡住一半）。
+- **文案**：事件日志 CONFINED 增加 away / hotel 变体；`minigames.json` 补齐宿主、结算姿势与三个游戏的键，七彩气球说明改为 ×2 / ÷2 / ? 气球（原版没有炸弹球）。
+- **工程**：vite `optimizeDeps.include` 加 `react-dom/client`（浏览器模式测试与开发页偶发两份 React）；net/client.ts 的 minigameWatch / minigameFrames 路由注明由小游戏模块经 transport.on 监听。
+
+### 20.5 新增测试
+
+- client-unit `presentation/handlers/realEngine.test.ts`：原版 AI 在 test-allkinds 上自对弈 3 局 × 2500 个 action，按座位 0 视角投影出 1300 余个事件样本（M6 事件每种至多 40 条），逐个交给未封顶的 handler 并接计时舞台：不抛错；日志行、toast、飘字、气泡、弹窗里没有 undefined / NaN / 残留插值 / 未命中的 i18n 键；自然用时 ≤ EVENT_BUDGET_MS（与 EventPlayer 同一容差）。
+- client-dom `ui/decisions/realEngineCombat.dom.test.tsx`：25 张可主动使用的卡与 12 种道具逐一走「真实引擎 TURN_MENU → 卡片 / 道具页 → TargetPicker DOM 候选 → 确认 → 引擎执行」，必须被接受并发出 CARD_USED / ITEM_USED；拍卖卡、被动卡、时光机显示为禁用并带原因；另覆盖 USE_FREE_CARD（查税）、SCAPEGOAT（陷害）、BAIL、DISCARD_CARD（16 张）。
+- client-browser：`fx.browser.test.ts` 增加 syncView 同步舞台、头顶气泡、关押深度；`minigames/crossEngine.browser.test.ts` 增加宿主关闭不释放全局资源。
+- shared：`api.test.ts` 增加 SYS_DEBUG 重发回合菜单与 clearBoard。
+- E2E：新增 `cards.spec.ts`（4 个真人；P2 买地后 P1 传送到该地、debug:act 发卡发道具，全部从回合菜单的 DOM 候选列表选目标：购地卡买下 P2 的地、陷害卡送 P2 入狱、放路障、拆除卡拆路障、均富卡；每一步后 4 个页面 HUD 与服务器快照一致、路面物件 / 关押 / 手牌数一致）；`minigame.spec.ts` 增加观战者的 live 遮罩断言；`save-load.spec.ts` 只断言读档前的地块归属（开局随机神明可能显灵改等级，读档前后的完全一致断言不变）。
+
+### 20.6 台湾图实机测试（浏览器面板，RICH4_DATA_DIR=./rich4-data，1 真人 + 3 原版 AI）
+
+逐项操作与观感（桌面 1280×800，小游戏之一在 844×390 横屏）：
+
+- **购地卡**：传送到 AI 的地（台东县 1）→ 卡片页 → 目标面板「作用于脚下的『台东县 1』」→ 使用；地块插上本人旗帜，双方现金正确增减，出卡弹窗（卡面 + 描述 + 目标）约 1.2 秒。
+- **陷害卡**：候选列出视窗内的两名对手，选中后对方入狱 5 天（toast「乌咪 入狱 5 天」），角色从路面消失，监狱楼顶出现带头像、铁栏与天数的窗口气泡（本轮修正遮挡后清晰可见）。
+- **拆除卡**：放路障后菜单立即刷新为可用，候选里出现「路障」，出卡弹窗写「目标：路障」，路障消失。**均富卡**：4 人现金拉平为 113,875。
+- **路障 / 地雷**：候选格列表点选，路面出现条纹路障与深色地雷；之后 AI 也在路上放地雷与炸弹。
+- **定时炸弹**：放在前方格、掷 1 点拾取（「身上被放了定时炸弹（38 步）」，HUD 与头顶显示引信），传送到对手身后掷 2 点路过 → 转到对手身上（37 步），随后在三名 AI 之间来回转手，引信归零时在乌咪身上爆炸、住院 5 天。
+- **飞弹**：目标下拉选对手所在格 → 「飞弹来袭！」、范围内路上小穷神被打跑（搭档大穷神随后在别处刷出）、对手住院 3 天。
+- **神明附身**：传送到小财神 / 大财神前一格掷 1 点 → 神明降临弹窗（台词）→ 发威弹窗（老虎机滚动定格，如「6 9 2 5 → +5,863」）；神明缩小挂在头顶、HUD 显示「大财神 7 天」。另见天使 / 土地公显灵弹窗与光柱、恶犬咬人住院。
+- **住院与保释**：停在监狱格弹出保释对话框（在押者「还有 6 天」、保释 30 点券），保释后点券 200 → 170、在押者变为待释放并在下一回合出狱。医院楼顶同样显示住院者窗口气泡。
+- **小游戏**：企鹅挖宝（桌面，103 点）、七彩气球（桌面，150 点）、喜从天降（844×390 横屏，37 点）；倒计时 → 全屏宿主 → 结算 → 回棋盘，点券与 toast 一致，观战遮罩按设计弹出。横屏下舞台按 4:3 居中、HUD 与「收起」按钮完整。
+- **聊天 / 表情**：表情与聊天在角色头顶出现 Pixi 气泡（跟随角色），玩家条同时出现 DOM 气泡；观战栏切换「跟随 3P」后镜头在其他人的回合仍跟 3P。
+- 控制台除开发期 HMR 的一次模块重载报错外无错误。
+- 实测后修正：保释对话框里 M7 之前不可雇用的恶人原显示「已经出门了」（引擎只给 `available=false`、没有原因），改为中性的「暂时不能雇用（已经出门或尚未开放）」，「点券不足」只在确有可选项时提示；飞弹「任意格」下拉里的普通道路格原显示「空地 #N」，`tiles:kind.plain` 改为「道路」（台湾图的 13 个普通道路格都不是地块前沿格；其他地图若是，则显示「<地块名>旁 #N」，`presentation/lotLabels.tileLabel`，日志与对话框共用）；地产格仍显示地图里的路段名。
+- 遗留的观感问题：844×390 下小游戏开场对话框内容较多时底栏与最后一行键值略有重叠（内容区可滚动）；浏览器面板隐藏时截图滞后，1 秒左右的弹窗只能在放慢动画时钟（`__rich4.client.anim.speed = 0.25`）后截到。
+
+### 20.7 验证
+
+- `npm run check` 全绿；client-browser 全部通过；E2E 10 个 spec 全部通过（lobby、turn-cycle、timeout-ai、bank-stock、anim-unmount、minigame、reconnect、chat-spectate、save-load、cards）。
+- simulate（original，限时 365 天）：test-allkinds 500 局 `finished=500 rejects=0 invariantErrors=0 errors=0 actions=796642 finalHash=1be3a315f2c74539`；台湾 50 局 `finished=50 rejects=0 invariantErrors=0 errors=0 actions=74104 finalHash=7c27f741f1cacbd1`（与引擎代理两次运行一致）。

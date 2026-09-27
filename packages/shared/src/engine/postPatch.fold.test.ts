@@ -56,7 +56,7 @@ describe('post 折叠一致性', () => {
     expect(p.players).toEqual([{ seat: 1, set: { cash: 1 } }]);
     expect(p.lands).toEqual([{ id: 'L3', set: { owner: 1 } }]);
     expect(p.clock).toEqual({ turnNo: 99 });
-    expect(p.objects).toHaveLength(1);
+    expect(p.objects).toHaveLength(a.objects.length + 1);
     expect(p.econ).toBeUndefined();
     const c = applyPostPatch(a, p);
     expect(c).toEqual(b);

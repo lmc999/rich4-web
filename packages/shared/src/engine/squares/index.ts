@@ -4,6 +4,8 @@
  *
  * M1 实现：地产（住宅的买、盖、过路费）、公园、点券格 10/11/12、卡片格 13。
  * M4 实现：设施与企业格（property 分派）、乐透 9、银行 14、百货公司 15。
+ * M6 实现：监狱 / 医院保释格 4 / 5（squares/jail.ts）。
+ * M8 实现：小游戏 6 / 7 / 8（squares/minigame.ts）。
  * 其余先做空处理，按里程碑补上（见各 TODO）。
  */
 import type { TileDef, TileKind } from '../../data/maps/types';
@@ -12,7 +14,9 @@ import type { FrameOf } from '../types/frames';
 import type { SeatIndex } from '../types/ids';
 import { bankSquare } from './bank';
 import { cardSquare } from './cardSquare';
+import { jailSquare } from './jail';
 import { lotterySquare } from './lottery';
+import { minigameSquare } from './minigame';
 import { parkSquare } from './park';
 import { pointsSquare } from './points';
 import { propertySquare } from './property';
@@ -36,13 +40,13 @@ export const SQUARE_HANDLERS = Object.freeze({
   // TODO(M7)：新闻 / 命运（游标取下一张，不可行就跳过）
   news: noop,
   fate: noop,
-  // TODO(M6)：监狱 / 医院格的 BAIL 决策（保释 30 点券、雇恶人 300 点券）
-  jail: noop,
-  hospital: noop,
-  // TODO(M8)：小游戏（真人座位 MINIGAME 决策；电脑座位或 minigames='skip' 直接 50+rand15()%20 点券）
-  penguin: noop,
-  balloon: noop,
-  xicong: noop,
+  // 监狱 / 医院的保释格：BAIL 决策（保释 30 点券；雇恶人 300 点券属于 M7）
+  jail: jailSquare,
+  hospital: jailSquare,
+  // 小游戏：真人座位 MINIGAME 决策；电脑座位或 minigames='skip' 直接 50+rand15()%20 点券
+  penguin: minigameSquare,
+  balloon: minigameSquare,
+  xicong: minigameSquare,
   lottery: lotterySquare,
   points50: pointsSquare,
   points30: pointsSquare,

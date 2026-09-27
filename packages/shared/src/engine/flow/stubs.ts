@@ -1,6 +1,7 @@
 /**
  * 尚未实现的帧（design/engine.md §17 L4–L5）：执行到就抛 EngineInvariantError('NOT_IMPLEMENTED')。
- * M4 已实现 FEE、BANK、SHOP、CONFINE（flow/fee.ts、bank.ts、shop.ts、confine.ts）。
+ * M4 已实现 FEE、BANK、SHOP、CONFINE（flow/fee.ts、bank.ts、shop.ts、confine.ts）；M6 实现 CARD、ITEM、GOD
+ * （flow/card.ts、item.ts、god.ts）。
  * M1 的流程不会压这些帧；实现时在 flow/ 下新建同名文件并替换 core/flow.ts 中的注册项。
  */
 import type { FrameHandler } from '../core/frameHandler';
@@ -14,12 +15,6 @@ export function notImplementedFrame<K extends FrameKind>(k: K, milestone: string
   return { step: fail, resume: fail };
 }
 
-/** 卡片效果链 */
-export const CARD = notImplementedFrame('CARD', 'M6');
-/** 道具效果链 */
-export const ITEM = notImplementedFrame('ITEM', 'M6');
-/** 神明附身与发威 */
-export const GOD = notImplementedFrame('GOD', 'M6');
 /** 新闻 36 条 */
 export const NEWS = notImplementedFrame('NEWS', 'M7');
 /** 命运 37 条 */

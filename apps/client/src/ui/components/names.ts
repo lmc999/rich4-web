@@ -26,7 +26,7 @@ import {
 import type { GameView } from '@rich4/shared/view';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { lotLabels } from '../../presentation/lotLabels';
+import { lotLabels, tileLabel } from '../../presentation/lotLabels';
 
 /** 动态键的 t（键由 id 拼出，编译期无法逐个校验；由 names.dom.test 遍历全部 id 断言存在） */
 export type LooseT = (key: string, opts?: Record<string, unknown>) => string;
@@ -96,9 +96,14 @@ export function makeGameText(t: LooseT, view: GameView | null, map: MapIndex | n
     tileKind: (kind) => t(`tiles:kind.${kind}`),
     tile: (id) => {
       try {
-        const tile = map?.tile(id);
-        if (!tile) return `#${id}`;
-        const name = tile.nameKey ? mapString(tile.nameKey) : t(`tiles:kind.${tile.kind}`);
+        if (!map) return `#${id}`;
+        const name = tileLabel(
+          map,
+          id,
+          (k) => mapString(k),
+          (kind) => t(`tiles:kind.${kind}`),
+          (lot) => t('tiles:near', { name: lot }),
+        );
         return `${name} #${id}`;
       } catch {
         return `#${id}`;

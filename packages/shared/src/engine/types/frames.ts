@@ -79,7 +79,7 @@ export interface TollQuote {
 export type FeeKind = 'hotel' | 'mall' | 'gas' | 'company';
 
 /**
- * FEE 帧的阶段：compute（报价、免收、转盘）→ free（免费卡，M6）→ scapegoat（嫁祸卡，M6）→ pay → after
+ * FEE 帧的阶段：compute（报价、免收、转盘）→ free（免费卡）→ scapegoat（嫁祸卡）→ pay（死神代付）→ after
  * （住旅馆、航空出国、保险投保）→ subscribe（企业：现场认购）→ done
  */
 export type FeeStage = 'compute' | 'free' | 'scapegoat' | 'pay' | 'after' | 'subscribe' | 'done';
@@ -87,6 +87,8 @@ export type FeeStage = 'compute' | 'free' | 'scapegoat' | 'pay' | 'after' | 'sub
 export interface FeeQuote {
   /** 企业格时为董事长；无董事长不收费 */
   owner: SeatIndex | null;
+  /** 实际付款人（嫁祸、死神代付后改写；住宿、出国、投保仍落在落点者身上 ⚑） */
+  payer: SeatIndex;
   amount: number;
   /** 转盘结果（旅馆天数、购物中心倍数、航空出国天数、保险投保天数）；没有转盘为 null */
   wheel: number | null;
@@ -161,18 +163,41 @@ export type Frame = FrameBase &
         stage: string;
       }
     | {
+        /**
+         * 带被动卡的关押（陷害卡、新闻 29、魔法屋、命运坐牢；design/engine.md §10.3）：
+         * hostility → bless（命运：福运加持）→ exempt（免罪）→ scapegoat（嫁祸，SCAPEGOAT）→ apply → revenge（复仇）→ done
+         */
         k: 'CONFINE';
         actor: ActorRef;
         where: ConfineWhere;
         days: number;
         cause: Cause;
+        /** 走免罪 / 嫁祸 */
         passive: boolean;
+        /** 命运：先做福运加持判定（high 逃过此劫，low 天数 ×2） */
         blessing: boolean;
-        stage: 'hostility' | 'exempt' | 'scapegoat' | 'bless' | 'apply' | 'revenge' | 'done';
+        /** 被害者对 cause.by 的敌意增量（0 不记） */
+        hate: number;
+        /** 原目标（复仇判定：最终目标 == 原目标）；恶人或不适用时为 null */
+        orig: SeatIndex | null;
+        /** 被嫁祸回 cause.by 时改写的天数（陷害卡 4）；null 不改 */
+        selfDays: number | null;
+        /** 复仇卡适用（只有陷害卡） */
+        revenge: boolean;
+        /** 已改嫁（新目标不再检查被动卡） */
+        scapegoated: boolean;
+        stage: 'hostility' | 'bless' | 'exempt' | 'scapegoat' | 'apply' | 'revenge' | 'done';
       }
     | { k: 'CARD'; seat: SeatIndex; card: CardId; target: UseTarget; stage: string; data: FrameData }
     | { k: 'ITEM'; seat: SeatIndex; item: ItemId; target: UseTarget; stage: string; data: FrameData }
-    | { k: 'GOD'; seat: SeatIndex; slot: number; stage: 'displace' | 'attach' | 'power' | 'done'; cursor: number }
+    | {
+        /** 附身：displace（挤走旧神）→ attach → power（发威）→ done；cursor 记被挤走的神的种类（0 表示没有） */
+        k: 'GOD';
+        seat: SeatIndex;
+        slot: number;
+        stage: 'displace' | 'attach' | 'power' | 'done';
+        cursor: number;
+      }
     | { k: 'NEWS'; id: NewsId; stage: string; data: FrameData }
     | { k: 'FATE'; seat: SeatIndex; id: FateId; stage: string; data: FrameData }
     | {

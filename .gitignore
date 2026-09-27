@@ -21,3 +21,6 @@ deploy/.env
 
 # vitest 附件
 .vitest/
+
+# 临时调试脚本的产物（截图等）
+test/**/*.png

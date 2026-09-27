@@ -26,7 +26,7 @@ describe('createGame（design/engine.md §5）', () => {
     const { state: s, events } = newGame({ players: ['human', 'ai', 'human', 'ai'] });
     expect(events.map((e) => e.type)).toEqual(['GAME_STARTED', 'TURN_STARTED', 'PARACHUTE']);
     expect(s.v).toBe(1);
-    expect(s.engine).toBe('0.2.0');
+    expect(s.engine).toBe('0.3.0');
     expect(s.dataRef).toEqual({
       mapId: 'test',
       mapHash: fixtureRegistry.getMap('test').def.meta.dataHash,
@@ -212,7 +212,42 @@ describe('系统 action', () => {
     sc.apply(dbg.setDate(19980104));
     expect(sc.state.clock).toMatchObject({ date: 19980104, weekday: 0, marketOpen: false });
     expect(() => sc.apply(dbg.setDate(19980231))).toThrow(/OUT_OF_RANGE/);
-    // 待决策不受系统 action 影响
+    // 待决策仍是回合菜单（give / setCash / setPoints 之后按新状态重发）
+    sc.expectAsk(0, 'TURN_MENU');
+  });
+
+  it('SYS_DEBUG 改了手牌 / 钱 / 点券：待答的回合菜单按新状态重发（新 decisionId）；teleport、forceNext 不重发', () => {
+    const sc = scenario({ players: ['human', 'human'] }).untilMenu(0);
+    const menuCards = () => (sc.pending(0).options as { cards: { card: number }[] }).cards.map((c) => c.card);
+    const id0 = sc.pending(0).id;
+    sc.force('dice', 3).teleport(0, 9, 8);
+    expect(sc.pending(0).id).toBe(id0);
+    sc.give(0, { cards: [17] });
+    expect(sc.pending(0).id).not.toBe(id0);
+    expect(menuCards()).toEqual([17]);
+    const id1 = sc.pending(0).id;
+    sc.setCash(0, 1);
+    expect(sc.pending(0).id).not.toBe(id1);
+    sc.expectAsk(0, 'TURN_MENU');
+    // 其他人的待决策不受影响（对方没有待决策时照常）
+    sc.expectNoAsk(1);
+  });
+
+  it('clearBoard：路上的神明回到场外、路面物件收走（路障 / 地雷 / 炸弹回库存），经 DEBUG_APPLIED 的 post 公布', () => {
+    const sc = scenario({ players: ['human', 'human'], board: 'random' }).untilMenu(0);
+    expect(sc.state.gods.some((g) => g.where.t === 'road')).toBe(true);
+    const busy = new Set<number>([
+      ...sc.state.objects.map((o) => o.node),
+      ...sc.state.gods.flatMap((g) => (g.where.t === 'road' ? [g.where.node] : [])),
+    ]);
+    const free = [6, 7, 9, 11, 12, 16].find((n) => !busy.has(n))!;
+    sc.placeObject('roadblock', free, 0);
+    const pool = sc.state.pools.items[2]!;
+    sc.apply(dbg.clearBoard());
+    expect(sc.state.objects).toEqual([]);
+    expect(sc.state.gods.some((g) => g.where.t === 'road')).toBe(false);
+    expect(sc.state.pools.items[2]).toBe(pool + 1);
+    expect(sc.event('DEBUG_APPLIED').post?.objects).toEqual([]);
     sc.expectAsk(0, 'TURN_MENU');
   });
 

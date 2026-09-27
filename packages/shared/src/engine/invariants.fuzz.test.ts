@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { newGame } from './testing/builders';
-import { candidateIntents } from './testing/randomIntent';
+import { candidateIntents, intentHint } from './testing/randomIntent';
 import type { GameAction } from './types/intent';
 
 /**
@@ -24,7 +24,7 @@ describe('invariants fuzz（fast-check）', () => {
           for (const c of choices) {
             if (s.status !== 'playing') break;
             const d = s.pending[c % s.pending.length]!;
-            const cands = candidateIntents(d);
+            const cands = candidateIntents(d, intentHint(s));
             const intent = cands[c % cands.length]!;
             s = g.engine.applyAction(s, { ...intent, seat: d.seat, decisionId: d.id } as GameAction).state;
             const bad = g.engine.explainState(s);

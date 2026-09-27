@@ -45,7 +45,7 @@ export default function DeathGodTargetDialog(props: DecisionProps<'DEATH_GOD_TAR
         <Button
           variant="purple"
           disabled={pick === null}
-          onClick={() => pick !== null && ctl.send({ type: 'DEATH_GOD_TARGET', seat: pick })}
+          onClick={() => pick !== null && ctl.send({ type: 'DEATH_GOD_TARGET', target: pick })}
           data-testid="deathgod-confirm"
         >
           {pick === null ? t('dlg.deathGod.pickFirst') : t('dlg.deathGod.confirm', { name: text.player(pick) })}

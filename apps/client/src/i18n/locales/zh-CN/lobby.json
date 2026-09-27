@@ -172,5 +172,16 @@
   "solo": {
     "title": "单机对战",
     "starting": "正在准备单机对局（补 3 个电脑）…"
+  },
+  "saved": {
+    "banner": "已读取存档「{{name}}」· {{date}} · 第 {{day}} 天",
+    "hint": "存档里的玩家进房后自动回到原座位；其余座位可认领或补电脑。",
+    "origin": "原：{{character}} / {{nickname}}",
+    "unclaimed": "待认领",
+    "claim": "认领",
+    "fillAi": "补电脑",
+    "notInSave": "未使用",
+    "characterLocked": "读档后角色按存档锁定。",
+    "startHint": "还有座位待认领（{{seats}}）：等玩家认领，或由房主补电脑"
   }
 }

@@ -84,7 +84,8 @@ export type PlayerIntent =
   | { type: 'SHOP_SELL_ITEM'; item: ItemId; qty: number }
   /** number 为 0..35（下标 0 = 显示的 1 号） */
   | { type: 'LOTTERY_BUY'; number: number }
-  | { type: 'BAIL'; seat: SeatIndex }
+  /** target：被保释的座位（不能叫 seat：GameAction 的 seat 是提交者，服务器按会话覆盖） */
+  | { type: 'BAIL'; target: SeatIndex }
   | { type: 'HIRE'; villain: VillainKind }
   | { type: 'MAGIC_CAST'; effect: MagicEffectId }
   | { type: 'RESEARCH'; project: ResearchProject }
@@ -96,7 +97,8 @@ export type PlayerIntent =
   | { type: 'SCAPEGOAT'; target: SeatIndex }
   | { type: 'PICK_CARDS'; picks: { from: SeatIndex; slot: number }[] }
   | { type: 'DISCARD'; slot: number }
-  | { type: 'DEATH_GOD_TARGET'; seat: SeatIndex }
+  /** target：被死神附身的座位（同 BAIL，不能叫 seat） */
+  | { type: 'DEATH_GOD_TARGET'; target: SeatIndex }
   /** MINIGAME 决策唯一允许的客户端 intent（开局后提交会被 Referee 拒绝） */
   | { type: 'MINIGAME_DECLINE' };
 
@@ -158,7 +160,9 @@ export type DebugOp =
   /** prev 可选：指定来路（决定之后的前进方向），须为 node 的邻格；缺省时沿用原来路（若相邻）或第一个邻格 */
   | { op: 'teleport'; seat: SeatIndex; node: TileId; prev?: TileId }
   | { op: 'give'; seat: SeatIndex; cards: CardId[]; items: { item: ItemId; qty: number }[] }
-  | { op: 'setDate'; date: DateNum };
+  | { op: 'setDate'; date: DateNum }
+  /** 收走路上的神明与路面物件（路障、地雷、炸弹回共享库存）：E2E 在开局后调用，排除开局随机摆放对强制路线的干扰 */
+  | { op: 'clearBoard' };
 
 export type SystemAction =
   /** MinigameReferee 重放后提交；score 以服务器重放为准 */
@@ -287,7 +291,7 @@ export const PlayerIntentSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('SHOP_BUY_ITEM'), item: ItemIdSchema, qty: QtySchema }),
   z.strictObject({ type: z.literal('SHOP_SELL_ITEM'), item: ItemIdSchema, qty: QtySchema }),
   z.strictObject({ type: z.literal('LOTTERY_BUY'), number: int(0, 35) }),
-  z.strictObject({ type: z.literal('BAIL'), seat: SeatSchema }),
+  z.strictObject({ type: z.literal('BAIL'), target: SeatSchema }),
   z.strictObject({ type: z.literal('HIRE'), villain: VillainKindSchema }),
   z.strictObject({ type: z.literal('MAGIC_CAST'), effect: z.literal(MAGIC_EFFECT_IDS) }),
   z.strictObject({ type: z.literal('RESEARCH'), project: z.literal([1, 2, 3, 4, 5]) }),
@@ -302,7 +306,7 @@ export const PlayerIntentSchema = z.discriminatedUnion('type', [
     picks: z.array(z.strictObject({ from: SeatSchema, slot: SlotSchema })).max(3),
   }),
   z.strictObject({ type: z.literal('DISCARD'), slot: SlotSchema }),
-  z.strictObject({ type: z.literal('DEATH_GOD_TARGET'), seat: SeatSchema }),
+  z.strictObject({ type: z.literal('DEATH_GOD_TARGET'), target: SeatSchema }),
   bare('MINIGAME_DECLINE'),
 ]);
 
@@ -328,4 +332,5 @@ export const DebugOpSchema = z.discriminatedUnion('op', [
     items: z.array(z.strictObject({ item: ItemIdSchema, qty: QtySchema })).max(13),
   }),
   z.strictObject({ op: z.literal('setDate'), date: int(19980101, 21001231) }),
+  z.strictObject({ op: z.literal('clearBoard') }),
 ]);

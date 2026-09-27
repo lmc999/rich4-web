@@ -3,8 +3,10 @@
  *
  * 设施（feeKind hotel / mall / gas）：
  *   compute  免收（查封、同盟、地主受阻…）→ TOLL_EXEMPT；旅馆、购物中心先转盘（purpose 'wheel'）
- *   free / scapegoat  被动卡（M6；旅馆不能用免费卡）
- *   pay      付给地主（先现金后存款，付不起即破产），计入月度意外损失 / 意外之财 → FEE_PAID；设施 lastFee
+ *   free / scapegoat  被动卡：金额 ≥ 2000×PI 或 > 现金+存款 时先问免费卡（旅馆不能用），再问嫁祸卡
+ *            （候选不含收款的地主 / 董事长）；嫁祸只改付款人，住宿、出国、投保仍落在落点者身上 ⚑
+ *   pay      死神代付（场上有人被死神附身且不是付款人）；付给地主（先现金后存款，付不起即破产），
+ *            计入月度意外损失 / 意外之财 → FEE_PAID；设施 lastFee
  *   after    旅馆：住 n 天（大财神使费用为 0 时不住）→ HOTEL_STAY
  * 企业（feeKind company；钱进公司盈余，没有董事长不收费）：
  *   compute  董事长本人：保险免费投保 d 天、建设公司免费加盖（CONSTRUCTION_PICK）；其余不收费
@@ -26,9 +28,19 @@ import {
   facilityFeeAmount,
   facilityFeeKind,
 } from '../rules/fee';
-import type { FrameOf } from '../types/frames';
+import type { ScapegoatOptions } from '../types/decision';
+import type { FeeQuote, FrameOf } from '../types/frames';
 import type { CompanyLotId, FacilityLotId, SeatIndex } from '../types/ids';
 import { applyConfinement } from './confine';
+import {
+  askFreeCard,
+  askScapegoat,
+  deathGodPayer,
+  passiveThreshold,
+  resolveFreeCard,
+  resolveScapegoat,
+  scapegoatCandidates,
+} from './passive';
 
 type FeeFrame = FrameOf<'FEE'>;
 
@@ -69,7 +81,7 @@ function computeFacility(ctx: Ctx, f: FeeFrame): void {
   f.feeKind = r.feeKind;
   const wheel = r.feeKind === 'hotel' ? spin(ctx, HOTEL_WHEEL) : r.feeKind === 'mall' ? spin(ctx, MALL_WHEEL) : null;
   const { amount, mods } = facilityFeeAmount(ctx.s, ctx.map, i, ctx.player(f.payer), r.feeKind, wheel, f.steps);
-  f.q = { owner: r.owner, amount, wheel, mods, industry: null };
+  f.q = { owner: r.owner, payer: f.payer, amount, wheel, mods, industry: null };
   f.stage = 'free';
 }
 
@@ -87,7 +99,7 @@ function computeCompany(ctx: Ctx, f: FeeFrame): void {
     if (sleepwalk) return;
     if (kind === 'insurance') {
       const d = spin(ctx, INSURANCE_WHEEL);
-      f.q = { owner: chairman, amount: 0, wheel: d, mods: [], industry: def.industry };
+      f.q = { owner: chairman, payer: f.payer, amount: 0, wheel: d, mods: [], industry: def.industry };
       ctx.emit('COMPANY_FEE', { seat: f.payer, company: company.id, industry: def.industry, amount: 0, wheel: d });
       f.stage = 'after';
     } else if (kind === 'construction') {
@@ -110,14 +122,14 @@ function computeCompany(ctx: Ctx, f: FeeFrame): void {
         return;
       }
       const { amount, mods } = companyFeeAmount(ctx.s, ctx.map, ci, p, n, f.steps);
-      f.q = { owner: chairman, amount, wheel: n, mods, industry: def.industry };
+      f.q = { owner: chairman, payer: f.payer, amount, wheel: n, mods, industry: def.industry };
       f.stage = 'free';
       return;
     }
     case 'insurance': {
       const d = spin(ctx, INSURANCE_WHEEL);
       const { amount, mods } = companyFeeAmount(ctx.s, ctx.map, ci, p, d, f.steps);
-      f.q = { owner: chairman, amount, wheel: d, mods, industry: def.industry };
+      f.q = { owner: chairman, payer: f.payer, amount, wheel: d, mods, industry: def.industry };
       f.stage = 'free';
       return;
     }
@@ -126,7 +138,7 @@ function computeCompany(ctx: Ctx, f: FeeFrame): void {
     case 'sect': {
       const { amount, mods } = companyFeeAmount(ctx.s, ctx.map, ci, p, null, f.steps);
       if (amount === 0 && kind === 'vehicle') return; // 步行免费
-      f.q = { owner: chairman, amount, wheel: null, mods, industry: def.industry };
+      f.q = { owner: chairman, payer: f.payer, amount, wheel: null, mods, industry: def.industry };
       f.stage = 'free';
       return;
     }
@@ -173,16 +185,25 @@ export function payCompany(
   return r.bankrupt;
 }
 
+function quoteOf(f: FeeFrame): FeeQuote {
+  if (!f.q) throw new EngineInvariantError('FEE_NO_QUOTE');
+  return f.q;
+}
+
 function pay(ctx: Ctx, f: FeeFrame): void {
-  const q = f.q;
-  if (!q) throw new EngineInvariantError('FEE_NO_QUOTE');
+  const q = quoteOf(f);
   f.stage = 'after';
+  const death = deathGodPayer(ctx.s, q.payer);
+  if (death !== null && death !== q.owner && q.amount > 0) {
+    q.payer = death;
+    if (!q.mods.includes('deathPays')) q.mods.push('deathPays');
+  }
   if (f.feeKind === 'company') {
-    payCompany(ctx, f.payer, f.lot as CompanyLotId, q.industry ?? 0, q.amount, q.wheel);
+    payCompany(ctx, q.payer, f.lot as CompanyLotId, q.industry ?? 0, q.amount, q.wheel);
     return;
   }
   if (q.owner === null) throw new EngineInvariantError('FEE_NO_OWNER');
-  const r = ctx.pay({ t: 'seat', seat: f.payer }, { t: 'seat', seat: q.owner }, q.amount, {
+  const r = ctx.pay({ t: 'seat', seat: q.payer }, { t: 'seat', seat: q.owner }, q.amount, {
     reason: 'fee',
     accident: true,
     cause: { k: 'fee', ref: f.lot, by: q.owner },
@@ -190,12 +211,26 @@ function pay(ctx: Ctx, f: FeeFrame): void {
   const fac = ctx.s.facilities[ctx.map.facilityIdx(f.lot)];
   if (fac) fac.lastFee = r.paid;
   ctx.emit('FEE_PAID', {
-    payer: f.payer,
+    payer: q.payer,
     lot: f.lot,
     feeKind: f.feeKind as 'hotel' | 'mall' | 'gas',
     wheel: q.wheel,
     amount: r.paid,
   });
+}
+
+/** 免费卡 → 嫁祸卡的询问（旅馆不能用免费卡）；返回是否发出了决策 */
+function askPassive(ctx: Ctx, f: FeeFrame): boolean {
+  const q = quoteOf(f);
+  if (q.amount <= 0) return false;
+  if (f.stage === 'free') {
+    if (f.feeKind === 'hotel') return false;
+    return askFreeCard(ctx, f, q.payer, 'fee', q.amount, f.lot);
+  }
+  const p = ctx.player(q.payer);
+  if (!passiveThreshold(ctx.s, p, q.amount)) return false;
+  const cands = scapegoatCandidates(ctx.s, q.payer, [q.owner]);
+  return askScapegoat(ctx, f, q.payer, 'fee', q.amount, null, cands);
 }
 
 function after(ctx: Ctx, f: FeeFrame): void {
@@ -237,12 +272,10 @@ export const FEE: FrameHandler<FeeFrame> = {
         else computeFacility(ctx, f);
         return;
       case 'free':
-        // TODO(M6)：持免费卡且（金额 ≥ 2000×PI 或 > 现金+存款）→ USE_FREE_CARD（旅馆不能用免费卡）
-        f.stage = 'scapegoat';
+        if (!askPassive(ctx, f)) f.stage = 'scapegoat';
         return;
       case 'scapegoat':
-        // TODO(M6)：持嫁祸卡 → SCAPEGOAT；死神附身者代付
-        f.stage = 'pay';
+        if (!askPassive(ctx, f)) f.stage = 'pay';
         return;
       case 'pay':
         pay(ctx, f);
@@ -262,5 +295,21 @@ export const FEE: FrameHandler<FeeFrame> = {
         ctx.pop(f);
         return;
     }
+  },
+  resume(ctx, f, a, d) {
+    const q = quoteOf(f);
+    if (f.stage === 'free' && d.kind === 'USE_FREE_CARD') {
+      // 免费卡：本次免付，住宿、出国、投保也一并取消
+      if (resolveFreeCard(ctx, q.payer, a, 'fee')) f.stage = f.feeKind === 'company' ? 'subscribe' : 'done';
+      else f.stage = 'scapegoat';
+      return;
+    }
+    if (f.stage === 'scapegoat' && d.kind === 'SCAPEGOAT') {
+      const t = resolveScapegoat(ctx, q.payer, a, (d.options as ScapegoatOptions).candidates, 'fee');
+      if (t !== null) q.payer = t;
+      f.stage = 'pay';
+      return;
+    }
+    throw new EngineInvariantError('FEE_RESUME', `${f.stage}/${d.kind}`);
   },
 };

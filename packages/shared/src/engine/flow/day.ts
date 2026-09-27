@@ -11,7 +11,7 @@
  *          → 乐透开奖
  * lots     标记倒数；地契到期：地主清空、等级保留、研究所的研发作废（RESEARCH_CANCELLED 发给原业主）
  * month    1 日：月结（无贷款者存款 ×1.1、本期冠军、悲情人物、清零月度累计）→ MONTHLY_REPORT；
- *          TODO(M6)：礼物、宝箱收回后重新随机摆放（OBJECTS_RESPAWNED）
+ *          礼物、宝箱收回后各重新随机摆放 1 个（OBJECTS_RESPAWNED，effects/objects.ts）
  */
 
 import type { HolidayDef } from '../../data/maps/types';
@@ -19,9 +19,11 @@ import { ECON } from '../../data/tables/economy';
 import { add32, mul32 } from '../../util/int32';
 import type { Ctx } from '../core/ctx';
 import type { FrameHandler } from '../core/frameHandler';
+import { gainCard } from '../effects/common';
+import { respawnMonthlyObjects } from '../effects/objects';
 import { monthlyInterest } from '../rules/bank';
 import { holidayKey, holidayOn, isMarketClosedDay, nextDate, unpackDate, weekdayOf } from '../rules/calendar';
-import { drawFromDeck, makeRoomForCard } from '../rules/inventory';
+import { drawFromDeck } from '../rules/inventory';
 import { releaseLot } from '../rules/landMutation';
 import { holdersOf, tickMarket } from '../rules/stock';
 import { checkDayEnd, richestAlive } from '../rules/victory';
@@ -80,10 +82,7 @@ function holidayStage(ctx: Ctx): void {
     if (!p.alive) continue;
     const card = drawFromDeck(s);
     if (card === null) return;
-    const discarded = makeRoomForCard(s, p.seat);
-    if (discarded !== null) ctx.emit('CARD_LOST', { seat: p.seat, card: discarded, cause: 'discard' });
-    p.cards.push(card);
-    ctx.emit('CARD_GAINED', { seat: p.seat, card, source: 'holiday' });
+    gainCard(ctx, p.seat, card, 'holiday');
   }
 }
 
@@ -267,8 +266,10 @@ export const DAY: FrameHandler<DayFrame> = {
       }
       case 'month':
         f.stage = 'lots';
-        if (unpackDate(s.clock.date).d === 1) monthStage(ctx);
-        // TODO(M6)：礼物、宝箱收回后重新随机摆放（OBJECTS_RESPAWNED）
+        if (unpackDate(s.clock.date).d === 1) {
+          monthStage(ctx);
+          respawnMonthlyObjects(ctx);
+        }
         return;
       case 'lots': {
         f.stage = 'end';

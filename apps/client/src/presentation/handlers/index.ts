@@ -1,19 +1,29 @@
 // 事件 → 演出 handler（design/client.md §4.2、§4.5）：对 GameEvent['type'] 用 satisfies 穷举，
-// 引擎新增事件时这里编译失败，不会静默漏播。M1/M4 已有事件做真实演出（经济事件见 economy.ts），其余先给最简演出。
-import type { HandlerMap } from '../types';
+// 引擎新增事件时这里编译失败，不会静默漏播。全部 handler 经 wrapHandler 包装：事件前后同步 M6/M7 舞台
+// （路面物件、神明、恶人、角色状态外观），并把时长封顶在 EVENT_BUDGET_MS。
+import type { GameEventType } from '@rich4/shared/engine';
+import type { EventHandler, HandlerMap } from '../types';
+import * as cards from './cards';
 import * as day from './day';
 import * as economy from './economy';
+import * as endgame from './endgame';
+import * as events from './events';
+import * as gods from './gods';
+import * as items from './items';
 import * as misc from './misc';
 import * as property from './property';
+import * as status from './status';
 import * as turn from './turn';
+import { wrapHandler } from './wrap';
 
-export const HANDLERS = {
+/** 未包装的 handler（单测可以直接调用某一个） */
+export const RAW_HANDLERS = {
   // turn
   GAME_STARTED: turn.GAME_STARTED,
   TURN_STARTED: turn.TURN_STARTED,
   PARACHUTE: turn.PARACHUTE,
   TURN_BLOCKED: turn.TURN_BLOCKED,
-  RELEASED: turn.RELEASED,
+  RELEASED: status.RELEASED,
   RETURNED: turn.RETURNED,
   TURN_ENDED: turn.TURN_ENDED,
   // move
@@ -55,58 +65,58 @@ export const HANDLERS = {
   // card
   CARD_GAINED: misc.CARD_GAINED,
   CARD_LOST: misc.CARD_LOST,
-  CARD_USED: misc.CARD_USED,
-  CARD_NO_EFFECT: misc.CARD_NO_EFFECT,
-  PASSIVE: misc.PASSIVE,
+  CARD_USED: cards.CARD_USED,
+  CARD_NO_EFFECT: cards.CARD_NO_EFFECT,
+  PASSIVE: cards.PASSIVE,
   SHOP_OPENED: misc.SHOP_OPENED,
   SHOP_TRADE: economy.SHOP_TRADE,
   CHAIRMAN_GIFT: economy.CHAIRMAN_GIFT,
   // item
   ITEM_GAINED: misc.ITEM_GAINED,
   ITEM_LOST: misc.ITEM_LOST,
-  ITEM_USED: misc.ITEM_USED,
-  VEHICLE: misc.VEHICLE,
-  VEHICLE_DESTROYED: misc.VEHICLE_DESTROYED,
-  OBJECT_PLACED: misc.OBJECT_PLACED,
-  OBJECT_REMOVED: misc.OBJECT_REMOVED,
-  DOLL_WALK: misc.DOLL_WALK,
-  BOMB_ATTACHED: misc.BOMB_ATTACHED,
-  BOMB_TRANSFERRED: misc.BOMB_TRANSFERRED,
-  BOMB_EXPLODED: misc.BOMB_EXPLODED,
-  STRIKE: misc.STRIKE,
-  TELEPORTED: misc.TELEPORTED,
-  TIME_REWOUND: misc.TIME_REWOUND,
+  ITEM_USED: items.ITEM_USED,
+  VEHICLE: items.VEHICLE,
+  VEHICLE_DESTROYED: items.VEHICLE_DESTROYED,
+  OBJECT_PLACED: items.OBJECT_PLACED,
+  OBJECT_REMOVED: items.OBJECT_REMOVED,
+  DOLL_WALK: items.DOLL_WALK,
+  BOMB_ATTACHED: items.BOMB_ATTACHED,
+  BOMB_TRANSFERRED: items.BOMB_TRANSFERRED,
+  BOMB_EXPLODED: items.BOMB_EXPLODED,
+  STRIKE: items.STRIKE,
+  TELEPORTED: items.TELEPORTED,
+  TIME_REWOUND: items.TIME_REWOUND,
   // god
-  GOD_ATTACHED: misc.GOD_ATTACHED,
-  GOD_POWER: misc.GOD_POWER,
-  GOD_LEFT: misc.GOD_LEFT,
-  GOD_SPAWNED: misc.GOD_SPAWNED,
-  GOD_MANIFEST: misc.GOD_MANIFEST,
-  DOG_BITE: misc.DOG_BITE,
-  DOG_KNOCKED: misc.DOG_KNOCKED,
-  DEATH_GOD_SUMMONED: misc.DEATH_GOD_SUMMONED,
+  GOD_ATTACHED: gods.GOD_ATTACHED,
+  GOD_POWER: gods.GOD_POWER,
+  GOD_LEFT: gods.GOD_LEFT,
+  GOD_SPAWNED: gods.GOD_SPAWNED,
+  GOD_MANIFEST: gods.GOD_MANIFEST,
+  DOG_BITE: gods.DOG_BITE,
+  DOG_KNOCKED: gods.DOG_KNOCKED,
+  DEATH_GOD_SUMMONED: gods.DEATH_GOD_SUMMONED,
   // status
-  CONFINED: misc.CONFINED,
-  BLESSING: misc.BLESSING,
-  STATUS_SET: misc.STATUS_SET,
-  ALLIANCE_FORMED: misc.ALLIANCE_FORMED,
-  ALLIANCE_BROKEN: misc.ALLIANCE_BROKEN,
-  ALLIANCE_EXPIRED: misc.ALLIANCE_EXPIRED,
-  BANK_REJECTED: misc.BANK_REJECTED,
+  CONFINED: status.CONFINED,
+  BLESSING: status.BLESSING,
+  STATUS_SET: status.STATUS_SET,
+  ALLIANCE_FORMED: status.ALLIANCE_FORMED,
+  ALLIANCE_BROKEN: status.ALLIANCE_BROKEN,
+  ALLIANCE_EXPIRED: status.ALLIANCE_EXPIRED,
+  BANK_REJECTED: status.BANK_REJECTED,
   // event
-  NEWS: misc.NEWS,
-  FATE: misc.FATE,
-  MAGIC_CONDITION: misc.MAGIC_CONDITION,
-  MAGIC_CAST: misc.MAGIC_CAST,
+  NEWS: events.NEWS,
+  FATE: events.FATE,
+  MAGIC_CONDITION: events.MAGIC_CONDITION,
+  MAGIC_CAST: events.MAGIC_CAST,
   LOTTERY_TICKET: economy.LOTTERY_TICKET,
   LOTTERY_DRAW: economy.LOTTERY_DRAW,
   MINIGAME_STARTED: misc.MINIGAME_STARTED,
   MINIGAME_ENDED: misc.MINIGAME_ENDED,
-  BAIL: misc.BAIL,
-  VILLAIN_HIRED: misc.VILLAIN_HIRED,
-  VILLAIN_ACTION: misc.VILLAIN_ACTION,
-  VILLAIN_HOME: misc.VILLAIN_HOME,
-  BEGGAR_ALMS: misc.BEGGAR_ALMS,
+  BAIL: status.BAIL,
+  VILLAIN_HIRED: events.VILLAIN_HIRED,
+  VILLAIN_ACTION: events.VILLAIN_ACTION,
+  VILLAIN_HOME: events.VILLAIN_HOME,
+  BEGGAR_ALMS: events.BEGGAR_ALMS,
   // stock
   STOCK_TRADED: economy.STOCK_TRADED,
   CHAIRMAN_CHANGED: day.CHAIRMAN_CHANGED,
@@ -115,15 +125,15 @@ export const HANDLERS = {
   RESUMED: day.RESUMED,
   MARKET_TICK: day.MARKET_TICK,
   MARKET_CLOSED: day.MARKET_CLOSED,
-  LISTING_ADDED: day.LISTING_ADDED,
-  LISTING_REMOVED: day.LISTING_REMOVED,
-  LISTING_SOLD: day.LISTING_SOLD,
+  LISTING_ADDED: endgame.LISTING_ADDED,
+  LISTING_REMOVED: endgame.LISTING_REMOVED,
+  LISTING_SOLD: endgame.LISTING_SOLD,
   // auction
-  AUCTION_STARTED: day.AUCTION_STARTED,
-  AUCTION_BID: day.AUCTION_BID,
-  AUCTION_PASS: day.AUCTION_PASS,
-  AUCTION_QUIT: day.AUCTION_QUIT,
-  AUCTION_ENDED: day.AUCTION_ENDED,
+  AUCTION_STARTED: endgame.AUCTION_STARTED,
+  AUCTION_BID: endgame.AUCTION_BID,
+  AUCTION_PASS: endgame.AUCTION_PASS,
+  AUCTION_QUIT: endgame.AUCTION_QUIT,
+  AUCTION_ENDED: endgame.AUCTION_ENDED,
   // day
   DAY_ADVANCED: day.DAY_ADVANCED,
   PRICE_INDEX: day.PRICE_INDEX,
@@ -136,11 +146,21 @@ export const HANDLERS = {
   BANKRUPT: day.BANKRUPT,
   LIQUIDATION: day.LIQUIDATION,
   BECAME_BEGGAR: day.BECAME_BEGGAR,
-  SURRENDERED: day.SURRENDERED,
-  GAME_OVER: day.GAME_OVER,
+  SURRENDERED: endgame.SURRENDERED,
+  GAME_OVER: endgame.GAME_OVER,
   // system
   CONTROLLER_CHANGED: misc.CONTROLLER_CHANGED,
   AI_TRAITS_CHANGED: misc.AI_TRAITS_CHANGED,
   DEBUG_APPLIED: misc.DEBUG_APPLIED,
   SYNC: misc.SYNC,
 } as const satisfies HandlerMap;
+
+function wrapAll(raw: HandlerMap): HandlerMap {
+  const out: Partial<Record<GameEventType, EventHandler<GameEventType>>> = {};
+  for (const type of Object.keys(raw) as GameEventType[]) {
+    out[type] = wrapHandler(raw[type] as EventHandler<GameEventType>);
+  }
+  return out as HandlerMap;
+}
+
+export const HANDLERS: HandlerMap = wrapAll(RAW_HANDLERS);

@@ -18,7 +18,7 @@ import {
   type VillainKind,
 } from '@rich4/shared/engine';
 import type { GameView } from '@rich4/shared/view';
-import { lotLabels } from './lotLabels';
+import { lotLabels, tileLabel } from './lotLabels';
 
 export type LooseT = (key: string, params?: Record<string, unknown>) => string;
 
@@ -118,10 +118,18 @@ export function makeNames(d: NameDeps): NameKit {
     tile: (id: TileId) => {
       const m = d.map();
       try {
-        const tile = m?.tile(id);
-        if (!tile) return `#${id}`;
+        if (!m) return `#${id}`;
+        const tile = m.tile(id);
         const name = tile.nameKey ? mapString(tile.nameKey) : null;
-        return name ?? `${tf(d.t, `tiles:kind.${tile.kind}`, tile.kind)} #${id}`;
+        if (name) return name;
+        const label = tileLabel(
+          m,
+          id,
+          mapString,
+          (kind) => tf(d.t, `tiles:kind.${kind}`, kind),
+          (lot) => tf(d.t, 'tiles:near', `${lot}旁`, { name: lot }),
+        );
+        return `${label} #${id}`;
       } catch {
         return `#${id}`;
       }

@@ -86,6 +86,11 @@ export class GameRenderer {
     this.clock = opts.clock ?? new AnimClock();
   }
 
+  /** 画质档的粒子上限（棋盘特效 FxSystem 按它设置预算） */
+  get particleLimit(): number {
+    return this.quality.particles;
+  }
+
   /** 创建并挂载到 host（host 需要有尺寸；画布铺满 host） */
   static async create(opts: GameRendererOptions): Promise<GameRenderer> {
     const q = QUALITY_PRESETS[opts.quality ?? 'high'];

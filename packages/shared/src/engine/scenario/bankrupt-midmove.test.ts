@@ -17,7 +17,8 @@ function setup(players: ('human' | 'ai')[]) {
     st.lands[3]!.level = 2;
   });
   sc.untilMenu(1);
-  sc.give(1, { cards: [17, 20] }).setCash(1, 100, 0);
+  // 免罪卡不参与过路费（免费卡会在付不起时先问 USE_FREE_CARD，见 effects/passive.test.ts）
+  sc.give(1, { cards: [17, 21] }).setCash(1, 100, 0);
   return sc;
 }
 

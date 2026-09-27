@@ -1,7 +1,8 @@
 /**
  * BANKRUPT 帧（design/engine.md §6.2「破产打断」、§7.10；docs/research/r_rules_map.md §9；r_property.md §9.4）。
  *
- * detach    标记出局；作废乐透号码、撤下公布栏挂牌、清掉别人对他的敌意（神明、炸弹放回地图、解除同盟属于 M6）→ BANKRUPT
+ * detach    标记出局；作废乐透号码、撤下公布栏挂牌、清掉别人对他的敌意 → BANKRUPT；
+ *           身上的炸弹放回所在格（格上已有东西或不可放置时回库存）⚑；附身的神明离场（搭档刷出）；解除同盟
  * endcheck  在场真人为 0（endWhenNoHumans）→ noHumansLeft；只剩 1 人 → lastStanding。结束时跳过清算，地产原样保留
  * liquidate 股票按市价卖出（所得进公库）并重排董事长；名下住宅与设施变无主、等级保留、地契清零；卡片回牌堆、道具回库存（点券不归任何人）；
  *           现金、存款、贷款、点券、状态清零 → LIQUIDATION
@@ -9,9 +10,14 @@
  * beggar    棋子留在原节点成为乞丐 → BECAME_BEGGAR
  * done      出栈，并展开破产者的帧（MOVE、LAND、TOLL…；他的 TURN 转入 end）
  */
-import { ITEM_IDS, isPoolItem } from '../../data/tables/ids';
+import { ITEM, ITEM_IDS, isPoolItem } from '../../data/tables/ids';
 import { VEHICLE_ITEM } from '../../data/tables/setup';
+import type { Ctx } from '../core/ctx';
 import type { FrameHandler } from '../core/frameHandler';
+import { nextObjectId } from '../core/ids';
+import { placeableTile } from '../decisions/targets';
+import { breakAlliance } from '../effects/common';
+import { attachedSlot, leaveGod } from '../effects/gods/lifecycle';
 import { emptyCounters } from '../rules/counters';
 import { returnCardToDeck } from '../rules/inventory';
 import { releaseLot } from '../rules/landMutation';
@@ -19,9 +25,38 @@ import { addMoney, zeroOutMoney } from '../rules/payment';
 import { updateChairman } from '../rules/stock';
 import { checkAfterBankruptcy } from '../rules/victory';
 import type { FrameOf } from '../types/frames';
-import type { LotId } from '../types/ids';
+import type { LotId, SeatIndex, TileId } from '../types/ids';
 
 type BankruptFrame = FrameOf<'BANKRUPT'>;
+
+/** 出局者身上的神明、炸弹与同盟 */
+function detachCombat(ctx: Ctx, seat: SeatIndex): void {
+  const s = ctx.s;
+  const p = ctx.player(seat);
+  if (p.bomb !== null) {
+    p.bomb = null;
+    const tile = p.node;
+    const ok =
+      p.placed && ctx.map.hasTile(tile) && placeableTile(ctx.map.index.tile(tile)) && !tileHasObjectOrGod(s, tile);
+    if (ok) {
+      const obj = { id: nextObjectId(s), kind: 'bomb' as const, node: tile, placedBy: null };
+      s.objects.push(obj);
+      ctx.emit('OBJECT_PLACED', { obj });
+    } else {
+      s.pools.items[ITEM.TIME_BOMB] = (s.pools.items[ITEM.TIME_BOMB] ?? 0) + 1;
+      ctx.emit('ITEM_LOST', { seat, item: ITEM.TIME_BOMB, qty: 1, cause: 'bankrupt' });
+    }
+  }
+  // 炸弹先落地，搭档刷出时才会避开它
+  const slot = attachedSlot(s, seat);
+  if (slot !== null) leaveGod(ctx, slot, 'bankrupt');
+  else p.god = null;
+  breakAlliance(ctx, seat, 'bankrupt');
+}
+
+function tileHasObjectOrGod(s: Ctx['s'], tile: TileId): boolean {
+  return s.objects.some((o) => o.node === tile) || s.gods.some((g) => g.where.t === 'road' && g.where.node === tile);
+}
 
 export const BANKRUPT: FrameHandler<BankruptFrame> = {
   step(ctx, f) {
@@ -34,9 +69,9 @@ export const BANKRUPT: FrameHandler<BankruptFrame> = {
         s.lottery.owners = s.lottery.owners.map((o) => (o === f.seat ? null : o));
         s.noticeBoard = s.noticeBoard.filter((l) => l.seller !== f.seat);
         for (const q of s.players) q.hostility[f.seat] = 0;
-        // TODO(M6)：附身的神明与身上的炸弹放回地图、解除同盟（ALLIANCE_BROKEN）、清空监狱 / 医院床位
         f.stage = 'endcheck';
         ctx.emit('BANKRUPT', { seat: f.seat, cause: f.cause, creditor: f.creditor });
+        detachCombat(ctx, f.seat);
         return;
       }
       case 'endcheck': {

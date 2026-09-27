@@ -49,6 +49,11 @@ export interface NewGameOptions extends TestEngineOptions {
   rules?: Partial<RuleConfig>;
   /** 默认 true（允许 SYS_DEBUG） */
   debug?: boolean;
+  /**
+   * 开局的路面：'random'（默认，与正式开局相同：随机摆放神明、礼物、宝箱）；
+   * 'clear'（开局后把路上的神明与物件全部收走，给不关心 M6 物件的场景测试一个干净的棋盘）
+   */
+  board?: 'random' | 'clear';
 }
 
 export function makeConfig(o: NewGameOptions = {}): GameConfig {
@@ -72,7 +77,20 @@ export interface NewGame extends ApplyResult {
 export function newGame(o: NewGameOptions = {}): NewGame {
   const engine = testEngine(o);
   const r = engine.createGameWithEvents(makeConfig(o), toSetups(o.players), o.seed ?? TEST_SEED);
+  if (o.board === 'clear') r.state = clearBoard(r.state);
   return { engine, ...r };
+}
+
+/** 收走路上的神明与物件（深拷贝后修改；物件里的路障、地雷、炸弹回共享库存） */
+export function clearBoard(state: GameState): GameState {
+  return editState(state, (s) => {
+    for (const o of s.objects) {
+      const item = o.kind === 'roadblock' ? 2 : o.kind === 'mine' ? 3 : o.kind === 'bomb' ? 4 : null;
+      if (item !== null) s.pools.items[item] = (s.pools.items[item] ?? 0) + 1;
+    }
+    s.objects = [];
+    for (const g of s.gods) if (g.where.t === 'road') g.where = { t: 'absent' };
+  });
 }
 
 /** 深拷贝后就地修改（用于布置 SYS_DEBUG 覆盖不到的局面，例如关押计数） */

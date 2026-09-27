@@ -1,11 +1,23 @@
 /**
  * PAYX 帧：带被动卡询问的一般付款（design/engine.md §6.1、§10.3）。
- * free（免费卡，M6）→ scapegoat（嫁祸卡，M6）→ pay（先现金后存款，付不起就破产）→ done。发 MONEY 事件。
- * 使用者：乞丐施舍（M7）、新闻与命运的罚款（M7，freeCardOnFines 决定能否用免费卡）。
+ * free（passive.free 且持免费卡、金额 ≥ 2000×PI 或 > 现金+存款 → USE_FREE_CARD，用了就免付）
+ * → scapegoat（passive.scapegoat 且持嫁祸卡、同一门槛 → SCAPEGOAT，选定后由新人付）
+ * → pay（先现金后存款，付不起就破产）→ done。发 MONEY 事件。
+ * 使用者：新闻与命运的罚款（M7；rules.freeCardOnFines 决定 passive）。乞丐施舍、恶人勒索不走被动卡（直接付款）。
  */
 import type { FrameHandler } from '../core/frameHandler';
+import { EngineInvariantError } from '../errors';
+import type { PassiveContext, ScapegoatOptions } from '../types/decision';
 import type { FrameOf } from '../types/frames';
 import type { CauseKind, MoneyReason } from '../types/ids';
+import {
+  askFreeCard,
+  askScapegoat,
+  passiveThreshold,
+  resolveFreeCard,
+  resolveScapegoat,
+  scapegoatCandidates,
+} from './passive';
 
 type PayFrame = FrameOf<'PAYX'>;
 
@@ -21,17 +33,27 @@ const REASON_CAUSE: Partial<Record<MoneyReason, CauseKind>> = {
   dividend: 'dividend',
 };
 
+function contextOf(f: PayFrame): PassiveContext {
+  return f.reason === 'toll' ? 'toll' : f.reason === 'fee' ? 'fee' : f.reason === 'taxAudit' ? 'taxAudit' : 'fine';
+}
+
 export const PAYX: FrameHandler<PayFrame> = {
   step(ctx, f) {
     switch (f.stage) {
       case 'free':
-        // TODO(M6)：f.passive.free 且持免费卡 → USE_FREE_CARD
-        f.stage = 'scapegoat';
+        if (!f.passive.free || !askFreeCard(ctx, f, f.payer, contextOf(f), f.amount, null)) f.stage = 'scapegoat';
         return;
-      case 'scapegoat':
-        // TODO(M6)：f.passive.scapegoat 且持嫁祸卡 → SCAPEGOAT
-        f.stage = 'pay';
+      case 'scapegoat': {
+        const p = ctx.player(f.payer);
+        const exclude = f.to.t === 'seat' ? [f.to.seat] : [];
+        const cands = scapegoatCandidates(ctx.s, f.payer, exclude);
+        const asked =
+          f.passive.scapegoat &&
+          passiveThreshold(ctx.s, p, f.amount) &&
+          askScapegoat(ctx, f, f.payer, contextOf(f), f.amount, null, cands);
+        if (!asked) f.stage = 'pay';
         return;
+      }
       case 'pay': {
         f.stage = 'done';
         const from = { t: 'seat', seat: f.payer } as const;
@@ -47,5 +69,18 @@ export const PAYX: FrameHandler<PayFrame> = {
         ctx.pop(f);
         return;
     }
+  },
+  resume(ctx, f, a, d) {
+    if (f.stage === 'free' && d.kind === 'USE_FREE_CARD') {
+      f.stage = resolveFreeCard(ctx, f.payer, a, contextOf(f)) ? 'done' : 'scapegoat';
+      return;
+    }
+    if (f.stage === 'scapegoat' && d.kind === 'SCAPEGOAT') {
+      const t = resolveScapegoat(ctx, f.payer, a, (d.options as ScapegoatOptions).candidates, contextOf(f));
+      if (t !== null) f.payer = t;
+      f.stage = 'pay';
+      return;
+    }
+    throw new EngineInvariantError('PAYX_RESUME', `${f.stage}/${d.kind}`);
   },
 };

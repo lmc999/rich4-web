@@ -15,6 +15,7 @@ export {
 } from './core/postPatch';
 export * from './decisions/allowed';
 export * from './decisions/defaults';
+export { targetMatches } from './decisions/targets';
 export * from './decisions/timing';
 export * from './errors';
 export * from './selectors/index';

@@ -7,7 +7,10 @@
  * toll = 基数 × PI；落点处于涨价中 → 地主那一份 ×2。
  * 付款方身上的神（必定生效）：小财神 ÷2（>>1）、大财神 0、小穷神 ×1.5（或 ×2，smallPoorToll）、大穷神 ×2。
  * 免收（VA 0x41d559，按判定顺序）：查封中、同盟、地主被死神附身、地主住旅馆 / 消失 / 坐牢 / 住院 / 冬眠 / 梦游。
- * 同盟分账与死神代付属于 M6（这里的 quote 里 ally 恒为 null、payer 恒为落点者）。
+ * 同盟分账（r_property §4.2）：地主有盟友（且付款人不是盟友）时，按同样规则算出盟友名下同名路段地块（落点是连锁店时为
+ *   盟友的连锁店）的租金，加进总额；涨价只翻倍地主那一份；神明修正作用于合并后的总额；
+ *   盟友应得 = trunc(总额 × float32(盟友份 / 两份合计))，地主应得 = 总额 − 盟友应得；先付地主，再付盟友。
+ * 死神代付在 TOLL 帧里改写 q.payer。
  */
 import { ECON } from '../../data/tables/economy';
 import { GOD } from '../../data/tables/ids';
@@ -32,15 +35,48 @@ function levelOf(w: RuleWorld, i: number, o: TollOverride | null): LotLevel {
   return o !== null && o.landIdx === i ? o.level : w.lands[i]!.level;
 }
 
+/** 盟友那一份：落点是连锁店时为盟友的连锁店数 × 2000，否则为盟友名下同名路段非连锁店的租金之和 */
+function allyRent(
+  w: RuleWorld,
+  em: EngineMap,
+  landIdx: number,
+  ally: SeatIndex,
+): { owner: SeatIndex | null; base: number; lots: LotId[]; chain: boolean } {
+  const mode = modeOf(w);
+  const land = w.lands[landIdx]!;
+  const lots: LotId[] = [];
+  let base = 0;
+  if (land.chain) {
+    let n = 0;
+    for (const l of w.lands) {
+      if (l.chain && l.owner === ally) {
+        n++;
+        lots.push(l.id);
+      }
+    }
+    return { owner: ally, base: mul32(ECON.CHAIN_TOLL, n, mode), lots, chain: true };
+  }
+  for (const i of em.streetOf(landIdx)) {
+    const l = w.lands[i]!;
+    if (l.chain || l.owner !== ally) continue;
+    base = add32(base, em.lands[i]!.rent[l.level], mode);
+    lots.push(l.id);
+  }
+  return { owner: ally, base, lots, chain: false };
+}
+
 /** 过路费基数（不乘 PI）与参与累加的地块 */
 export function landRentBase(
   w: RuleWorld,
   em: EngineMap,
   landIdx: number,
   override: TollOverride | null = null,
+  /** 指定按谁的地产累加（同盟：盟友那一份，落点本身不算） */
+  forOwner: SeatIndex | null = null,
 ): { owner: SeatIndex | null; base: number; lots: LotId[]; chain: boolean } {
   const mode = modeOf(w);
   const land = w.lands[landIdx]!;
+  if (forOwner !== null) return allyRent(w, em, landIdx, forOwner);
   const owner = ownerOf(w, landIdx, override);
   if (owner === null) return { owner: null, base: 0, lots: [], chain: land.chain };
   const lots: LotId[] = [];
@@ -126,15 +162,36 @@ export function quoteLandToll(w: RuleWorld, em: EngineMap, landIdx: number, paye
   if (exempt) return { kind: 'exempt', reason: exempt };
   const { base, lots, chain } = landRentBase(w, em, landIdx);
   const mods: TollMod[] = [chain ? 'chain' : 'street', 'priceIndex'];
-  let amount = mul32(base, w.econ.priceIndex, mode);
+  let ownerPart = mul32(base, w.econ.priceIndex, mode);
   if (land.mark?.kind === 'raise') {
-    amount = mul32(amount, 2, mode);
+    ownerPart = mul32(ownerPart, 2, mode);
     mods.push('raise');
   }
-  amount = applyPayerGod(w, payer, amount, mods);
+  // 同盟：盟友名下同名路段（或连锁店）的租金并入总额
+  const allySeat = owner.alliance?.seat ?? null;
+  const ally = allySeat === null || allySeat === payerSeat ? null : findPlayer(w.players, allySeat);
+  let allyPart = 0;
+  if (ally?.alive) {
+    const a = landRentBase(w, em, landIdx, null, ally.seat);
+    allyPart = mul32(a.base, w.econ.priceIndex, mode);
+    for (const l of a.lots) if (!lots.includes(l)) lots.push(l);
+    if (allyPart !== 0) mods.push('alliance');
+  }
+  const parts = add32(ownerPart, allyPart, mode);
+  const amount = applyPayerGod(w, payer, parts, mods);
+  const allyAmount = allyPart !== 0 && parts !== 0 ? Math.trunc(amount * Math.fround(allyPart / parts)) : 0;
   return {
     kind: 'toll',
-    q: { owner: land.owner, lots, base, amount, ally: null, allyAmount: 0, mods, payer: payerSeat },
+    q: {
+      owner: land.owner,
+      lots,
+      base,
+      amount,
+      ally: allyPart !== 0 && ally ? ally.seat : null,
+      allyAmount,
+      mods,
+      payer: payerSeat,
+    },
   };
 }
 

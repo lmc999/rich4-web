@@ -1,4 +1,8 @@
 {
+  "title": "魔法屋",
+  "conditionLine": "女巫挥动魔杖：{{cond}}的人，过来吧！",
+  "conditionNobody": "女巫念出条件「{{cond}}」，可是没有人符合。",
+  "castTitle": "魔法：{{effect}}",
   "condition": {
     "0": "财产最多",
     "1": "地产最多",

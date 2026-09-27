@@ -52,7 +52,7 @@ export const DEFAULT_INTENTS = Object.freeze({
     for (const h of o.hand) if (best === undefined || cardDef(h.card).price < cardDef(best.card).price) best = h;
     return { type: 'DISCARD', slot: best?.slot ?? 0 };
   },
-  DEATH_GOD_TARGET: (o) => ({ type: 'DEATH_GOD_TARGET', seat: o.candidates[0] ?? 0 }),
+  DEATH_GOD_TARGET: (o) => ({ type: 'DEATH_GOD_TARGET', target: o.candidates[0] ?? 0 }),
 } satisfies { readonly [K in DecisionKind]: DefaultFn<K> });
 
 export function defaultIntentFor<K extends DecisionKind>(

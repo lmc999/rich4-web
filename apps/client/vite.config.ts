@@ -52,6 +52,9 @@ function devLocalMaps(): Plugin {
 export default defineConfig({
   plugins: [react(), devLocalMaps()],
   resolve: { alias: sharedAliases() },
+  // react-dom/client 只由懒加载的小游戏宿主等处引用：依赖预构建中途才发现它会重新打包 React，
+  // 浏览器模式测试与开发页可能出现两份 React（useSyncExternalStore of null），预先声明
+  optimizeDeps: { include: ['react-dom/client'] },
   server: {
     port: 5173,
     strictPort: true,

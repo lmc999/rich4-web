@@ -18,6 +18,7 @@ import { FacilityView } from './FacilityView';
 import { DEFAULT_GROUND_OPTIONS, GroundLayer, type GroundOptions } from './GroundLayer';
 import { LandmarkView } from './LandmarkView';
 import { LotView, type ViewContext } from './LotView';
+import { RoadObjectView } from './RoadObjectView';
 import { buildRoadGraph, type RoadGraph } from './RoadPainter';
 import { TileMarkers } from './TileMarkers';
 
@@ -54,6 +55,8 @@ export class BoardView {
   private readonly ground: GroundLayer;
   private readonly decorations: Decorations;
   readonly markers: TileMarkers;
+  /** 路面物件、路上神明、乞丐、四大恶人（M6/M7） */
+  readonly roads: RoadObjectView;
   private lots = new Map<string, LotView>();
   private facilities = new Map<string, FacilityView>();
   private companies = new Map<string, CompanyView>();
@@ -74,6 +77,7 @@ export class BoardView {
     this.decorations = new Decorations(layers.objects);
     layers.marks.addChild(this.plates);
     this.markers = new TileMarkers(layers.marks, clock);
+    this.roads = new RoadObjectView(layers.objects, clock, { label: (key) => labels.label?.(key) });
   }
 
   get loaded(): boolean {
@@ -108,6 +112,7 @@ export class BoardView {
     for (const m of def.landmarks) this.landmarks.set(m.id, new LandmarkView(ctx, m));
     this.decorations.build(this.geo);
     this.markers.attach(this.geo);
+    this.roads.attach(this.geo);
     this.relayout();
   }
 
@@ -192,6 +197,16 @@ export class BoardView {
     return this.geometry.toScreen({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
   }
 
+  /** 医院 / 监狱建筑中心的屏幕坐标（关押气泡、救护车 / 警车的目的地）；没有时为 null */
+  landmarkScreenPos(kind: 'hospital' | 'jail'): Pt | null {
+    for (const v of this.landmarks.values()) {
+      if (v.landmark.kind !== kind) continue;
+      const r = v.rect;
+      return this.geometry.toScreen({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+    }
+    return null;
+  }
+
   clearLotStates(): void {
     for (const l of this.lots.values()) l.setState({ owner: null, level: 0 });
     for (const f of this.facilities.values()) f.setState({ owner: null, level: 0, facility: 'vacant' });
@@ -202,7 +217,14 @@ export class BoardView {
 
   addActor(seat: number, frames: CharacterFrames | null, name: string, tile: TileId): PlayerActor {
     this.removeActor(seat);
-    const a = new PlayerActor({ seat, geo: this.geometry, clock: this.clock, frames, name });
+    const a = new PlayerActor({
+      seat,
+      geo: this.geometry,
+      clock: this.clock,
+      frames,
+      name,
+      figures: this.roads.figures,
+    });
     this.layers.objects.addChild(a.root);
     this.actors.set(seat, a);
     a.teleport(tile);
@@ -268,6 +290,7 @@ export class BoardView {
 
   unload(): void {
     this.removeActors();
+    this.roads.clear();
     for (const v of [
       ...this.lots.values(),
       ...this.facilities.values(),
@@ -289,6 +312,7 @@ export class BoardView {
 
   destroy(): void {
     this.unload();
+    this.roads.destroy();
     this.markers.destroy();
     this.plates.destroy({ children: true });
   }
@@ -309,6 +333,7 @@ export class BoardView {
     this.decorations.layout(geo);
     this.markers.redraw();
     for (const a of this.actors.values()) a.setGeometry(geo);
+    this.roads.layout();
   }
 
   private viewContext(): ViewContext {

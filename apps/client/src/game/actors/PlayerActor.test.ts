@@ -136,6 +136,25 @@ describe('PlayerActor.walk', () => {
     expect(clock.activeFrames).toBe(1); // 只剩待机动画的帧回调
   });
 
+  it('settleAt：不在走时立即瞬移；行走中（reset 时被中止、还没收尾）记下落点，收尾落到快照位置而不是路径终点', async () => {
+    const { clock, actor } = setup();
+    actor.teleport(1);
+    actor.settleAt(3);
+    expect(actor.tile).toBe(3);
+    const ac = new AbortController();
+    const p = actor.walk([3, 4, 5, 6], { signal: ac.signal });
+    clock.advance(STEP_MS + 10);
+    await Promise.resolve();
+    // reset 的顺序：先中止（walk 收尾在之后的微任务里），再同步快照
+    ac.abort();
+    actor.settleAt(16);
+    await p;
+    expect(actor.tile).toBe(16);
+    // 落点只作用于那一次行走
+    await run(clock, actor.walk([16, 17, 18]));
+    expect(actor.tile).toBe(18);
+  });
+
   it('倍速 2：一半真实时间走完', async () => {
     const { clock, actor } = setup();
     clock.speed = 2;
@@ -167,5 +186,67 @@ describe('PlayerActor.walk', () => {
     expect(actor.screenPos()).toEqual(geo.tileScreenPos(15));
     actor.destroy();
     expect(clock.activeFrames).toBe(0);
+  });
+});
+
+describe('PlayerActor 状态外观（M6）', () => {
+  const base = {
+    god: null,
+    vehicle: 'walk',
+    hibernate: false,
+    tortoise: false,
+    sleepwalk: false,
+    bomb: null,
+    confined: null,
+    away: false,
+    beggar: false,
+  } as const;
+
+  it('附身神明挂在头顶；takeGod 取走后状态清空', () => {
+    const { actor } = setup();
+    actor.setStatus({ ...base, god: 2 });
+    const overhead = actor.root.getChildByLabel('overhead', true)!;
+    expect(overhead.getChildByLabel('god:2:attached', true)).not.toBeNull();
+    const g = actor.takeGod();
+    expect(g?.kind).toBe(2);
+    expect(actor.currentStatus.god).toBeNull();
+    g?.destroy();
+  });
+
+  it('坐牢：人物隐藏，显示监狱窗口气泡（天数）；出狱后恢复', () => {
+    const { actor } = setup();
+    actor.setStatus({ ...base, confined: { where: 'jail', days: 3 } });
+    expect(actor.root.getChildByLabel('figure', true)!.visible).toBe(false);
+    expect(actor.root.getChildByLabel('confine:jail', true)).not.toBeNull();
+    actor.setStatus({ ...base, confined: { where: 'hospital', days: 2 } });
+    expect(actor.root.getChildByLabel('confine:jail', true)).toBeNull();
+    expect(actor.root.getChildByLabel('confine:hospital', true)).not.toBeNull();
+    actor.setStatus(base);
+    expect(actor.root.getChildByLabel('figure', true)!.visible).toBe(true);
+    expect(actor.root.getChildByLabel('confine:hospital', true)).toBeNull();
+  });
+
+  it('交通工具垫在脚下并抬高人物；炸弹引信数字随状态更新；冬眠换冰蓝色调', () => {
+    const { actor } = setup();
+    actor.setStatus({ ...base, vehicle: 'car', bomb: 38, hibernate: true });
+    const figure = actor.root.getChildByLabel('figure', true)!;
+    expect(figure.position.y).toBeLessThan(0);
+    expect(actor.root.getChildByLabel('vehicle:car', true)).not.toBeNull();
+    expect(actor.root.getChildByLabel('bomb', true)).not.toBeNull();
+    expect(figure.tint).not.toBe(0xffffff);
+    actor.setStatus({ ...base, vehicle: 'car', bomb: 37 });
+    expect(figure.tint).toBe(0xffffff);
+    actor.setStatus(base);
+    expect(actor.root.getChildByLabel('bomb', true)).toBeNull();
+    expect(actor.root.getChildByLabel('vehicle:car', true)).toBeNull();
+  });
+
+  it('出国 / 乞丐：本体与名牌隐藏', () => {
+    const { actor } = setup();
+    actor.setStatus({ ...base, away: true });
+    expect(actor.root.getChildByLabel('figure', true)!.visible).toBe(false);
+    actor.setStatus(base);
+    expect(actor.root.getChildByLabel('figure', true)!.visible).toBe(true);
+    actor.destroy();
   });
 });

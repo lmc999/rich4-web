@@ -16,6 +16,7 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { useUiStore } from '../../store/uiStore';
 import type { BoardBridge, BoardPick, TargetHighlight } from '../decisions/targeting';
 import h from '../hud/hud.module.css';
+import { onHeadBubble } from '../social/socialStore';
 
 /** 开局后的镜头缩放（1 = 等角格原始大小） */
 export const START_ZOOM = 0.85;
@@ -65,6 +66,7 @@ export function BoardCanvas({ def, map, insets, onReady }: BoardCanvasProps): Re
     let cancelled = false;
     let renderer: GameRenderer | null = null;
     const picks = new Set<(p: BoardPick) => void>();
+    const offs: (() => void)[] = [];
     const quality = useSettingsStore.getState().quality;
     GameRenderer.create({
       host,
@@ -96,6 +98,7 @@ export function BoardCanvas({ def, map, insets, onReady }: BoardCanvasProps): Re
             return p ? tx(`characters:${CHARACTER_KEYS[p.character]}.name`) : `${seat + 1}P`;
           },
           autoFollow: () => useSettingsStore.getState().autoFollow && useUiStore.getState().followSeat === null,
+          pinned: () => useUiStore.getState().followSeat,
         });
         ctrlRef.current = ctrl;
         const bridge: BoardBridge = {
@@ -115,6 +118,17 @@ export function BoardCanvas({ def, map, insets, onReady }: BoardCanvasProps): Re
         };
         client.attachBoard(ctrl);
         exposeBoard((id) => ctrl.tileCanvasPos(id), r);
+        // 头顶气泡（聊天、表情；已过滤屏蔽）→ 角色头顶；观战栏的「跟随」→ 镜头锁定
+        offs.push(
+          onHeadBubble((b) =>
+            b.kind === 'emote'
+              ? ctrl.say(b.seat, b.glyph ?? '', b.durationMs, true)
+              : ctrl.say(b.seat, b.text ?? '', b.durationMs),
+          ),
+          useUiStore.subscribe((st, prev) => {
+            if (st.followSeat !== prev.followSeat) ctrl.refollow();
+          }),
+        );
         onReadyRef.current(ctrl, bridge);
         // 开局俯瞰后飞向当前玩家
         // 开局先俯瞰全图（loadMap 已 fitAll），再拉近到正常比例跟随当前玩家
@@ -128,6 +142,7 @@ export function BoardCanvas({ def, map, insets, onReady }: BoardCanvasProps): Re
       });
     return () => {
       cancelled = true;
+      for (const off of offs.splice(0)) off();
       client.attachBoard(null);
       exposeBoard(null, null);
       onReadyRef.current(null, null);

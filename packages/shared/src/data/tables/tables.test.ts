@@ -6,10 +6,13 @@ import { findUnsourced } from '../source';
 import {
   CARDS,
   CHARACTERS,
+  CMB,
+  COMBAT,
   cardDef,
   DECK_TOTAL,
   ECON,
   ECONOMY,
+  GODS,
   INITIAL_FUND_TABLE,
   ITEMS,
   initialDeck,
@@ -136,6 +139,18 @@ describe('常数、开局表与 TABLES', () => {
     expect(TENURE_MONTHS).toEqual({ unlimited: 0, '2y': 24, '1y': 12, '6m': 6, '3m': 3, '1m': 1 });
     expect(VEHICLE_MAX_DICE).toEqual({ walk: 1, moto: 2, car: 3, engineer: 1 });
     expect(START_ITEMS.items).toEqual([1, 2, 3, 4, 8, 9]);
+  });
+
+  it('M6 对抗常数与神明表都有出处，并进入 TABLES（tablesHash 覆盖）', () => {
+    expect(findUnsourced(Object.values(COMBAT))).toEqual([]);
+    expect(findUnsourced(Object.values(GODS))).toEqual([]);
+    expect([CMB.FRAME_DAYS, CMB.FRAME_SELF_DAYS, CMB.STAY_SELF, CMB.STAY_OTHER]).toEqual([5, 4, 0x80, 1]);
+    expect([CMB.TORTOISE_SELF, CMB.TORTOISE_OTHER, CMB.BOMB_HOSPITAL_DAYS, CMB.RESPAWN_TRIES]).toEqual([2, 3, 5, 64]);
+    expect([ECON.BOMB_FUSE, ECON.DOLL_STEPS, ECON.MISSILE_HALF, ECON.NUKE_HALF, ECON.RESPAWN_DIST]).toEqual([
+      38, 9, 100, 220, 300,
+    ]);
+    expect(TABLES.combat).toBe(COMBAT);
+    expect(TABLES.gods).toBe(GODS);
   });
 
   it('tablesHash = FNV-1a 64(规范化 TABLES)，与 registry 的算法一致', () => {

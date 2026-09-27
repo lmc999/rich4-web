@@ -1,12 +1,15 @@
 /**
  * 从决策的 options 里均匀抽一个合法 intent（属性测试、fuzz、simulate --policy random 用）。
  * 使用独立的 xoshiro 流，不消耗引擎 RNG。覆盖 M1 的 TURN_MENU（掷骰颗数）、BUY_LAND、UPGRADE_LAND，
- * M4 的股票买卖、银行、设施、研究所、百货、乐透、认购、建设公司；
+ * M4 的股票买卖、银行、设施、研究所、百货、乐透、认购、建设公司，
+ * M6 的用卡、用道具（按候选取样）、保释、免费卡、嫁祸卡、满手弃牌；
  * 其余 kind 退回 defaultIntent（它总是合法的），后续里程碑实现相应决策时在这里补上候选。
+ * anyNode（飞弹、核弹）没有候选列表：用 hint.nodes（randomAction 取玩家与物件所在格）。
  */
 import { seedFromHex, type XoshiroState, xoshiroInt } from '../../util/rng/xoshiro';
-import { asAnyPending, type PendingDecision } from '../types/decision';
-import type { GameAction, PlayerIntent } from '../types/intent';
+import { asAnyPending, type PendingDecision, type TargetCandidates } from '../types/decision';
+import type { TileId } from '../types/ids';
+import type { GameAction, PlayerIntent, UseTarget } from '../types/intent';
 import type { GameState } from '../types/state';
 
 export interface IntentRng {
@@ -27,8 +30,75 @@ function half(n: number): number {
   return Math.max(1, Math.trunc(n / 2));
 }
 
+/** 每种候选最多取样的目标数（控制 TURN_MENU 候选规模） */
+const TARGET_SAMPLES = 4;
+
+export interface IntentHint {
+  /** anyNode 目标可用的格 */
+  nodes: readonly TileId[];
+}
+
+/** 从候选里取样几个合法目标（按候选顺序取前几个） */
+export function sampleTargets(c: TargetCandidates, hint: IntentHint = { nodes: [] }): UseTarget[] {
+  const n = TARGET_SAMPLES;
+  switch (c.t) {
+    case 'none':
+    case 'auto':
+      return [{ t: 'none' }];
+    case 'seat':
+      return c.seats.slice(0, n).map((seat) => ({ t: 'seat', seat }));
+    case 'actor':
+      return c.actors.slice(0, n).map((actor) => ({ t: 'actor', actor }));
+    case 'lot':
+      return c.lots
+        .slice(0, n)
+        .map((lot) => ({ t: 'lot', lot, facility: c.needType.includes(lot) ? ('hotel' as const) : null }));
+    case 'underfoot':
+      return c.types === null
+        ? [{ t: 'underfoot', facility: null }]
+        : c.types.slice(0, n).map((facility) => ({ t: 'underfoot', facility }));
+    case 'lotPair':
+      return c.to.slice(0, n).map((to) => ({ t: 'lotPair', from: c.from, to }));
+    case 'lotOrObject':
+      return [
+        ...c.lots.slice(0, n).map((lot): UseTarget => ({ t: 'lot', lot, facility: null })),
+        ...c.objects.slice(0, n).map((object): UseTarget => ({ t: 'object', object })),
+      ];
+    case 'stock':
+      return c.stocks.slice(0, n).map((stock) => ({ t: 'stock', stock }));
+    case 'node':
+      return c.nodes.slice(0, n).map((node) => ({ t: 'node', node }));
+    case 'anyNode':
+      return hint.nodes.slice(0, n).map((node) => ({ t: 'node', node }));
+    case 'dice':
+      return c.values.map((value) => ({ t: 'dice', value }));
+    case 'rob': {
+      const out: UseTarget[] = [];
+      for (const v of c.victims.slice(0, n)) {
+        const card = v.cards[0];
+        if (card) out.push({ t: 'rob', seat: v.seat, take: { k: 'card', slot: card.slot } });
+        const item = v.items[0];
+        if (item) out.push({ t: 'rob', seat: v.seat, take: { k: 'item', item: item.item } });
+      }
+      return out;
+    }
+    case 'teleport': {
+      const out: UseTarget[] = [];
+      for (const source of c.sources.slice(0, n)) {
+        if (source.k === 'house') {
+          const lot = c.lands.find((l) => l[0] === source.lot[0]);
+          if (lot) out.push({ t: 'teleport', source, dest: { k: 'lot', lot } });
+        } else if (c.roads.length > 0) {
+          out.push({ t: 'teleport', source, dest: { k: 'road', node: c.roads[c.roads.length - 1]! } });
+        }
+      }
+      return out;
+    }
+  }
+}
+
 /** 当前决策的全部候选 intent（已实现的 kind 逐一枚举；其余只含 defaultIntent） */
-export function candidateIntents(d: PendingDecision): PlayerIntent[] {
+export function candidateIntents(d: PendingDecision, hint: IntentHint = { nodes: [] }): PlayerIntent[] {
   const a = asAnyPending(d);
   switch (a.kind) {
     case 'TURN_MENU': {
@@ -42,9 +112,30 @@ export function candidateIntents(d: PendingDecision): PlayerIntent[] {
           if (r.maxBuy > 0) out.push({ type: 'STOCK_BUY', stock: r.idx, shares: half(r.maxBuy) });
           if (r.maxSell > 0) out.push({ type: 'STOCK_SELL', stock: r.idx, shares: r.maxSell });
         }
+        for (const r of o.cards) {
+          if (!r.usable) continue;
+          for (const target of sampleTargets(r.targets, hint)) {
+            out.push({ type: 'USE_CARD', slot: r.slot, card: r.card, target });
+          }
+        }
+        for (const r of o.items) {
+          if (!r.usable) continue;
+          for (const target of sampleTargets(r.targets, hint)) out.push({ type: 'USE_ITEM', item: r.item, target });
+        }
       }
       return out;
     }
+    case 'BAIL':
+      return [{ type: 'SKIP' }, ...a.options.inmates.map((i): PlayerIntent => ({ type: 'BAIL', target: i.seat }))];
+    case 'USE_FREE_CARD':
+      return [{ type: 'CONFIRM' }, { type: 'DECLINE' }];
+    case 'SCAPEGOAT':
+      return [
+        { type: 'DECLINE' },
+        ...a.options.candidates.map((t): PlayerIntent => ({ type: 'SCAPEGOAT', target: t })),
+      ];
+    case 'DISCARD_CARD':
+      return a.options.hand.map((h): PlayerIntent => ({ type: 'DISCARD', slot: h.slot }));
     case 'BUY_LAND':
       return a.options.price <= a.options.cash ? [{ type: 'CONFIRM' }, { type: 'DECLINE' }] : [{ type: 'DECLINE' }];
     case 'UPGRADE_LAND':
@@ -122,13 +213,21 @@ export function candidateIntents(d: PendingDecision): PlayerIntent[] {
   }
 }
 
-export function randomIntent(d: PendingDecision, rng: IntentRng): PlayerIntent {
-  return choose(rng, candidateIntents(d));
+export function randomIntent(d: PendingDecision, rng: IntentRng, hint?: IntentHint): PlayerIntent {
+  return choose(rng, candidateIntents(d, hint));
+}
+
+/** anyNode 目标的取样：在场玩家与路面物件所在的格 */
+export function intentHint(state: GameState): IntentHint {
+  const nodes: TileId[] = [];
+  for (const p of state.players) if (p.alive && p.placed && !nodes.includes(p.node)) nodes.push(p.node);
+  for (const o of state.objects) if (!nodes.includes(o.node)) nodes.push(o.node);
+  return { nodes };
 }
 
 /** 从当前待决策中随机挑一个（并发时也随机挑座位），生成合法的 GameAction；没有待决策返回 null */
 export function randomAction(state: GameState, rng: IntentRng): GameAction | null {
   if (state.pending.length === 0) return null;
   const d = state.pending.length === 1 ? state.pending[0]! : choose(rng, state.pending);
-  return { ...randomIntent(d, rng), seat: d.seat, decisionId: d.id } as GameAction;
+  return { ...randomIntent(d, rng, intentHint(state)), seat: d.seat, decisionId: d.id } as GameAction;
 }

@@ -1,9 +1,13 @@
 /**
  * 各 kind 的 options 构造（design/engine.md §9.2–§9.3）：渲染和 AI 需要的全部数值与合法候选都由引擎算好，
- * 客户端不需要重新实现规则。M1 实现 TURN_MENU、BUY_LAND、UPGRADE_LAND；M4 的决策见 decisions/economy.ts。
+ * 客户端不需要重新实现规则。M1 实现 TURN_MENU、BUY_LAND、UPGRADE_LAND；M4 的决策见 decisions/economy.ts；
+ * M6 的卡片、道具行由 effects 注册表给出（候选见 decisions/targets.ts）。
  */
-import { ITEM_IDS, isPassiveCard } from '../../data/tables/ids';
+import { type CardId, ITEM_IDS } from '../../data/tables/ids';
 import type { EngineMap } from '../core/mapCache';
+import { cardEffect } from '../effects/cards/index';
+import { itemEffect } from '../effects/items/index';
+import type { MenuRow } from '../effects/types';
 import { isMarketClosedDay } from '../rules/calendar';
 import { diceAllowed } from '../rules/movement';
 import { playerAt } from '../rules/payment';
@@ -14,6 +18,7 @@ import {
   type BuyLandOptions,
   MENU_ACTION_LIMIT,
   type StockRow,
+  type TurnMenuCardRow,
   type TurnMenuOptions,
   type UpgradeLandOptions,
 } from '../types/decision';
@@ -39,6 +44,19 @@ function stockRows(s: GameState, seat: SeatIndex, open: boolean): StockRow[] {
   }));
 }
 
+function cardRows(s: GameState, em: EngineMap, seat: SeatIndex): TurnMenuCardRow[] {
+  const p = playerAt(s, seat);
+  const cache = new Map<CardId, MenuRow>();
+  return p.cards.map((card, slot) => {
+    let row = cache.get(card);
+    if (row === undefined) {
+      row = cardEffect(card).menu(s, em, seat);
+      cache.set(card, row);
+    }
+    return { slot, card, usable: row.usable, reason: row.reason, targets: row.targets };
+  });
+}
+
 export function buildTurnMenu(s: GameState, em: EngineMap, seat: SeatIndex): TurnMenuOptions {
   const p = playerAt(s, seat);
   const locked = p.st.stay !== 0 ? 'stay' : p.st.tortoise !== 0 ? 'tortoise' : null;
@@ -53,21 +71,12 @@ export function buildTurnMenu(s: GameState, em: EngineMap, seat: SeatIndex): Tur
         : 'holiday';
   return {
     dice: { allowed: diceAllowed(p.vehicle), current: p.diceCount, locked },
-    // 卡片与道具的使用属于 M6：先列出手牌与背包，全部标记不可用
-    cards: p.cards.map((card, slot) => ({
-      slot,
-      card,
-      usable: false,
-      reason: isPassiveCard(card) ? 'passive' : 'noTarget',
-      targets: { t: 'none' },
-    })),
-    items: ITEM_IDS.filter((it) => (p.items[it] ?? 0) > 0).map((item) => ({
-      item,
-      count: p.items[item]!,
-      usable: false,
-      reason: 'noTarget',
-      targets: { t: 'none' },
-    })),
+    // 卡片与道具：可用性、原因与合法候选来自效果注册表（同一张卡的多个卡槽共用一次计算）
+    cards: cardRows(s, em, seat),
+    items: ITEM_IDS.filter((it) => (p.items[it] ?? 0) > 0).map((item) => {
+      const row = itemEffect(item).menu(s, em, seat);
+      return { item, count: p.items[item]!, usable: row.usable, reason: row.reason, targets: row.targets };
+    }),
     stock: { open, reason, rows: stockRows(s, seat, open), deposit: p.deposit },
     board: { listings: [], mine: 0, canList: false, lotCaps: [] },
     canSurrender: false,

@@ -76,6 +76,8 @@
     "DEATH_GOD_SUMMONED": "{{who}} 召来死神附身 {{target}}",
     "CONFINED_jail": "{{who}} 入狱 {{n}} 天",
     "CONFINED_hospital": "{{who}} 住院 {{n}} 天",
+    "CONFINED_away": "{{who}} 出国 {{n}} 天",
+    "CONFINED_hotel": "{{who}} 住宿 {{n}} 天",
     "BLESSING": "{{who}} 受到神明加持",
     "STATUS_SET": "{{who}}：{{status}} {{n}} {{unit}}",
     "ALLIANCE_FORMED": "{{a}} 与 {{b}} 结盟 {{n}} 天",
@@ -156,7 +158,132 @@
     "monthly": "月结报告",
     "monthlyChampion": "本月冠军：{{who}}",
     "villain": "{{villain}}出动",
-    "timeRewound": "时光倒流！"
+    "timeRewound": "时光倒流！",
+    "surrendered": "{{who}} 举白旗投降"
+  },
+  "popup": {
+    "skip": "点一下跳过",
+    "news": "新闻快报",
+    "newsAffected": "受影响的玩家",
+    "fate": "命运",
+    "fateNo": "命运 {{n}}",
+    "cardUsed": "{{who}} 使用卡片",
+    "cardPassive": "被动卡生效",
+    "cardFizzle": "卡片没有效果",
+    "target": "目标：{{target}}",
+    "underfoot": "脚下的地产",
+    "diceValue": "{{n}} 点",
+    "godArrive": "{{god}} 附身 {{who}}",
+    "godPower": "{{god}} 发威",
+    "godManifest": "{{god}} 在 {{lot}} 显灵",
+    "deathSummon": "{{who}} 召来死神缠住 {{target}}",
+    "slot": "老虎机",
+    "magicNobody": "没有人符合条件",
+    "auction": "公开拍卖",
+    "auctionLeader": "领先：{{who}}",
+    "auctionNoBid": "等待出价",
+    "auctionSold": "{{who}} 以 {{amount}} 元拍得 {{lot}}",
+    "auctionUnsold": "{{lot}} 无人出价，流拍",
+    "bidderQuit": "退出竞拍",
+    "bidder": {
+      "active": "竞拍中",
+      "passed": "暂不加价",
+      "quit": "已退出"
+    },
+    "ranking": "最终排名",
+    "out": "已出局",
+    "loanNote": "（贷款已从总资产扣除）",
+    "part": {
+      "cash": "现金",
+      "deposit": "存款",
+      "stocks": "股票",
+      "estate": "地产",
+      "loan": "贷款"
+    },
+    "field": {
+      "cash": "现金",
+      "deposit": "存款",
+      "points": "点券"
+    }
+  },
+  "param": {
+    "lot": "某处地产",
+    "company": "某家公司",
+    "stock": "某支股票",
+    "who": "某位玩家",
+    "days": "数",
+    "amount": "一笔钱",
+    "pct": "若干"
+  },
+  "passive": {
+    "18": "复仇卡发动：以牙还牙！",
+    "19": "嫁祸卡发动：这锅换人背！",
+    "20": "免费卡发动：这次不用付！",
+    "21": "免罪卡发动：逃过一劫！",
+    "generic": "被动卡生效！"
+  },
+  "passiveCtx": {
+    "toll": "抵掉这次的过路费。",
+    "fee": "抵掉这次的设施费用。",
+    "taxAudit": "躲过了查税。",
+    "fine": "免缴这笔罚款。",
+    "frame": "识破陷害，免去牢狱之灾。",
+    "sleepwalk": "从梦游中清醒过来。",
+    "confine": "免去这次关押。"
+  },
+  "bubble": {
+    "fizzle": "无效",
+    "wreck": "车毁了！",
+    "bite": "汪汪！",
+    "knocked": "闪开！",
+    "released": "自由啦！",
+    "surrender": "🏳️ 我认输…",
+    "roadblock": "哎哟！"
+  },
+  "blessing": {
+    "none": "神明没有插手",
+    "reward_high": "财运亨通，奖金加倍！",
+    "reward_low": "衰运缠身，奖金泡汤…",
+    "penalty_high": "神明保佑，免付！",
+    "penalty_low": "祸不单行，加倍！",
+    "misfortune_high": "福星高照，逃过一劫！",
+    "misfortune_low": "倒霉透顶，天数加倍！"
+  },
+  "villainHired": "{{who}} 花钱雇了{{villain}}",
+  "villainAction": {
+    "stealPoints": "{{villain}}偷走了 {{who}} 一半的点券",
+    "stealObject": "{{villain}}顺手牵走了路上的东西",
+    "robDeposit": "{{villain}}抢走 {{who}} {{amount}} 元存款",
+    "stealCard": "{{villain}}从 {{who}} 身上偷走一张卡",
+    "extort": "{{villain}}向 {{who}} 勒索 {{amount}} 元",
+    "spySurplus": "{{villain}}窃走公司盈余 {{amount}} 元",
+    "spyToll": "{{villain}}截走一笔过路费 {{amount}} 元"
+  },
+  "strike": {
+    "missile": "飞弹来袭！",
+    "nuke": "核子飞弹来袭！",
+    "alien": "外星人来袭！",
+    "typhoon": "台风过境！",
+    "bomb3x3": "炸弹爆炸！"
+  },
+  "confine": {
+    "jail": "警车来了！",
+    "hospital": "救护车来了！",
+    "away": "出国 {{n}} 天",
+    "hotel": "住宿 {{n}} 天"
+  },
+  "alliance": {
+    "formed": "结盟！",
+    "broken": "绝交！"
+  },
+  "godLeave": {
+    "expired": "期满离去",
+    "displaced": "被挤走了",
+    "dispelled": "被送走了",
+    "swept": "被扫走了",
+    "struck": "被打跑了",
+    "bitten": "被吓跑了",
+    "bankrupt": "离开了"
   },
   "blocked": {
     "hotel": " 住在旅馆",

@@ -25,6 +25,7 @@ import { registerChatHandlers } from './handlers/chat';
 import { registerDebugHandlers } from './handlers/debug';
 import { registerGameHandlers } from './handlers/game';
 import { registerLobbyHandlers } from './handlers/lobby';
+import { MinigameRelay, type RawEmit, registerMinigameHandlers } from './handlers/minigame';
 import { registerRoomHandlers } from './handlers/room';
 import { registerSavesHandlers } from './handlers/saves';
 import { registerTimeHandlers } from './handlers/time';
@@ -53,11 +54,24 @@ export function createIo(http: HttpServer, o: IoOptions): AppServer {
   });
 }
 
+/** 直接按 socket id 发送 */
+function rawEmit(io: AppServer): RawEmit {
+  return (ids, event, payload) => {
+    if (ids.length === 0) return;
+    (io.to([...ids]) as unknown as { emit(ev: string, p: unknown): void }).emit(event, payload);
+  };
+}
+
+/** 每个 io 的小游戏投递（attachIo 时建立；emitter 在发出对局消息之后调用它补发观战票据与积压帧） */
+const relays = new WeakMap<AppServer, MinigameRelay>();
+
 export function ioEmitter(io: AppServer): Emitter {
+  const send = rawEmit(io);
   return {
     emit<E extends S2CEventName>(ids: readonly string[], event: E, payload: S2CPayload<E>): void {
       if (ids.length === 0) return;
-      (io.to([...ids]) as unknown as { emit(ev: string, p: unknown): void }).emit(event, payload);
+      send(ids, event, payload);
+      relays.get(io)?.afterEmit(ids, event, payload);
     },
   };
 }
@@ -122,6 +136,8 @@ export function tokenHashOf(token: string): string {
 /** 挂上握手中间件与连接处理 */
 export function attachIo(io: AppServer, ctx: HandlerCtx, o: IoOptions): void {
   const perIp = new Map<string, number>();
+  const relay = new MinigameRelay(ctx, rawEmit(io));
+  relays.set(io, relay);
   const limit = o.maxConnectionsPerIp ?? MAX_CONNECTIONS_PER_IP;
 
   io.use((socket, next) => {
@@ -154,6 +170,7 @@ export function attachIo(io: AppServer, ctx: HandlerCtx, o: IoOptions): void {
     registerLobbyHandlers(ctx, socket);
     registerRoomHandlers(ctx, socket);
     registerGameHandlers(ctx, socket);
+    registerMinigameHandlers(ctx, socket, relay);
     registerChatHandlers(ctx, socket);
     registerSavesHandlers(ctx, socket);
     registerTimeHandlers(ctx, socket);

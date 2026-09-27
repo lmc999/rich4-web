@@ -4,13 +4,13 @@ import { CHARACTER_KEYS, type SeatIndex } from '@rich4/shared/engine';
 import type { RoomView } from '@rich4/shared/net';
 import { type GameView, isAutopilot, type PlayerView } from '@rich4/shared/view';
 import clsx from 'clsx';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { useTx } from '../../i18n/tx';
 import { formatMoney, formatMoneyShort } from '../../presentation/names';
-import { type Bubble, emoteGlyph, useChatStore } from '../../store/chatStore';
 import { currentSeat } from '../../store/gameStore';
 import { type StatField, useUiStore } from '../../store/uiStore';
 import { Avatar, SeatMark } from '../common/Avatar';
+import { useHeadBubble } from '../social/socialStore';
 import h from './hud.module.css';
 
 export const FLASH_MS = 1300;
@@ -55,23 +55,6 @@ export function Stat({
   );
 }
 
-export const BUBBLE_MS = 3000;
-
-/** 座位头顶气泡（表情或聊天）：出现后 3 秒自动消失 */
-export function useBubble(seat: SeatIndex): Bubble | null {
-  const bubble = useChatStore((s) => s.bubbles[seat] ?? null);
-  const [, force] = useState(0);
-  const live = bubble !== null && Date.now() - bubble.at < BUBBLE_MS;
-  useEffect(() => {
-    if (!bubble) return;
-    const left = BUBBLE_MS - (Date.now() - bubble.at);
-    if (left <= 0) return;
-    const id = setTimeout(() => force((x) => x + 1), left + 20);
-    return () => clearTimeout(id);
-  }, [bubble]);
-  return live ? bubble : null;
-}
-
 export function seatName(room: RoomView, seat: SeatIndex): string {
   const o = room.seats[seat]?.occupant;
   return o ? (o.kind === 'human' ? o.nickname : o.name) : `${seat + 1}P`;
@@ -84,12 +67,13 @@ function Chip({ p, room, current }: { p: PlayerView; room: RoomView; current: bo
   const control = sv?.control ?? 'human';
   const offline = sv?.occupant?.kind === 'human' && !sv.occupant.connected;
   const mine = room.you.role === 'player' && room.you.seat === p.seat;
-  const bubble = useBubble(p.seat);
+  // 头顶气泡总线（ui/social/socialStore：已过滤屏蔽名单，表情 2 秒、聊天 3 秒；棋盘角色头顶同步显示）
+  const bubble = useHeadBubble(p.seat);
   return (
     <li className={h.chipItem}>
       {bubble && (
         <span className={h.bubble} data-testid={`bubble-${p.seat}`} aria-live="polite">
-          {bubble.emoteId ? emoteGlyph(bubble.emoteId) : bubble.text}
+          {bubble.kind === 'emote' ? bubble.glyph : bubble.text}
         </span>
       )}
       <button

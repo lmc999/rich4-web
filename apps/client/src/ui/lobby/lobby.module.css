@@ -347,3 +347,46 @@
   font-family: var(--font-title);
   font-size: 18px;
 }
+
+/* 读档后的座位（net.md §8.4） */
+.seatUnused {
+  opacity: 0.55;
+}
+
+.savedOrigin {
+  color: var(--c-ink-soft);
+  font-size: 12px;
+  text-align: center;
+}
+
+.badgeUnclaimed {
+  padding: 1px 8px;
+  border: 2px dashed var(--c-ink);
+  border-radius: 999px;
+  background: var(--c-sun);
+}
+
+.loadedBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 2px solid var(--c-blue);
+  border-radius: var(--radius-sm);
+  background: #eef5ff;
+  font-size: 14px;
+}
+
+.warnTag {
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--c-orange);
+  font-size: 12px;
+}
+
+.note {
+  margin: 0;
+  color: var(--c-ink-soft);
+  font-size: 13px;
+}

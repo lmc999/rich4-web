@@ -237,7 +237,7 @@
       "bailFor": "保释",
       "hireFor": "雇用",
       "villains": "可以雇用的恶人",
-      "villainAway": "已经出门了",
+      "villainAway": "暂时不能雇用（已经出门或尚未开放）",
       "villainDesc": {
         "thief": "偷走别人的点券与路面道具。",
         "robber": "到银行抢别人的存款，还会顺手偷卡。",
@@ -596,5 +596,111 @@
   "board": {
     "forSale": "出售",
     "forLease": "招商"
+  },
+  "social": {
+    "tabAll": "全部",
+    "tabSpectators": "观战",
+    "quick": "快捷语",
+    "quickPhrases": {
+      "0": "快点啦～",
+      "1": "哈哈哈",
+      "2": "我要破产了",
+      "3": "手下留情！",
+      "4": "好运来！",
+      "5": "这块地是我的",
+      "6": "谢谢老板",
+      "7": "下次再来找我玩"
+    },
+    "muteTitle": "屏蔽 {{name}}（不再显示他的消息与表情）",
+    "mutedToast": "已屏蔽 {{name}}",
+    "mutedN": "已屏蔽 {{n}} 人",
+    "unmute": "取消屏蔽",
+    "audienceAll": "你的消息所有人可见",
+    "audienceSpectators": "你的消息只有观战者可见",
+    "emptySpectators": "观战频道还没有消息",
+    "follow": "跟随",
+    "followAuto": "自动（当前行动者）",
+    "allowSpectators": "允许观战",
+    "spectatorChat": "观战者聊天",
+    "spectatorChatMode": {
+      "all": "所有人可见",
+      "spectators": "仅观战者可见",
+      "off": "关闭"
+    },
+    "hostOptions": "观战设置"
+  },
+  "saveMenu": {
+    "import": "导入存档文件",
+    "export": "导出",
+    "imported": "已导入存档「{{name}}」",
+    "importedUnofficial": "已导入「{{name}}」：签名无效，标记为非官方存档（仍可读取）",
+    "exported": "已导出「{{name}}」",
+    "savedAt": "保存于 {{time}}",
+    "deleteConfirm": "确认删除",
+    "cancel": "取消",
+    "unofficialNote": "签名无效：文件被修改过或来自其他服务器，数据不保证与原对局一致",
+    "warn": {
+      "needsMigration": "旧版本存档（将自动升级）",
+      "chatTailDropped": "部分聊天记录已丢弃",
+      "unknown": "兼容性提示"
+    },
+    "err": {
+      "gameInProgress": "这个存档所在的对局还在进行中，请先结束或解散那个房间",
+      "incompatibleWhy": "存档无法读取：{{reason}}",
+      "tooLarge": "文件太大（上限 2 MB）",
+      "empty": "文件是空的",
+      "network": "网络错误，请稍后再试",
+      "unreadable": "无法读取所选文件",
+      "listFailed": "存档列表加载失败：{{reason}}"
+    },
+    "incompat": {
+      "badEncoding": "不是有效的 .r4save 文件",
+      "badJson": "文件内容损坏",
+      "tooLarge": "解压后数据过大",
+      "badFormat": "存档格式不正确",
+      "newerFormat": "存档来自更新的版本",
+      "newerState": "存档来自更新的版本",
+      "mapHashMismatch": "服务器上没有存档用的地图版本",
+      "migrationFailed": "旧存档升级失败",
+      "invalidState": "存档数据校验不通过",
+      "mapRefMismatch": "存档的地图信息前后不一致",
+      "seatMismatch": "存档的座位与角色不一致"
+    }
+  },
+  "trustee": {
+    "title": "托管设置",
+    "intro": "托管时由电脑按下面的设定替你行动；随时可以解除。",
+    "statusOn": "托管中（{{reason}}）",
+    "statusOff": "未托管",
+    "personality": "个性",
+    "personalities": {
+      "0": "乖宝宝",
+      "1": "普通人",
+      "2": "大老奸"
+    },
+    "usage": "卡片与道具",
+    "useCards": "使用卡片",
+    "useItems": "使用道具",
+    "cashRatio": "现金比例",
+    "stockRatio": "股票比例",
+    "ratioHelp": "现金比例：手头保留现金占资产的比例；股票比例：投资股票占资产的比例（0–100%，每档 10%）。",
+    "on": "开始托管",
+    "off": "解除托管",
+    "save": "保存设置",
+    "onDone": "已开始托管",
+    "offDone": "已解除托管",
+    "saved": "托管设置已保存"
+  },
+  "conn": {
+    "graceLeft": "{{n}} 秒后由电脑托管你的角色；重连后自动恢复。",
+    "autopiloted": "你的角色已由电脑托管，重新连上后自动恢复。",
+    "spectatorNote": "重连后自动回到观战画面。",
+    "restored": "已重新连接",
+    "restoredGame": "已重新连接，对局已同步"
+  },
+  "menu": {
+    "dissolveAsk": "确定解散房间？所有人都会回到首页。",
+    "dissolveInGame": "确定解散房间？对局会先自动存档，所有人回到首页。",
+    "dissolveConfirm": "解散"
   }
 }

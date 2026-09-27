@@ -103,7 +103,7 @@ export const LOG_FORMAT = {
   DOG_BITE: (e, n) => L(n, 'DOG_BITE', { who: n.seat(e.seat) }),
   DOG_KNOCKED: (e, n) => L(n, 'DOG_KNOCKED', { who: n.seat(e.seat) }),
   DEATH_GOD_SUMMONED: (e, n) => L(n, 'DEATH_GOD_SUMMONED', { who: n.seat(e.by), target: n.seat(e.target) }),
-  CONFINED: (e, n) => L(n, 'CONFINED', { who: n.actor(e.actor), n: e.days }, e.where === 'jail' ? 'jail' : 'hospital'),
+  CONFINED: (e, n) => L(n, 'CONFINED', { who: n.actor(e.actor), n: e.days }, e.where),
   BLESSING: (e, n) => L(n, 'BLESSING', { who: n.seat(e.seat) }),
   STATUS_SET: (e, n) =>
     L(n, 'STATUS_SET', {

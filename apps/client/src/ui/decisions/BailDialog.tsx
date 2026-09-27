@@ -62,7 +62,7 @@ export default function BailDialog(props: DecisionProps<'BAIL'>): ReactNode {
                       type="button"
                       className={s.choice}
                       disabled={!canBail}
-                      onClick={() => ctl.send({ type: 'BAIL', seat: m.seat })}
+                      onClick={() => ctl.send({ type: 'BAIL', target: m.seat })}
                       data-testid={`bail-seat-${m.seat}`}
                     >
                       {p && <Avatar character={p.character} seat={m.seat} size={32} />}
@@ -109,7 +109,10 @@ export default function BailDialog(props: DecisionProps<'BAIL'>): ReactNode {
             ))}
           </ul>
         </section>
-        {(!canBail || !canHire) && <p className={s.muted}>{text.reason('notEnoughPoints')}</p>}
+        {/* 点券不足的提示只针对确实能选的项：有在押者却保释不起，或有可雇的恶人却雇不起 */}
+        {((!canBail && o.inmates.length > 0) || (!canHire && o.villains.some((v) => v.available))) && (
+          <p className={s.muted}>{text.reason('notEnoughPoints')}</p>
+        )}
       </div>
     </DecisionFrame>
   );

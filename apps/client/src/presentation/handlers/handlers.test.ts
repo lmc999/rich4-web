@@ -7,6 +7,7 @@ import { initI18n } from '../../i18n';
 import { tx } from '../../i18n/tx';
 import { useUiStore } from '../../store/uiStore';
 import { selfPlay } from '../../test/selfPlay';
+import { usePopupStore } from '../../ui/popups/popupStore';
 import { makeNames } from '../names';
 import type { BoardPort, PresentationContext, UiPort } from '../types';
 import { createUiPresenter } from '../UiPresenter';
@@ -168,10 +169,15 @@ describe('handlers', () => {
     expect(calls.map((c) => c[0])).toContain('shake');
   });
 
-  it('未实现规则的事件：最简演出（toast）且不抛错', async () => {
-    useUiStore.getState().clear();
+  it('NEWS：演出期间打开新闻弹窗（标题按编号取自 i18n），结束后关闭', async () => {
+    const seen: string[] = [];
+    const off = usePopupStore.subscribe((st) => {
+      if (st.current?.kind === 'news') seen.push(st.current.headline);
+    });
     await run({ type: 'NEWS', id: 3, params: {}, affected: [] }, view);
-    expect(useUiStore.getState().toasts.at(-1)?.text).toContain('新闻 4');
+    off();
+    expect(seen[0]).toBe('流感疫情升温');
+    expect(usePopupStore.getState().current).toBeNull();
   });
 
   it('自对弈里出现的全部事件都能演出（instant 时钟）', async () => {

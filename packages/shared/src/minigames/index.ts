@@ -14,14 +14,15 @@ export { BALLOON_SIM, BALLOON_SPEC, type BalloonState } from './balloon/sim';
 export * from './hash';
 export { PENGUIN_BOT } from './penguin/bot';
 export * as penguin from './penguin/index';
-export { PENGUIN_SIM, PENGUIN_SPEC, type PenguinEndReason, type PenguinState } from './penguin/sim';
+export { PENGUIN_SIM, PENGUIN_SPEC, type PenguinEndReason, type PenguinState, penguinPose } from './penguin/sim';
 export * from './replay';
 export { idiv, rand15, randMod, randScale } from './rng';
+export * from './session';
 export * from './types';
 export * from './validate';
 export { XICONG_BOT } from './xicong/bot';
 export * as xicong from './xicong/index';
-export { XICONG_SIM, XICONG_SPEC, type XicongState } from './xicong/sim';
+export { XICONG_SIM, XICONG_SPEC, type XicongState, xicongPose } from './xicong/sim';
 
 /** 三个 sim 的注册表（服务器裁判、客户端宿主、观战共用同一份） */
 export const MINIGAME_SIMS: Readonly<Record<MinigameId, MinigameSim>> = Object.freeze({

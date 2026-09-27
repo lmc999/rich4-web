@@ -119,6 +119,18 @@ describe('GameClient', () => {
     client.stop();
   });
 
+  it('小游戏模块安装前到达的观战票据与帧先缓存，安装时交出；交出之后不再缓存（刷新、中途加入）', () => {
+    const { client, transport } = makeTestClient({ storage: memoryStorage() });
+    client.start();
+    const ticket = { sessionId: 's1' } as never;
+    transport.push('game:minigameFrames', { sessionId: 's1', seq: 0, events: [] });
+    transport.push('game:minigameWatch', { ticket, mode: 'live', log: null });
+    expect(client.takeMinigameBacklog().map((m) => m.event)).toEqual(['game:minigameFrames', 'game:minigameWatch']);
+    transport.push('game:minigameFrames', { sessionId: 's1', seq: 1, events: [] });
+    expect(client.takeMinigameBacklog()).toEqual([]);
+    client.stop();
+  });
+
   it('enterRoom：本机记着房间先 resume；满员时自动改为观战', async () => {
     const storage = memoryStorage();
     saveLastRoom({ code: '222222', epoch: 1, lastSeq: 3 }, storage);
@@ -289,6 +301,51 @@ describe('GameClient', () => {
     // 空棋盘时再卸载不重复 skip
     client.attachBoard(null);
     expect(skip).toHaveBeenCalledTimes(1);
+    client.stop();
+  });
+
+  it('reset 之后，被中止的 handler 收尾拿到的是空棋盘与空界面：不会用旧时间线覆盖刚同步好的棋盘', async () => {
+    const sp = selfPlay({ seed: 5, steps: 3 });
+    const log: string[] = [];
+    let entered = 0;
+    const handlers = new Proxy(
+      {},
+      {
+        get:
+          () =>
+          async (
+            _e: unknown,
+            ctx: {
+              wait(ms: number): Promise<void>;
+              board: { placeActor(s: number, n: number): void };
+              ui: { toast(t: string): void };
+            },
+          ) => {
+            entered++;
+            await ctx.wait(5000);
+            ctx.board.placeActor(0, 99);
+            ctx.ui.toast('旧时间线的提示');
+          },
+      },
+    ) as never;
+    const { client, transport } = makeTestClient({ storage: memoryStorage(), handlers });
+    await client.createRoom();
+    transport.push('game:snapshot', { ...sp.initial, serverNow: 0 });
+    const board = {
+      ...NULL_BOARD,
+      ready: true,
+      syncView: () => void log.push('syncView'),
+      placeActor: (_s: number, n: number) => void log.push(`placeActor:${n}`),
+    };
+    client.attachBoard(board);
+    log.length = 0;
+    transport.push('game:batch', sp.batches[0]!);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(entered).toBe(1);
+    transport.push('game:snapshot', { ...sp.initial, serverNow: 0 });
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(log).toEqual(['syncView']);
+    expect(useUiStore.getState().toasts.map((x) => x.text)).not.toContain('旧时间线的提示');
     client.stop();
   });
 

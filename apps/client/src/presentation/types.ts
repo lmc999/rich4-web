@@ -87,6 +87,8 @@ export interface PresentationContext {
   map: MapIndex | null;
   names: NameKit;
   t(key: string, params?: Record<string, unknown>): string;
+  /** 动画时钟当前倍速（弹窗把 1x 时长换算成真实时长）；缺省视为 1 */
+  animSpeed?(): number;
 }
 
 export type EventHandler<T extends GameEventType> = (e: GameEventOf<T>, ctx: PresentationContext) => Promise<void>;
@@ -120,3 +122,12 @@ export const NULL_BOARD: BoardPort = {
 };
 
 export const NULL_AUDIO: AudioPort = { play: noop };
+
+/** 失效上下文（演出已被 reset / skipAll 中止）用的界面端口：收尾代码不再弹横幅、飘字、提示 */
+export const NULL_UI: UiPort = {
+  toast: noop,
+  banner: resolved,
+  dice: resolved,
+  flash: noop,
+  closeTransient: noop,
+};

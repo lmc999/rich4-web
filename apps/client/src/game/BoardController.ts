@@ -4,6 +4,7 @@
 import { CHARACTER_KEYS } from '@rich4/shared/data';
 import type { LotId, SeatIndex, TileId } from '@rich4/shared/engine';
 import type { GameView } from '@rich4/shared/view';
+import type { StagePort } from '../presentation/handlers/stage';
 import { STEP_MS } from './actors/PlayerActor';
 import { backOut } from './anim/easing';
 import { tweenValue } from './anim/tween';
@@ -27,6 +28,8 @@ export interface BoardControllerOptions {
   nameOf(seat: SeatIndex, view: GameView): string;
   /** 镜头是否自动跟随（设置里可关） */
   autoFollow(): boolean;
+  /** 手动锁定跟随的座位（观战栏的「跟随」；非 null 时镜头一直跟它，不随行动者切换） */
+  pinned?(): SeatIndex | null;
 }
 
 /** 角色头顶飘字的高度（像素） */
@@ -55,6 +58,14 @@ export class BoardController {
     return this.renderer.board;
   }
 
+  /**
+   * M6/M7 棋盘舞台（路面物件、神明、恶人、乞丐与角色状态外观；fx 懒创建，同一棋盘只建一次）。
+   * handlers 的 stageOf(ctx) 优先读它。
+   */
+  get stage(): StagePort | null {
+    return this.ready ? this.fx.stageFor(this) : null;
+  }
+
   // ───────────────────────── 同步 ─────────────────────────
 
   syncView(view: GameView): void {
@@ -69,9 +80,12 @@ export class BoardController {
       if (!a) continue;
       a.root.visible = p.placed && p.node > 0;
       a.root.alpha = p.alive ? 1 : 0.45;
-      if (a.root.visible && !a.isWalking && a.tile !== p.node) a.teleport(p.node);
+      // 正在走（被 reset 中止、还没收尾）时记下落点，收尾时落到快照位置而不是旧路径的终点
+      if (a.root.visible) a.settleAt(p.node);
     }
     this.board.spreadActors();
+    // 舞台（路面物件 / 神明 / 恶人 / 状态外观）随显示态一起同步：reset、快照、instant 模式与 TIME_REWOUND 之后立即追上
+    this.stage?.syncWorld(view);
   }
 
   setLot(lot: LotId, look: LotLookInput): void {
@@ -175,7 +189,13 @@ export class BoardController {
 
   follow(seat: SeatIndex | null): void {
     this.followSeat = seat;
-    this.renderer.follow(this.o.autoFollow() ? seat : null);
+    const pin = this.o.pinned?.() ?? null;
+    this.renderer.follow(pin !== null ? pin : this.o.autoFollow() ? seat : null);
+  }
+
+  /** 跟随设置变化后重新应用（锁定座位切换、自动跟随开关） */
+  refollow(): void {
+    this.follow(this.followSeat);
   }
 
   get followed(): SeatIndex | null {
@@ -222,6 +242,12 @@ export class BoardController {
     } catch {
       // 未知格
     }
+  }
+
+  /** 角色头顶的聊天 / 表情气泡（ui/social 的头顶气泡总线经 BoardCanvas 转发） */
+  say(seat: SeatIndex, text: string, ms: number, emote = false): void {
+    if (!this.ready) return;
+    this.board.actor(seat)?.say(text, ms, emote);
   }
 
   shake(amp: number, ms: number): void {

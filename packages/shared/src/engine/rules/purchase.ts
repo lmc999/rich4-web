@@ -4,7 +4,8 @@
  * - 买无主住宅：(地价 + 房价 × 当前等级) × PI（无主地可能带着旧房子）。
  * - 自有地加盖一层：房价 × PI，每级相同；已满 5 级或是连锁店不能盖。
  * - 只能用现金：价格 > 现金时不能买；恰好相等可以买；买地盖房不会导致破产。
- * - 不能投资：梦游中（不问、不提示）；小衰神、大衰神、死神附身（一律投资失败）；土地公附身时不能买无主地。
+ * - 不能投资：梦游中（不问、不提示）；小衰神、大衰神、死神附身（一律投资失败）；土地公附身时不能买无主地
+ *   （reason 'earthGod'：不问、不提示，落点 tail 阶段由显灵直接强占；r_deities §7.11、§9）。
  * - 福神（小、大）附身：PROGRAM = 照付全价，成功后额外送 1 级；MANUAL = 大福神买地免费、小福神半价，不送级。
  */
 import { ECON } from '../../data/tables/economy';
@@ -17,7 +18,7 @@ import { modeOf, playerOf, type RulePlayer, type RuleWorld } from './world';
 
 export const MAX_LEVEL = ECON.MAX_LEVEL as LotLevel;
 
-export type InvestDenial = 'sleepwalk' | 'investBlocked' | 'notEnoughCash' | 'maxLevel' | 'chain';
+export type InvestDenial = 'sleepwalk' | 'investBlocked' | 'earthGod' | 'notEnoughCash' | 'maxLevel' | 'chain';
 
 export type InvestCheck =
   | { ok: true; price: number }
@@ -29,9 +30,14 @@ export function investBlockingGod(p: RulePlayer): GodKind | null {
   return k === GOD.SMALL_MISFORTUNE || k === GOD.BIG_MISFORTUNE || k === GOD.DEATH ? k : null;
 }
 
-/** 买地额外禁止：土地公附身（落点直接强占，M6） */
-export function buyBlockingGod(p: RulePlayer): GodKind | null {
-  return investBlockingGod(p) ?? (p.god?.kind === GOD.EARTH_GOD ? GOD.EARTH_GOD : null);
+/**
+ * 买无主地的禁令：衰神、死神 → 'investBlocked'（提示投资失败）；土地公 → 'earthGod'（屏蔽买地选项但不提示，
+ * 落点直接强占）。没有禁令返回 null。
+ */
+function buyDenial(p: RulePlayer): { reason: 'investBlocked' | 'earthGod'; god: GodKind } | null {
+  const god = investBlockingGod(p);
+  if (god !== null) return { reason: 'investBlocked', god };
+  return p.god?.kind === GOD.EARTH_GOD ? { reason: 'earthGod', god: GOD.EARTH_GOD } : null;
 }
 
 /** PROGRAM 下福神附身时投资成功后额外送的级数 */
@@ -79,8 +85,8 @@ export function canBuyLand(w: RuleWorld, em: EngineMap, seat: SeatIndex, landIdx
   const p = playerOf(w.players, seat);
   const price = fortunePrice(w, p, landBuyPrice(w, em, landIdx));
   if (p.st.sleepwalk !== 0) return { ok: false, reason: 'sleepwalk', price, god: null };
-  const god = buyBlockingGod(p);
-  if (god !== null) return { ok: false, reason: 'investBlocked', price, god };
+  const deny = buyDenial(p);
+  if (deny !== null) return { ok: false, reason: deny.reason, price, god: deny.god };
   if (price > p.cash) return { ok: false, reason: 'notEnoughCash', price, god: null };
   return { ok: true, price };
 }
@@ -116,8 +122,8 @@ export function canBuyFacility(w: RuleWorld, em: EngineMap, seat: SeatIndex, fac
   const p = playerOf(w.players, seat);
   const price = fortunePrice(w, p, facilityBuyPrice(w, em, facIdx));
   if (p.st.sleepwalk !== 0) return { ok: false, reason: 'sleepwalk', price, god: null };
-  const god = buyBlockingGod(p);
-  if (god !== null) return { ok: false, reason: 'investBlocked', price, god };
+  const deny = buyDenial(p);
+  if (deny !== null) return { ok: false, reason: deny.reason, price, god: deny.god };
   if (price > p.cash) return { ok: false, reason: 'notEnoughCash', price, god: null };
   return { ok: true, price };
 }

@@ -28,11 +28,13 @@ import {
   startResearch,
 } from '../squares/facility';
 import { buyTicket } from '../squares/lottery';
+import { MINIGAME_ASK } from '../squares/minigame';
 import { confirmBuyLand, confirmUpgradeLand } from '../squares/property';
-import type { DecisionOptionsMap } from '../types/decision';
+import type { DecisionOptionsMap, PendingMinigame } from '../types/decision';
 import type { FrameOf, SimpleAskKind } from '../types/frames';
 import type { CompanyLotId, FacilityLotId, LotId } from '../types/ids';
 import type { PlayerAction, PlayerIntent } from '../types/intent';
+import { BAIL_ASK, DISCARD_ASK, SCAPEGOAT_ASK, USE_FREE_CARD_ASK } from './askCombat';
 import { chargeConstructionNoTarget } from './fee';
 
 type AskFrame = FrameOf<'ASK'>;
@@ -42,6 +44,8 @@ export interface AskBuild<K extends SimpleAskKind> {
   defaultIntent: PlayerIntent;
   lot: LotId | null;
   amount: number | null;
+  /** 只有 MINIGAME 给出（种子与参数写进 PendingDecision.minigame） */
+  minigame?: PendingMinigame | null;
 }
 
 export interface AskHandler<K extends SimpleAskKind> {
@@ -187,16 +191,16 @@ export const ASK_HANDLERS = Object.freeze({
       if (a.type === 'SUBSCRIBE') subscribeShares(ctx, f.seat, companyOf(f), a.shares);
     },
   },
-  // TODO(M6)：保释、被动卡、满手弃牌
-  BAIL: notImplemented('BAIL'),
-  USE_FREE_CARD: notImplemented('USE_FREE_CARD'),
-  SCAPEGOAT: notImplemented('SCAPEGOAT'),
-  DISCARD_CARD: notImplemented('DISCARD_CARD'),
-  // TODO(M7)：魔法屋、生日、死神目标；TODO(M8)：小游戏
+  // M6：保释、满手弃牌（flow/askCombat.ts）；被动卡由持有付款 / 关押流程的帧直接询问
+  BAIL: BAIL_ASK,
+  USE_FREE_CARD: USE_FREE_CARD_ASK,
+  SCAPEGOAT: SCAPEGOAT_ASK,
+  DISCARD_CARD: DISCARD_ASK,
+  // TODO(M7)：魔法屋、生日、死神目标
   MAGIC_CAST: notImplemented('MAGIC_CAST'),
   BIRTHDAY_PICK: notImplemented('BIRTHDAY_PICK'),
   DEATH_GOD_TARGET: notImplemented('DEATH_GOD_TARGET'),
-  MINIGAME: notImplemented('MINIGAME'),
+  MINIGAME: MINIGAME_ASK,
 } satisfies { readonly [K in SimpleAskKind]: AskHandler<K> });
 
 export const ASK: FrameHandler<AskFrame> = {
@@ -213,7 +217,8 @@ export const ASK: FrameHandler<AskFrame> = {
       if (ctx.top() === f) ctx.pop(f);
       return;
     }
-    ctx.ask(f, f.seat, f.kind, b.options, b.defaultIntent, { lot: b.lot, amount: b.amount });
+    const extra = { minigame: b.minigame ?? null };
+    ctx.ask(f, f.seat, f.kind, b.options, b.defaultIntent, { lot: b.lot, amount: b.amount }, extra);
   },
   resume(ctx, f, a) {
     f.stage = 'done';

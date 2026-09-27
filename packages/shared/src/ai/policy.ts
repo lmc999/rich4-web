@@ -2,15 +2,17 @@
  * OriginalAiPolicy：原版电脑 AI（design/minigames-ai.md §8–§9；architecture §5.11）。
  * M4 覆盖经济决策：TURN_MENU（股票买卖与骰子颗数）、BUY_*、UPGRADE_*、BUILD_FACILITY / FACILITY_TYPE、RESEARCH、
  * BANK_ATM、BANK_COUNTER、SHOP、LOTTERY、SUBSCRIBE_SHARES、CONSTRUCTION_PICK、DISCARD_CARD；
- * 其余 kind 暂时委托 BasicAiPolicy（M6/M7 补上卡片、道具、保释、拍卖、魔法屋等）。
+ * M6 覆盖 TURN_MENU 的用卡 / 用道具（ai/preRoll.ts）、USE_FREE_CARD、SCAPEGOAT、BAIL（保释玩家分支）；
+ * 其余 kind 暂时委托 BasicAiPolicy（M7 补上拍卖、魔法屋、生日、死神目标）。
  * 返回前按 options 做一次合法性自检（PlayerIntentSchema、ALLOWED_INTENTS、数量上限），不合法就退回 defaultIntent，防止活锁。
  */
-import { isIntentAllowed } from '../engine/index';
+import { isIntentAllowed, targetMatches } from '../engine/index';
 import { type DecisionKind, type PlayerIntent, PlayerIntentSchema, type SeatIndex } from '../engine/types/index';
 import type { DecisionForYou, GameView } from '../view/types';
 import { BASIC_HANDLERS } from './basic';
 import { atm, bankCounter } from './decisions/bank';
 import { discard, lottery, subscribe } from './decisions/misc';
+import { bail, freeCard, scapegoat } from './decisions/passive';
 import { buildFacility, buyLand, construction, facilityType, research, upgrade } from './decisions/property';
 import { shop } from './decisions/shop';
 import { turnMenu } from './decisions/turnMenu';
@@ -34,13 +36,13 @@ export const ORIGINAL_HANDLERS = Object.freeze({
   RESEARCH: (view, d, ctx) => research(viewOf(view, d.seat, ctx), d),
   SHOP: (view, d, ctx) => shop(viewOf(view, d.seat, ctx), d, ctx),
   LOTTERY: (view, d, ctx) => lottery(viewOf(view, d.seat, ctx), d, ctx),
-  BAIL: BASIC_HANDLERS.BAIL,
+  BAIL: (view, d, ctx) => bail(viewOf(view, d.seat, ctx), d, ctx),
   MINIGAME: BASIC_HANDLERS.MINIGAME,
   MAGIC_CAST: BASIC_HANDLERS.MAGIC_CAST,
   CONSTRUCTION_PICK: (view, d, ctx) => construction(viewOf(view, d.seat, ctx), d),
   SUBSCRIBE_SHARES: (view, d, ctx) => subscribe(viewOf(view, d.seat, ctx), d),
-  USE_FREE_CARD: BASIC_HANDLERS.USE_FREE_CARD,
-  SCAPEGOAT: BASIC_HANDLERS.SCAPEGOAT,
+  USE_FREE_CARD: (view, d, ctx) => freeCard(viewOf(view, d.seat, ctx), d, ctx),
+  SCAPEGOAT: (view, d, ctx) => scapegoat(viewOf(view, d.seat, ctx), d, ctx),
   AUCTION_BID: BASIC_HANDLERS.AUCTION_BID,
   BIRTHDAY_PICK: BASIC_HANDLERS.BIRTHDAY_PICK,
   DISCARD_CARD: (view, d, ctx) => discard(viewOf(view, d.seat, ctx), d),
@@ -54,6 +56,25 @@ export function fitsOptions(d: DecisionForYou, intent: PlayerIntent): boolean {
     case 'TURN_MENU': {
       const o = (a as DecisionForYou<'TURN_MENU'>).options;
       if (intent.type === 'ROLL') return intent.dice === undefined || o.dice.allowed.includes(intent.dice);
+      if (intent.type === 'USE_CARD') {
+        const row = o.cards.find((r) => r.slot === intent.slot);
+        return (
+          o.menuActions.used < o.menuActions.limit &&
+          row !== undefined &&
+          row.card === intent.card &&
+          row.usable &&
+          targetMatches(row.targets, intent.target)
+        );
+      }
+      if (intent.type === 'USE_ITEM') {
+        const row = o.items.find((r) => r.item === intent.item);
+        return (
+          o.menuActions.used < o.menuActions.limit &&
+          row !== undefined &&
+          row.usable &&
+          targetMatches(row.targets, intent.target)
+        );
+      }
       if (intent.type === 'STOCK_BUY' || intent.type === 'STOCK_SELL') {
         if (o.menuActions.used >= o.menuActions.limit) return false;
         const row = o.stock.rows.find((r) => r.idx === intent.stock);
@@ -106,6 +127,22 @@ export function fitsOptions(d: DecisionForYou, intent: PlayerIntent): boolean {
     case 'RESEARCH': {
       const o = (a as DecisionForYou<'RESEARCH'>).options;
       return intent.type !== 'RESEARCH' || o.projects.some((p) => p.project === intent.project);
+    }
+    case 'BAIL': {
+      const o = (a as DecisionForYou<'BAIL'>).options;
+      if (intent.type === 'BAIL') return o.points >= o.costs.bail && o.inmates.some((i) => i.seat === intent.target);
+      if (intent.type === 'HIRE') {
+        return o.points >= o.costs.hire && o.villains.some((x) => x.kind === intent.villain && x.available);
+      }
+      return true;
+    }
+    case 'SCAPEGOAT': {
+      const o = (a as DecisionForYou<'SCAPEGOAT'>).options;
+      return intent.type !== 'SCAPEGOAT' || o.candidates.includes(intent.target);
+    }
+    case 'DISCARD_CARD': {
+      const o = (a as DecisionForYou<'DISCARD_CARD'>).options;
+      return intent.type !== 'DISCARD' || o.hand.some((h) => h.slot === intent.slot);
     }
     case 'BUILD_FACILITY':
     case 'FACILITY_TYPE': {

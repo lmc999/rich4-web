@@ -1,7 +1,7 @@
 {
   "kind": {
     "property": "地产",
-    "plain": "空地",
+    "plain": "道路",
     "park": "公园",
     "news": "新闻",
     "fate": "命运",
@@ -48,5 +48,6 @@
     "construction": "建设",
     "sect": "宗教",
     "unknown": "企业"
-  }
+  },
+  "near": "{{name}}旁"
 }

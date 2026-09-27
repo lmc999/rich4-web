@@ -9,6 +9,7 @@ import type { BoardController } from '../../game/BoardController';
 import type { Insets } from '../../game/camera/Camera';
 import type { Pt, Rotation } from '../../game/iso/projection';
 import { useTx } from '../../i18n/tx';
+import { installMinigames } from '../../minigames';
 import { useConnectionStore } from '../../store/connectionStore';
 import { currentSeat, useGameStore } from '../../store/gameStore';
 import { mapKey, useMapStore } from '../../store/mapStore';
@@ -29,6 +30,7 @@ import { PlayerChips } from '../hud/PlayerChips';
 import { PlayerPanel } from '../hud/PlayerPanel';
 import { TopBar } from '../hud/TopBar';
 import { WaitingBanner } from '../hud/WaitingBanner';
+import { PopupLayer } from '../popups/PopupLayer';
 import { ChatPanel } from '../social/ChatPanel';
 import { SpectatorList } from '../social/SpectatorList';
 import { RotateHint } from '../system/RotateHint';
@@ -102,6 +104,12 @@ export default function GameScreen({ room, onLeave }: { room: RoomView; onLeave(
   }, [client, mapId, mapHash]);
 
   useEffect(() => () => client.setMap(null), [client]);
+
+  // 小游戏：观战票据、输入帧与续玩都挂在传输层，进入对局页就安装（幂等；否则只有本人的 MinigameIntro 渲染时才装上，
+  // 观战者与其他玩家收不到直播遮罩，刷新后服务器补发的自己的帧也会在安装前丢失）
+  useEffect(() => {
+    installMinigames(client);
+  }, [client]);
 
   const onBoardReady = useCallback((c: BoardController | null, b: BoardBridge | null) => {
     setCtrl(c);
@@ -221,6 +229,7 @@ export default function GameScreen({ room, onLeave }: { room: RoomView; onLeave(
           <TurnBanner />
           <DiceOverlay />
           <PausedBanner room={room} />
+          <PopupLayer />
           {map && <DecisionLayer view={view} map={map} room={room} />}
           {map && <PanelHost view={view} map={map} room={room} />}
           <GameOverPanel view={view} room={room} onLeave={onLeave} />

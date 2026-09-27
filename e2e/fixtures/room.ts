@@ -26,8 +26,9 @@ export async function newPlayer(browser: Browser, nickname: string, query = Q): 
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(`console: ${m.text()}`);
-    // 演出卡住被看门狗中止也算失败（EventPlayer 的 warn）
+    // 演出卡住被看门狗中止、handler 抛错也算失败（EventPlayer 的 warn；非 instant 用例走演出路径时才会出现）
     if (m.type() === 'warning' && m.text().includes('未结束')) errors.push(`watchdog: ${m.text()}`);
+    if (m.type() === 'warning' && m.text().includes('handler 出错')) errors.push(`handler: ${m.text()}`);
   });
   await page.goto(`/?${query}`);
   const nick = page.getByTestId('home-nickname');
@@ -86,12 +87,21 @@ export async function waitIdle(page: Page): Promise<void> {
   });
 }
 
-export async function startGame(host: Page, pages: Page[]): Promise<void> {
+/**
+ * 房主开局并等所有页面进入对局。缺省随后收走开局随机摆在路上的神明、礼物、宝箱（debug:act clearBoard），
+ * 让用例里强制骰子的路线不受随机摆放影响；需要保留原始摆放时传 { clearBoard: false }。
+ */
+export async function startGame(host: Page, pages: Page[], o: { clearBoard?: boolean } = {}): Promise<void> {
   await expect(host.getByTestId('room-start')).toBeEnabled();
   await host.getByTestId('room-start').click();
   for (const p of pages) {
     await expect(p.getByTestId('screen-game')).toBeVisible();
     await waitIdle(p);
+  }
+  if (o.clearBoard ?? true) {
+    const s0 = await currentSeq(host);
+    await debugAct(host, { op: 'clearBoard' });
+    for (const p of pages) await waitSeqAtLeast(p, s0 + 1);
   }
 }
 
@@ -257,3 +267,102 @@ export const test = base.extend<Fixtures>({
 });
 
 export { expect };
+
+// ───────────────────────── M5：重连、聊天观战、存档读档 共用助手 ─────────────────────────
+
+/** 忽略与用例无关的控制台噪音后，页面不应有错误 */
+export function expectNoErrors(players: Player[], extraIgnore: RegExp[] = []): void {
+  for (const p of players) {
+    expect(
+      p.errors.filter((e) => !e.includes('WebGL') && !e.includes('favicon') && !extraIgnore.some((re) => re.test(e))),
+      p.nickname,
+    ).toEqual([]);
+  }
+}
+
+/** 4 人各自选角（9、4、0、3 号）、2..4 号准备、房主开局；pages 为需要等进入对局的页面（缺省为这 4 个） */
+export async function pickReadyStart(players: Page[], waitPages: Page[] = players): Promise<void> {
+  const chars = [9, 4, 0, 3];
+  for (let i = 0; i < players.length; i++) await pickCharacter(players[i]!, chars[i]!);
+  for (const p of players.slice(1)) await setReady(p);
+  await startGame(players[0]!, waitPages);
+}
+
+/** 执行一个会产生新批次的操作，并等本页收到这一批 */
+export async function acted(page: Page, fn: () => Promise<unknown>): Promise<void> {
+  const s0 = await currentSeq(page);
+  await fn();
+  await waitSeqAtLeast(page, s0 + 1);
+}
+
+/**
+ * 走一个固定回合：传送到 (node, prev)、强制掷出 dice 点、掷骰；之后出现的买地 / 升级按 choice 回答，
+ * 其他决策按默认处理，直到本回合结束（不再是本人的决策）。
+ */
+export async function playTurn(
+  page: Page,
+  seat: number,
+  o: { node?: number; prev?: number; dice?: number; choice?: 'confirm' | 'decline' } = {},
+): Promise<void> {
+  await waitMyTurn(page);
+  await acted(page, () => debugAct(page, { op: 'teleport', seat, node: o.node ?? 4, prev: o.prev ?? 3 }));
+  await acted(page, () => debugAct(page, { op: 'forceNext', purpose: 'dice', values: [o.dice ?? 1] }));
+  await waitMyTurn(page);
+  await acted(page, () => roll(page));
+  await waitIdle(page);
+  for (let i = 0; i < 6; i++) {
+    const k = await decisionKind(page);
+    if (!k || k === 'TURN_MENU') break;
+    await acted(page, () => answer(page, o.choice ?? 'decline'));
+    await waitIdle(page);
+  }
+}
+
+/** 所有页面追上同一个 seq 并且动画空闲 */
+export async function syncPages(pages: Page[], ref: Page = pages[0]!): Promise<number> {
+  const seq = await currentSeq(ref);
+  for (const p of pages) await waitSeqAtLeast(p, seq);
+  return seq;
+}
+
+/** 本页的 RoomView（测试钩子） */
+export async function roomOf(page: Page): Promise<{
+  code: string;
+  phase: string;
+  you: { role: string; seat?: number; isHost: boolean };
+  seats: {
+    index: number;
+    control: string;
+    occupant: { kind: string; nickname?: string; connected?: boolean } | null;
+  }[];
+  settings: Record<string, unknown>;
+} | null> {
+  // biome-ignore lint/suspicious/noExplicitAny: 测试钩子
+  return page.evaluate(() => (window as any).__rich4.store.room.getState().room);
+}
+
+/** 打开对局页的聊天坞（顶栏「聊天」按钮）；已打开则不动 */
+export async function openChat(page: Page): Promise<void> {
+  const btn = page.getByTestId('top-chat');
+  if ((await btn.getAttribute('aria-pressed')) !== 'true') await btn.click();
+  await expect(page.getByTestId('chat-panel')).toBeVisible();
+}
+
+/** 发一条聊天（输入框 + 发送按钮） */
+export async function sendChat(page: Page, text: string): Promise<void> {
+  await page.getByTestId('chat-input').fill(text);
+  await page.getByTestId('chat-send').click();
+  await expect(page.getByTestId('chat-input')).toHaveValue('');
+}
+
+/** 本页收到的最新权威 view 的 JSON（比较读档前后状态用） */
+export async function latestViewJson(page: Page): Promise<string> {
+  // biome-ignore lint/suspicious/noExplicitAny: 测试钩子
+  return page.evaluate(() => JSON.stringify((window as any).__rich4.store.game.getState().latest));
+}
+
+/** 打开系统菜单（顶栏 ≡） */
+export async function openMenu(page: Page): Promise<void> {
+  await page.getByTestId('top-menu').click();
+  await expect(page.getByTestId('system-menu')).toBeVisible();
+}

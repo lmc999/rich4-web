@@ -886,6 +886,8 @@ function applySystem(ctx: Ctx, a: SystemAction): void {
           s.clock.date = op.date;
           s.clock.weekday = weekdayOf(op.date);
           break;
+        case 'clearBoard':
+          break;
       }
       ctx.emit({ type: 'DEBUG_APPLIED', op: op.op });
       return;

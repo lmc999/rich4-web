@@ -4,6 +4,9 @@
 // - 批尾：开发模式下断言 fold 结果与 batch.view 深度相等（不等则告警），然后以 batch.view 为准、同步棋盘、
 //   提交 pending / yourDecision（决策框只在动画播完后出现）；
 // - 追帧：积压 > 6s 自动 3 倍速；> 15s 或队列 > 5 批直接 skipAll；catchup（≤ 8 批）以 2–4 倍速播放，否则 reset；
+//   积压 = 最新一批到达之前还没播完的部分（单独一批很长，例如月初结算，既不跳过也不自动加速）；
+// - 中止（reset / skipAll / dispose / 切到 instant）：当前 handler 与最近几个 handler 留下的不阻塞尾巴一并中止，
+//   abortEpoch +1（GameClient 据此让旧上下文失效，被中止的收尾不会再写棋盘）；
 // - instant（?anim=instant 或后台标签页）：不调 handler，只提交；TIME_REWOUND（resetsView）直接用批尾 view。
 
 import { EVENT_META, type GameEvent } from '@rich4/shared/engine';
@@ -21,6 +24,8 @@ export const AUTO_FAST_BACKLOG_MS = 6_000;
 export const AUTO_SKIP_BACKLOG_MS = 15_000;
 export const AUTO_SKIP_QUEUE = 5;
 export const AUTO_FAST_SPEED = 3;
+/** 中止时连同处理的最近 handler 数（不阻塞的尾巴最长约 2 秒） */
+const RECENT_HANDLER_CTLS = 16;
 /** handler 超过预算 10% 时（开发模式）告警 */
 export const BUDGET_TOLERANCE = 1.1;
 
@@ -133,6 +138,9 @@ export class EventPlayer {
   private running = false;
   private gen = 0;
   private abortCtl: AbortController | null = null;
+  /** 最近几个 handler 的中止控制器：handler 结束后不阻塞的尾巴（横幅、离场、金币）仍用它，中止时一并中止 */
+  private readonly recentCtls: AbortController[] = [];
+  private epochOfAbort = 0;
   private awaitingSnapshot = false;
   private skipping = false;
   private userInstant = false;
@@ -151,6 +159,11 @@ export class EventPlayer {
 
   get currentEpoch(): number | null {
     return this.epoch;
+  }
+
+  /** 每次中止演出（reset / skipAll / dispose / 切到 instant）+1；handler 上下文据此判断是否已失效 */
+  get abortEpoch(): number {
+    return this.epochOfAbort;
   }
 
   /** 最后一个已接收（入队）的 seq；room:resume 用它 */
@@ -362,19 +375,26 @@ export class EventPlayer {
   }
 
   private afterEnqueue(): void {
-    // 积压按「新批次到达之前还没播完的部分」判断：单独一批很长（月初结算）不算落后
-    const newest = this.queue.at(-1)?.animMs ?? 0;
-    if (this.queue.length > AUTO_SKIP_QUEUE || this.backlogMs - newest > AUTO_SKIP_BACKLOG_MS) this.skipAll();
+    if (this.queue.length > AUTO_SKIP_QUEUE || this.behindMs > AUTO_SKIP_BACKLOG_MS) this.skipAll();
     else this.applySpeed();
     this.publishAnim();
     void this.pump();
+  }
+
+  /**
+   * 落后量：最新一批到达之前还没播完的部分（积压减去最新一批）。单独一批很长（月初结算）不算落后：
+   * 既不跳过、也不自动加速（否则 1x 下月初的乐透开奖等演出总是被 3 倍速压缩）。
+   */
+  private get behindMs(): number {
+    const newest = this.queue.at(-1);
+    return newest ? this.backlogMs - newest.animMs : 0;
   }
 
   private applySpeed(): void {
     let s = this.baseSpeed;
     const boost = this.current?.boost ?? 1;
     if (boost > s) s = boost;
-    if (this.backlogMs > AUTO_FAST_BACKLOG_MS && s < AUTO_FAST_SPEED) s = AUTO_FAST_SPEED;
+    if (this.behindMs > AUTO_FAST_BACKLOG_MS && s < AUTO_FAST_SPEED) s = AUTO_FAST_SPEED;
     if (this.o.clock.speed !== s) this.o.clock.speed = s;
   }
 
@@ -388,9 +408,11 @@ export class EventPlayer {
   }
 
   private abortCurrent(): void {
+    this.epochOfAbort++;
     const c = this.abortCtl;
     this.abortCtl = null;
     c?.abort();
+    for (const x of this.recentCtls.splice(0)) x.abort();
   }
 
   private notifyIdle(): void {
@@ -471,6 +493,8 @@ export class EventPlayer {
     if (!handler) return;
     const ac = new AbortController();
     this.abortCtl = ac;
+    this.recentCtls.push(ac);
+    if (this.recentCtls.length > RECENT_HANDLER_CTLS) this.recentCtls.shift();
     const t0 = this.o.clock.now();
     let watchdog: unknown = null;
     try {

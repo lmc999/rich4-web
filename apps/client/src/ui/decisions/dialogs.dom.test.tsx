@@ -176,11 +176,11 @@ describe('ShopDialog', () => {
 });
 
 describe('BailDialog', () => {
-  it('保释在押玩家 → BAIL{seat}', async () => {
+  it('保释在押玩家 → BAIL{target}', async () => {
     const r = renderDialog(BailDialog, 'BAIL');
     expect(screen.getByTestId('bail-seat-2')).toHaveTextContent('还有 3 天');
     await r.user.click(screen.getByTestId('bail-seat-2'));
-    expectSingleIntent(r.submit, { type: 'BAIL', seat: 2 });
+    expectSingleIntent(r.submit, { type: 'BAIL', target: 2 });
   });
 
   it('雇用恶人 → HIRE；已出门的恶人禁用；点券不足时全部禁用', async () => {
@@ -368,10 +368,10 @@ describe('DiscardDialog', () => {
 });
 
 describe('DeathGodTargetDialog', () => {
-  it('选对手 → DEATH_GOD_TARGET{seat}', async () => {
+  it('选对手 → DEATH_GOD_TARGET{target}', async () => {
     const r = renderDialog(DeathGodTargetDialog, 'DEATH_GOD_TARGET');
     await r.user.click(screen.getByTestId('deathgod-seat-3'));
     await r.user.click(screen.getByTestId('deathgod-confirm'));
-    expectSingleIntent(r.submit, { type: 'DEATH_GOD_TARGET', seat: 3 });
+    expectSingleIntent(r.submit, { type: 'DEATH_GOD_TARGET', target: 3 });
   });
 });

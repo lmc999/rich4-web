@@ -2,11 +2,12 @@
  * TURN_MENU：原版 AI 掷骰前的步骤（design/minigames-ai.md §8.1、§9.4）。
  * 步骤：① 买股票 → ② 卖股票 → ③ 公布栏挂牌 → ④ 公布栏购买 → ⑤ 硬币：用卡或用道具 → ⑥ 骰子颗数并掷骰。
  * 每做完一个非终结操作引擎会重发 TURN_MENU，AI 按 options.turnLog 推算已经做到哪一步（只有有还款压力时卖股票可以重复）。
- * M4 覆盖 ①②⑥；③④（公布栏，M7）与 ⑤（卡片、道具，M6）暂时跳过。
+ * M4 覆盖 ①②⑥；M6 覆盖 ⑤（卡片、道具，ai/preRoll.ts）；③④（公布栏，M7）暂时跳过。
  */
 import type { PlayerIntent, TurnLogEntry, TurnMenuOptions } from '../../engine/types/index';
 import type { DecisionForYou } from '../../view/types';
 import { DICE_BOMB_FUSE, DICE_LOOKAHEAD, REPAY_DAYS } from '../constants';
+import { cardOrItem } from '../preRoll';
 import { planStockBuy, planStockSell } from '../stock';
 import type { AiContext } from '../types';
 import type { AiView } from '../view';
@@ -47,8 +48,11 @@ function runStep(step: Step, v: AiView, o: TurnMenuOptions, ctx: AiContext): Pla
       const s = planStockSell(v, o, ctx);
       return s ? { type: 'STOCK_SELL', stock: s.stock, shares: s.shares } : null;
     }
+    case 'cardOrItem':
+      // ④ 硬币 rand&1 二选一：用卡或用道具（个性闸门 + 判据，ai/preRoll.ts）
+      return cardOrItem(v, o, ctx);
     default:
-      // TODO(M7)：公布栏挂牌与购买；TODO(M6)：硬币 rand&1 二选一，用卡或用道具（个性闸门 + 判定函数）
+      // TODO(M7)：公布栏挂牌与购买
       return null;
   }
 }

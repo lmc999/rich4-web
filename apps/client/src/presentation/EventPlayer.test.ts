@@ -117,16 +117,56 @@ describe('EventPlayer', () => {
     expect(h.rec.log.lastIndexOf(`commit:${lastEv.type}`)).toBeLessThan(idx);
   });
 
-  it('倍速：setSpeed 改变时钟速度；积压超过 6 秒自动 3 倍速', async () => {
+  it('倍速：setSpeed 改变时钟速度；落后（新批次到达前没播完的部分）超过 6 秒自动 3 倍速', async () => {
     h.player.setSpeed(2);
     expect(h.clock.speed).toBe(2);
     h.player.setSpeed(1);
     const heavy: GameBatchMsg = { ...batch(0), animMs: AUTO_FAST_BACKLOG_MS + 500 };
     h.player.enqueue(heavy);
     await h.flush();
+    // 单独一批很长（月初结算）不算落后：保持用户倍速
+    expect(h.clock.speed).toBe(1);
+    h.player.enqueue(batch(1));
+    await h.flush();
     expect(h.clock.speed).toBe(3);
     await h.drain();
     expect(h.clock.speed).toBe(1);
+  });
+
+  it('中止（reset）时连同最近 handler 留下的不阻塞尾巴一起中止；abortEpoch 递增', async () => {
+    const tails: AbortSignal[] = [];
+    const clock = new AnimClock();
+    const player = new EventPlayer({
+      handlers: new Proxy(
+        {},
+        {
+          get: () => async (_e: GameEvent, ctx: PresentationContext) => {
+            tails.push(ctx.signal);
+            // 不阻塞的尾巴：handler 立即返回
+            void clock.wait(5000, ctx.signal);
+          },
+        },
+      ) as HandlerMap,
+      clock,
+      sink: {
+        reset: () => {},
+        commitView: () => {},
+        commitBatch: () => {},
+        commitPending: () => {},
+        setAnim: () => {},
+      },
+      requestResync: () => {},
+      context: (signal) => ({ signal, wait: (x: number) => clock.wait(x, signal) }) as unknown as PresentationContext,
+    });
+    player.reset(sp.initial);
+    const e0 = player.abortEpoch;
+    player.enqueue(batch(0));
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(tails.length).toBeGreaterThan(0);
+    expect(tails.every((x) => !x.aborted)).toBe(true);
+    player.reset(sp.initial);
+    expect(tails.every((x) => x.aborted)).toBe(true);
+    expect(player.abortEpoch).toBeGreaterThan(e0);
   });
 
   it('skipAll：中止当前 handler、清空积压，直达最新 view，不再调 handler', async () => {

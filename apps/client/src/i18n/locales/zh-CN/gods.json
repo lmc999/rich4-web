@@ -1,15 +1,34 @@
 {
-  "smallWealth": { "name": "小财神" },
-  "bigWealth": { "name": "大财神" },
-  "smallFortune": { "name": "小福神" },
-  "bigFortune": { "name": "大福神" },
-  "smallPoor": { "name": "小穷神" },
-  "bigPoor": { "name": "大穷神" },
-  "smallMisfortune": { "name": "小衰神" },
-  "bigMisfortune": { "name": "大衰神" },
-  "angel": { "name": "天使" },
-  "devil": { "name": "恶魔" },
-  "dog": { "name": "恶犬" },
-  "earthGod": { "name": "土地公" },
-  "death": { "name": "死神" }
+  "smallWealth": { "name": "小财神", "arrive": "小财神来也，出门在外手头宽松！", "power": "小财神发威，财源滚滚！" },
+  "bigWealth": { "name": "大财神", "arrive": "大财神驾到，一路畅行无阻！", "power": "大财神发威，天降横财！" },
+  "smallFortune": { "name": "小福神", "arrive": "小福神来也，好运跟着走！", "power": "小福神发威，福气临门！" },
+  "bigFortune": { "name": "大福神", "arrive": "大福神驾到，福星高照！", "power": "大福神发威，喜上加喜！" },
+  "smallPoor": { "name": "小穷神", "arrive": "小穷神上身，钱包要变瘦了…", "power": "小穷神发威，钱财溜走！" },
+  "bigPoor": { "name": "大穷神", "arrive": "大穷神上身，荷包大失血…", "power": "大穷神发威，家财散去！" },
+  "smallMisfortune": { "name": "小衰神", "arrive": "小衰神上身，诸事不顺…", "power": "小衰神发威，霉运连连！" },
+  "bigMisfortune": { "name": "大衰神", "arrive": "大衰神上身，倒霉透顶…", "power": "大衰神发威，祸不单行！" },
+  "angel": { "name": "天使", "arrive": "天使降临，所到之处一片祥和。", "power": "天使送上祝福！" },
+  "devil": { "name": "恶魔", "arrive": "恶魔附身，走到哪儿闹到哪儿！", "power": "恶魔大闹一场！" },
+  "dog": { "name": "恶犬", "arrive": "恶犬挡路，小心别被咬！", "power": "汪汪汪！" },
+  "earthGod": { "name": "土地公", "arrive": "土地公显灵，保佑一方土地。", "power": "土地公施展神通！" },
+  "death": { "name": "死神", "arrive": "死神缠身，大难将至…", "power": "死神挥动镰刀！", "summon": "有人请我来带你走…" },
+  "manifest": {
+    "levelUp": "神明显灵，这里的房子加盖了一层！",
+    "levelDown": "神明作祟，这里的房子塌了一层！",
+    "seize": "神明显灵，这块地收归己有！"
+  },
+  "npc": {
+    "anchor": "新闻主播",
+    "witch": "魔法屋女巫",
+    "doctor": "医生",
+    "police": "警察"
+  },
+  "gallery": {
+    "gods": "神明（M6）",
+    "villains": "四大恶人",
+    "npcs": "NPC",
+    "stage": "路面物件与特效（Pixi）",
+    "popups": "演出弹窗",
+    "statuses": "角色状态外观"
+  }
 }

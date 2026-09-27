@@ -23,8 +23,11 @@ export interface DecisionController {
   expired: boolean;
   remainingMs: number | null;
   totalMs: number | null;
-  /** 提交 intent；被忽略（只读、已锁定、已超时）时返回 false */
-  send(intent: PlayerIntent): boolean;
+  /**
+   * 提交 intent；被忽略（只读、已锁定、已超时）时返回 false。
+   * onResult：submit 返回 Promise 时在 ack 后回调（被拒或 reject 为 false）；非 Promise 视为已发出，立即回调 true。
+   */
+  send(intent: PlayerIntent, onResult?: (ok: boolean) => void): boolean;
 }
 
 function failed(r: unknown): boolean {
@@ -57,7 +60,7 @@ export function useDecision<K extends DecisionKind>(p: DecisionProps<K>): Decisi
   const expired = remainingMs !== null && remainingMs <= 0;
 
   const send = useCallback(
-    (intent: PlayerIntent): boolean => {
+    (intent: PlayerIntent, onResult?: (ok: boolean) => void): boolean => {
       if (!isMine) return false;
       if (sentRef.current === id || useGameStore.getState().submitting === id) return false;
       if (decision.deadlineAt !== null && now() >= decision.deadlineAt) return false;
@@ -79,11 +82,16 @@ export function useDecision<K extends DecisionKind>(p: DecisionProps<K>): Decisi
       if (isThenable(r)) {
         r.then(
           (v) => {
-            if (failed(v)) unlock();
+            const bad = failed(v);
+            if (bad) unlock();
+            onResult?.(!bad);
           },
-          () => unlock(),
+          () => {
+            unlock();
+            onResult?.(false);
+          },
         );
-      }
+      } else onResult?.(!failed(r));
       return true;
     },
     [isMine, id, decision.deadlineAt, decision.kind, now, submit],

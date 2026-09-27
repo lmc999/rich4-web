@@ -122,10 +122,28 @@ describe('integration/anti-cheat', () => {
       const hits = b.received.flatMap((m) => findKeys(m.payload, FORBIDDEN_KEYS, m.event));
       expect(hits).toEqual([]);
     }
-    expect(findKeys(w.received, ['seed', 'yourDecision', 'minigame'])).toEqual([]);
+    // live 观战（默认设置）按设计经 game:minigameWatch 下发带种子的观战票据（architecture §5.10 已接受的风险）；
+    // 除此之外观战者不得收到任何种子，观战票据一律 role='spectator'
+    const isWatch = (m: { event: string }) => m.event === 'game:minigameWatch';
+    const watchTicketOk = (m: { event: string; payload: unknown }) => {
+      const t = (m.payload as { ticket?: { role?: string } }).ticket;
+      expect(t?.role).toBe('spectator');
+    };
+    expect(
+      findKeys(
+        w.received.filter((m) => !isWatch(m)),
+        ['seed', 'yourDecision', 'minigame'],
+      ),
+    ).toEqual([]);
+    for (const m of w.received.filter(isWatch)) watchTicketOk(m);
     let tickets = 0;
     for (const [i, b] of s.bots.entries()) {
       for (const m of b.received) {
+        if (isWatch(m)) {
+          watchTicketOk(m);
+          expect((m.payload as { ticket: { seat: number } }).ticket.seat).not.toBe(i);
+          continue;
+        }
         for (const path of findKeys(m.payload, ['seed'], m.event)) {
           expect(path).toMatch(/\.yourDecision\.minigame\.seed$/);
           const yd = (m.payload as { yourDecision: { seat: number } }).yourDecision;

@@ -8,13 +8,15 @@
  * 4 股本守恒：有公司的股票 Σ持股 + float + reserved == 10000；其余 Σ持股 + float == 地图流通股
  * 5 资金台账：Σ(cash + deposit) + 公库 + Σ公司本月盈余 == 开局总额 + minted − burned
  * 6 地产合法：地主是在场座位或 null（对局已结束时允许出局者）；等级不超过上限；连锁店 ≤1 级；0 级设施为公园
- * 7 每格至多 1 个物件；每对神明搭档至多 1 个在场；附身的神明与玩家的 god 字段一致
+ * 7 每格至多 1 个物件，路上的神不与物件同格；每对神明搭档至多 1 个在场；附身的神明与玩家的 god 字段双向一致；
+ *   同盟双向一致
  * 8 坐牢 / 住院中的玩家位于对应关押格
  * 9 进行中时 pending 非空、每个 pending 的 frameId 都在栈中、每座位至多 1 个；ROOT 在栈底且只有一个
  * 10 经济（M4，进行中时）：董事长与持股一致（严格最多、平手保留现任）；乐透号码只属于在场座位；
  *    贷款 ≥ 0 且有贷款 ⇔ 有到期日；融资 ≥ 0；研发只挂在已建成、等级 ≥ 项目的研究所上
  */
 import { CARDS } from '../../data/tables/cards';
+import { CMB } from '../../data/tables/combat';
 import { ECON } from '../../data/tables/economy';
 import { GOD, ITEM, POOL_ITEM_IDS } from '../../data/tables/ids';
 import { VEHICLE_ITEM } from '../../data/tables/setup';
@@ -102,8 +104,11 @@ export function checkInvariants(s: GameState, em: EngineMap): string[] {
     if (n !== def.deckCount) out.push(`card ${def.id}: deck + hands = ${n}, want ${def.deckCount}`);
   }
   if (deckTotal !== 100) out.push(`card total ${deckTotal}, want 100`);
-  for (const p of s.players)
-    if (p.cards.length > ECON.HAND_MAX) out.push(`seat ${p.seat} holds ${p.cards.length} cards`);
+  for (const p of s.players) {
+    // handFull='choose'：得卡先入手再压 ASK DISCARD_CARD，每个待弃的帧允许超出 1 张
+    const discards = s.flow.filter((f) => f.k === 'ASK' && f.kind === 'DISCARD_CARD' && f.seat === p.seat).length;
+    if (p.cards.length > ECON.HAND_MAX + discards) out.push(`seat ${p.seat} holds ${p.cards.length} cards`);
+  }
 
   // 3 道具池守恒
   for (const it of POOL_ITEM_IDS) {
@@ -126,7 +131,10 @@ export function checkInvariants(s: GameState, em: EngineMap): string[] {
   }
   for (const p of s.players) {
     p.items.forEach((n, it) => {
-      if (n > ECON.ITEM_MAX) out.push(`seat ${p.seat} holds ${n} of item ${it}`);
+      // 机车、汽车退回背包时可以达到第 10 台（原版特例）
+      const cap = it === ITEM.MOTORCYCLE || it === ITEM.CAR ? CMB.VEHICLE_BAG_MAX : ECON.ITEM_MAX;
+      if (n > cap) out.push(`seat ${p.seat} holds ${n} of item ${it}`);
+      if (n < 0) out.push(`seat ${p.seat} holds ${n} of item ${it}`);
     });
   }
 
@@ -178,10 +186,25 @@ export function checkInvariants(s: GameState, em: EngineMap): string[] {
     if (present > 1) out.push(`god pair ${a}/${b} has ${present} on board`);
   }
   for (const g of s.gods) {
+    if (g.where.t === 'road') {
+      if (!em.hasTile(g.where.node)) out.push(`god slot ${g.slot} on unknown tile ${g.where.node}`);
+      if (objNodes.has(g.where.node)) out.push(`god slot ${g.slot} shares tile ${g.where.node} with an object`);
+    }
     if (g.where.t !== 'attached') continue;
     const seat = g.where.seat;
     const p = s.players.find((x) => x.seat === seat);
     if (!p || p.god?.kind !== g.kind) out.push(`god slot ${g.slot} attached to seat ${seat} inconsistently`);
+  }
+  for (const p of s.players) {
+    if (p.god === null) continue;
+    const n = s.gods.filter((g) => g.where.t === 'attached' && g.where.seat === p.seat).length;
+    if (n !== 1) out.push(`seat ${p.seat} has god ${p.god.kind} but ${n} attached slots`);
+  }
+  for (const p of s.players) {
+    const a = p.alliance;
+    if (a === null || !p.alive) continue;
+    const q = s.players.find((x) => x.seat === a.seat);
+    if (!q?.alive || q.alliance?.seat !== p.seat) out.push(`seat ${p.seat} allied with ${a.seat} one-sidedly`);
   }
 
   // 8 关押位置
