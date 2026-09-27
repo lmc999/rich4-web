@@ -1,6 +1,6 @@
 // handler 侧的弹窗与文案工具：打开 / 关闭演出弹窗（ui/popups/popupStore）、玩家引用、金额变化、
-// 新闻与命运文案的插值参数（引擎只给 id / key，名字在这里按显示态解析）。
-import type { EventParams, GameEvent, LotId, PostPatch, SeatIndex, TileId } from '@rich4/shared/engine';
+// 新闻与命运文案的插值参数见 ../eventText。
+import type { GameEvent, PostPatch, SeatIndex } from '@rich4/shared/engine';
 import {
   type AffectedRow,
   onPopupSkip,
@@ -51,56 +51,6 @@ export function affectedRows(
 /** 金额文案：+1,200 / -3,000 */
 export function signedMoney(ctx: PresentationContext, n: number): string {
   return `${n > 0 ? '+' : n < 0 ? '-' : ''}${ctx.names.money(Math.abs(n))}`;
-}
-
-/**
- * 文案插值参数：把引擎给的 id 按键名解析成名字（lot / company → 地块名，stock → 股票名，seat / who → 人名，
- * tile / node → 格名，amount / price / fine / reward → 金额），其余原样；缺失的常用键给中性默认值，
- * 避免模板里残留 {{…}}。
- */
-export function textParams(ctx: PresentationContext, params: EventParams | null | undefined): Record<string, unknown> {
-  const n = ctx.names;
-  const out: Record<string, unknown> = {
-    lot: ctx.t('events:param.lot'),
-    company: ctx.t('events:param.company'),
-    stock: ctx.t('events:param.stock'),
-    who: ctx.t('events:param.who'),
-    days: ctx.t('events:param.days'),
-    amount: ctx.t('events:param.amount'),
-    pct: ctx.t('events:param.pct'),
-  };
-  for (const [k, v] of Object.entries(params ?? {})) {
-    if (v === null) continue;
-    switch (k) {
-      case 'lot':
-      case 'company':
-        out[k] = typeof v === 'string' ? n.lot(v as LotId) : v;
-        break;
-      case 'stock':
-        out[k] = typeof v === 'number' ? n.stock(v) : v;
-        break;
-      case 'seat':
-      case 'who':
-        out.who = typeof v === 'number' ? n.seat(v as SeatIndex) : v;
-        break;
-      case 'tile':
-      case 'node':
-        out.tile = typeof v === 'number' ? n.tile(v as TileId) : v;
-        break;
-      case 'amount':
-      case 'price':
-      case 'fine':
-      case 'reward':
-      case 'loan':
-      case 'gain':
-      case 'loss':
-        out[k] = typeof v === 'number' ? n.money(v) : v;
-        break;
-      default:
-        out[k] = v;
-    }
-  }
-  return out;
 }
 
 /**

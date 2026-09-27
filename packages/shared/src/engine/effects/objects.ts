@@ -83,7 +83,7 @@ export function respawnMonthlyObjects(ctx: Ctx): void {
 // ───────────────────────── 停下：物件结算 ─────────────────────────
 
 /** 按共享库存加权抽 1..8 中的一种（库存全空返回 null；purpose 'gift'） */
-function drawGiftItem(ctx: Ctx): ItemId | null {
+export function drawGiftItem(ctx: Ctx): ItemId | null {
   const items = ctx.s.pools.items;
   let total = 0;
   for (let i = 1; i <= 8; i++) total += Math.max(0, items[i] ?? 0);

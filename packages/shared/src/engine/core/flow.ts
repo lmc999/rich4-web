@@ -1,7 +1,7 @@
 /**
  * 显式帧栈解释器（design/engine.md §6.2）。
  *
- * - FRAME_HANDLERS 对 FrameKind 穷举（satisfies）；M1 未实现的帧注册为抛 NOT_IMPLEMENTED 的占位（flow/stubs.ts）。
+ * - FRAME_HANDLERS 对 FrameKind 穷举（satisfies）；M7 起全部帧都已实现（NEWS / FATE / MAGIC 在 effects/，其余在 flow/）。
  * - run：没有待决策且对局进行中就不断推进栈顶帧；演员已出局的帧直接丢弃（TURN 除外，由它自己转入 end）；
  *   设守卫上限，防止死循环。
  * - executeAction：校验顺序为 pending 是否存在（STALE_DECISION）→ seat 是否匹配（NOT_YOUR_DECISION）
@@ -9,8 +9,12 @@
  *   然后 run、补 SYNC、action 计数 +1。
  */
 import { isIntentAllowed } from '../decisions/allowed';
+import { FATE } from '../effects/fate/index';
+import { MAGIC } from '../effects/magic/index';
+import { NEWS } from '../effects/news/index';
 import { EngineInvariantError, EngineRuleError } from '../errors';
 import { ASK } from '../flow/ask';
+import { AUCTION } from '../flow/auction';
 import { BANK } from '../flow/bank';
 import { BANKRUPT } from '../flow/bankruptcy';
 import { CARD } from '../flow/card';
@@ -24,9 +28,10 @@ import { MOVE } from '../flow/move';
 import { PAYX } from '../flow/pay';
 import { ROOT } from '../flow/root';
 import { SHOP } from '../flow/shop';
-import { AUCTION, FATE, MAGIC, NEWS, SURRENDER, VILLAIN } from '../flow/stubs';
+import { SURRENDER } from '../flow/surrender';
 import { TOLL } from '../flow/toll';
 import { TURN } from '../flow/turn';
+import { VILLAIN } from '../flow/villain';
 import type { Frame, FrameKind, FrameOf } from '../types/frames';
 import { isSeatIndex } from '../types/ids';
 import { type GameAction, isSystemAction, type PlayerAction, PlayerIntentSchema } from '../types/intent';

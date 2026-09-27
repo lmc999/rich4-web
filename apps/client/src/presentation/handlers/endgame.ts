@@ -63,7 +63,8 @@ export const AUCTION_BID: EventHandler<'AUCTION_BID'> = async (e, ctx) => {
       price: e.price,
       leader: playerRef(ctx, e.seat),
       tick: a.tick + 1,
-      bidders: a.bidders.map((b) => (b.seat === e.seat ? { ...b, state: 'active' } : b)),
+      // 有人成功加价后，此前「这轮不加价」的人恢复为可出价（引擎 flow/auction：PASS 只保持到下一次加价）；退出的不变
+      bidders: a.bidders.map((b) => (b.seat === e.seat || b.state === 'passed' ? { ...b, state: 'active' } : b)),
     });
   }
   ctx.board.floatText({ seat: e.seat }, ctx.names.money(e.price), 'points');

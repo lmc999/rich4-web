@@ -16,14 +16,20 @@
  *   --check-every <k>      每 k 个 action 检查一次不变量（默认 1；每 50 步与终局另做结构校验；0 = 只在终局检查）
  *   --check-fold           每个 action 额外检查 fold(applyPostPatch) == publicWorld(next) 且无 SYNC
  *   --max-actions <n>      单局 action 上限（默认 200000，超过记为 unfinished）
+ *   --max-years <n>        单局游戏内年数上限（默认：无限局 20 年，限时局不设；到达即记为 unfinished）
+ *   --min-finish <pct>     结束率门槛（默认：限时局 100，无限局 95）；达到门槛且没有错误、没有 reject 时退出码为 0
+ *   --workers <n>          worker_threads 并发数（默认 1；结果按局号汇总，finalHash 与并发数无关）
  *   --json                 输出 JSON 汇总
- * 输出一行汇总：finished=… rejects=… invariantErrors=… errors=…；finished=games 且没有错误、没有 reject 时退出码为 0。
+ * 输出一行汇总：finished=… rejects=… invariantErrors=… errors=… finishRate=… finalHash=… journalHash=…；
+ * finalHash 为各局终局状态哈希，journalHash 为各局 action 序列哈希（同 seed 两次运行两者都应相同）。
  * rejects：AI 策略给出的 intent 未通过 PlayerIntentSchema / ALLOWED_INTENTS，或被引擎以 EngineRuleError 拒绝的次数
  * （此时改用 defaultIntent，与服务器 AiDriver 的兜底一致）。
  */
 
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
 import type { AiContext, AiPolicy, AiRng } from '@rich4/shared/ai';
 import { BasicAiPolicy, OriginalAiPolicy } from '@rich4/shared/ai';
 import {
@@ -77,6 +83,11 @@ interface Options {
   checkEvery: number;
   checkFold: boolean;
   maxActions: number;
+  /** 游戏内年数上限（null 表示不设） */
+  maxYears: number | null;
+  /** 结束率门槛（百分比） */
+  minFinish: number | null;
+  workers: number;
   json: boolean;
 }
 
@@ -94,6 +105,9 @@ function parseArgs(argv: readonly string[]): Options {
     checkEvery: 1,
     checkFold: false,
     maxActions: 200_000,
+    maxYears: null,
+    minFinish: null,
+    workers: 1,
     json: false,
   };
   const need = (i: number, flag: string): string => {
@@ -155,6 +169,15 @@ function parseArgs(argv: readonly string[]): Options {
       case '--max-actions':
         o.maxActions = int(need(i++, a), a, 1, 100_000_000);
         break;
+      case '--max-years':
+        o.maxYears = int(need(i++, a), a, 1, 200);
+        break;
+      case '--min-finish':
+        o.minFinish = int(need(i++, a), a, 0, 100);
+        break;
+      case '--workers':
+        o.workers = int(need(i++, a), a, 1, 64);
+        break;
       case '--json':
         o.json = true;
         break;
@@ -162,6 +185,8 @@ function parseArgs(argv: readonly string[]): Options {
         throw new Error(`unknown option ${a}`);
     }
   }
+  // 无限局默认封顶 20 年（architecture §8「夜间」：无限局上限 20 年、结束率 ≥ 95%）
+  if (o.maxYears === null && o.timeLimit === 0) o.maxYears = 20;
   return o;
 }
 
@@ -218,6 +243,8 @@ interface GameOutcome {
   invariantErrors: string[];
   error: string | null;
   hash: string;
+  /** action 序列的 FNV-1a 64 */
+  journal: string;
 }
 
 function playGame(o: Options, reg: DataRegistry, gameIdx: number): GameOutcome {
@@ -239,7 +266,10 @@ function playGame(o: Options, reg: DataRegistry, gameIdx: number): GameOutcome {
     invariantErrors: [],
     error: null,
     hash: '',
+    journal: '',
   };
+  const maxDays = o.maxYears === null ? Number.POSITIVE_INFINITY : o.maxYears * 365;
+  let journal = '';
   let s: GameState;
   try {
     s = engine.createGame(config, setups, seedHex);
@@ -248,7 +278,7 @@ function playGame(o: Options, reg: DataRegistry, gameIdx: number): GameOutcome {
     return out;
   }
   try {
-    while (s.status === 'playing' && out.actions < o.maxActions) {
+    while (s.status === 'playing' && out.actions < o.maxActions && s.clock.elapsedDays < maxDays) {
       let action: GameAction;
       let fallback: GameAction | null = null;
       if (o.policy === 'random') action = randomAction(s, rng)!;
@@ -267,6 +297,7 @@ function playGame(o: Options, reg: DataRegistry, gameIdx: number): GameOutcome {
           fallback = null;
         } else action = { ...intent, seat: d.seat, decisionId: d.id } as GameAction;
       }
+      journal = fnv1a64(`${journal}|${JSON.stringify(action)}`);
       const before = o.checkFold ? (JSON.parse(JSON.stringify(publicWorld(s))) as GameState) : null;
       let events: ReturnType<typeof engine.applyInPlace>;
       if (fallback === null) events = engine.applyInPlace(s, action);
@@ -281,6 +312,7 @@ function playGame(o: Options, reg: DataRegistry, gameIdx: number): GameOutcome {
           out.rejects++;
           if (out.rejects <= 3) console.error(`reject: ${e.message} (${JSON.stringify(action)})`);
           events = engine.applyInPlace(s, fallback);
+          journal = fnv1a64(`${journal}|${JSON.stringify(fallback)}`);
         }
       }
       out.actions++;
@@ -308,13 +340,60 @@ function playGame(o: Options, reg: DataRegistry, gameIdx: number): GameOutcome {
   out.days = s.clock.elapsedDays;
   out.reason = s.result?.reason ?? 'unfinished';
   out.hash = stateHash(s);
+  out.journal = journal;
   return out;
 }
 
-function main(): void {
+/** worker：跑分到的局号，逐局回传结果 */
+interface WorkerJob {
+  argv: string[];
+  games: number[];
+}
+
+function workerMain(job: WorkerJob): void {
+  const o = parseArgs(job.argv);
+  const reg = loadRegistry(o.dataDir);
+  for (const g of job.games) parentPort!.postMessage({ g, r: playGame(o, reg, g) });
+  parentPort!.postMessage({ done: true });
+}
+
+/** 按局号跑完全部对局（workers > 1 时分给 worker_threads，结果按局号排序） */
+async function runAll(o: Options, reg: DataRegistry, argv: string[]): Promise<GameOutcome[]> {
+  const out: GameOutcome[] = new Array(o.games);
+  if (o.workers <= 1) {
+    for (let g = 0; g < o.games; g++) out[g] = playGame(o, reg, g);
+    return out;
+  }
+  const n = Math.min(o.workers, o.games);
+  // worker 里同样要能加载 .ts：用一段 data: URL 引导代码先注册 tsx 的 ESM loader，再导入本脚本
+  // （主线程的 loader 由 npx tsx 注册，不会自动传给 worker）
+  const self = pathToFileURL(fileURLToPath(import.meta.url)).href;
+  const api = import.meta.resolve('tsx/esm/api');
+  const boot = `import { register } from ${JSON.stringify(api)}; register(); await import(${JSON.stringify(self)});`;
+  const entry = new URL(`data:text/javascript,${encodeURIComponent(boot)}`);
+  await Promise.all(
+    Array.from({ length: n }, (_, w) => {
+      const games: number[] = [];
+      for (let g = w; g < o.games; g += n) games.push(g);
+      return new Promise<void>((resolveDone, reject) => {
+        const worker = new Worker(entry, { workerData: { argv, games } satisfies WorkerJob });
+        worker.on('message', (m: { g: number; r: GameOutcome } | { done: true }) => {
+          if ('done' in m) resolveDone();
+          else out[m.g] = m.r;
+        });
+        worker.on('error', reject);
+        worker.on('exit', (code) => (code === 0 ? resolveDone() : reject(new Error(`worker exited ${code}`))));
+      });
+    }),
+  );
+  return out;
+}
+
+async function main(): Promise<void> {
   let o: Options;
+  const argv = process.argv.slice(2);
   try {
-    o = parseArgs(process.argv.slice(2));
+    o = parseArgs(argv);
   } catch (e) {
     console.error(`simulate: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(2);
@@ -337,9 +416,12 @@ function main(): void {
   let errors = 0;
   const reasons: Record<string, number> = {};
   const hashes: string[] = [];
+  const journals: string[] = [];
   const samples: string[] = [];
+  const outcomes = await runAll(o, reg, argv);
   for (let g = 0; g < o.games; g++) {
-    const r = playGame(o, reg, g);
+    const r = outcomes[g]!;
+    journals.push(r.journal);
     if (r.finished) finished++;
     rejects += r.rejects;
     actions += r.actions;
@@ -348,7 +430,7 @@ function main(): void {
     if (r.error) errors++;
     reasons[r.reason] = (reasons[r.reason] ?? 0) + 1;
     hashes.push(r.hash);
-    if ((r.error || r.invariantErrors.length > 0) && samples.length < 5) {
+    if ((r.error || r.invariantErrors.length > 0) && samples.length < 30) {
       samples.push(`game ${g}: ${r.error ?? r.invariantErrors[0]}`);
     }
   }
@@ -366,19 +448,26 @@ function main(): void {
     policy: o.policy,
     timeLimit: o.timeLimit,
     finalHash: fnv1a64(hashes.join(',')),
+    journalHash: fnv1a64(journals.join(',')),
+    finishRate: Math.trunc((finished / o.games) * 1000) / 10,
+    maxYears: o.maxYears,
+    workers: o.workers,
     seconds: Math.trunc(seconds * 100) / 100,
   };
+  const minFinish = o.minFinish ?? (o.timeLimit === 0 ? 95 : 100);
   if (o.json) console.log(JSON.stringify(summary));
   else {
     console.log(
       `finished=${finished} rejects=${rejects} invariantErrors=${invariantErrors} errors=${errors} games=${o.games} ` +
-        `actions=${actions} ` +
+        `actions=${actions} finishRate=${summary.finishRate}% ` +
         `avgDays=${summary.avgDays} reasons=${JSON.stringify(reasons)} finalHash=${summary.finalHash} ` +
-        `seconds=${summary.seconds}`,
+        `journalHash=${summary.journalHash} seconds=${summary.seconds}`,
     );
   }
   for (const line of samples) console.error(line);
-  process.exit(finished === o.games && rejects === 0 && invariantErrors === 0 && errors === 0 ? 0 : 1);
+  const finishOk = finished * 100 >= minFinish * o.games;
+  process.exit(finishOk && rejects === 0 && invariantErrors === 0 && errors === 0 ? 0 : 1);
 }
 
-main();
+if (isMainThread) void main();
+else workerMain(workerData as WorkerJob);

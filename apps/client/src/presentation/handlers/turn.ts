@@ -14,7 +14,15 @@ export const GAME_STARTED: EventHandler<'GAME_STARTED'> = async (e, ctx) => {
 
 export const TURN_STARTED: EventHandler<'TURN_STARTED'> = async (e, ctx) => {
   if (e.actor.t !== 'seat') {
-    await ctx.wait(200);
+    // 四大恶人的回合：镜头飞到恶人身上，头顶冒出「××出动」（之后 MOVE_SEGMENT 走路、VILLAIN_ACTION 作案）
+    const kind = e.actor.kind;
+    const v = ctx.view().villains.find((x) => x.kind === kind);
+    if (v?.onBoard && v.node > 0) {
+      stageOf(ctx).bubble({ tile: v.node }, ctx.t('events:show.villain', { villain: ctx.names.villain(kind) }), 700);
+      await ctx.board.focus({ tile: v.node }, 420, ctx.signal);
+    } else {
+      await ctx.wait(200);
+    }
     return;
   }
   const seat = e.actor.seat;

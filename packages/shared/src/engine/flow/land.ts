@@ -43,7 +43,8 @@ function settleTail(ctx: Ctx, seat: SeatIndex, tile: TileId): void {
 
 export const LAND: FrameHandler<LandFrame> = {
   step(ctx, f) {
-    if (f.actor.t !== 'seat') throw new EngineInvariantError('NOT_IMPLEMENTED', 'villain landing (M7)');
+    // 恶人没有落点结算（onNpcStep 在 MOVE 里逐格处理），不会压 LAND
+    if (f.actor.t !== 'seat') throw new EngineInvariantError('VILLAIN_LAND', 'villains do not land');
     const seat = f.actor.seat;
     switch (f.stage) {
       case 'beggar':

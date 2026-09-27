@@ -3,14 +3,18 @@
  * M4 覆盖经济决策：TURN_MENU（股票买卖与骰子颗数）、BUY_*、UPGRADE_*、BUILD_FACILITY / FACILITY_TYPE、RESEARCH、
  * BANK_ATM、BANK_COUNTER、SHOP、LOTTERY、SUBSCRIBE_SHARES、CONSTRUCTION_PICK、DISCARD_CARD；
  * M6 覆盖 TURN_MENU 的用卡 / 用道具（ai/preRoll.ts）、USE_FREE_CARD、SCAPEGOAT、BAIL（保释玩家分支）；
- * 其余 kind 暂时委托 BasicAiPolicy（M7 补上拍卖、魔法屋、生日、死神目标）。
+ * M7 覆盖其余全部：公布栏（TURN_MENU ③④）、AUCTION_BID（心理价位）、MAGIC_CAST、BAIL 的雇恶人、BIRTHDAY_PICK、
+ * DEATH_GOD_TARGET（AI 永不投降，托管代答）、MINIGAME（放弃）。23 种决策都走原版判据，不再委托 BasicAiPolicy
+ * （BasicAiPolicy 保留给测试与 RICH4_AI_POLICY=basic 对照）。
  * 返回前按 options 做一次合法性自检（PlayerIntentSchema、ALLOWED_INTENTS、数量上限），不合法就退回 defaultIntent，防止活锁。
  */
 import { isIntentAllowed, targetMatches } from '../engine/index';
 import { type DecisionKind, type PlayerIntent, PlayerIntentSchema, type SeatIndex } from '../engine/types/index';
 import type { DecisionForYou, GameView } from '../view/types';
-import { BASIC_HANDLERS } from './basic';
+import { auctionBid } from './decisions/auction';
 import { atm, bankCounter } from './decisions/bank';
+import { birthdayPick, deathGodTarget } from './decisions/events';
+import { magicCast } from './decisions/magic';
 import { discard, lottery, subscribe } from './decisions/misc';
 import { bail, freeCard, scapegoat } from './decisions/passive';
 import { buildFacility, buyLand, construction, facilityType, research, upgrade } from './decisions/property';
@@ -37,16 +41,16 @@ export const ORIGINAL_HANDLERS = Object.freeze({
   SHOP: (view, d, ctx) => shop(viewOf(view, d.seat, ctx), d, ctx),
   LOTTERY: (view, d, ctx) => lottery(viewOf(view, d.seat, ctx), d, ctx),
   BAIL: (view, d, ctx) => bail(viewOf(view, d.seat, ctx), d, ctx),
-  MINIGAME: BASIC_HANDLERS.MINIGAME,
-  MAGIC_CAST: BASIC_HANDLERS.MAGIC_CAST,
+  MINIGAME: () => ({ type: 'MINIGAME_DECLINE' }),
+  MAGIC_CAST: (_view, d, ctx) => magicCast(d, ctx),
   CONSTRUCTION_PICK: (view, d, ctx) => construction(viewOf(view, d.seat, ctx), d),
   SUBSCRIBE_SHARES: (view, d, ctx) => subscribe(viewOf(view, d.seat, ctx), d),
   USE_FREE_CARD: (view, d, ctx) => freeCard(viewOf(view, d.seat, ctx), d, ctx),
   SCAPEGOAT: (view, d, ctx) => scapegoat(viewOf(view, d.seat, ctx), d, ctx),
-  AUCTION_BID: BASIC_HANDLERS.AUCTION_BID,
-  BIRTHDAY_PICK: BASIC_HANDLERS.BIRTHDAY_PICK,
+  AUCTION_BID: (view, d, ctx) => auctionBid(viewOf(view, d.seat, ctx), d, ctx),
+  BIRTHDAY_PICK: (_view, d, ctx) => birthdayPick(d, ctx),
   DISCARD_CARD: (view, d, ctx) => discard(viewOf(view, d.seat, ctx), d),
-  DEATH_GOD_TARGET: BASIC_HANDLERS.DEATH_GOD_TARGET,
+  DEATH_GOD_TARGET: (view, d, ctx) => deathGodTarget(viewOf(view, d.seat, ctx), d),
 } satisfies AiHandlers);
 
 /** 按 options 检查数量、候选与上限（结构与 ALLOWED_INTENTS 另查） */
@@ -81,7 +85,35 @@ export function fitsOptions(d: DecisionForYou, intent: PlayerIntent): boolean {
         const max = intent.type === 'STOCK_BUY' ? row?.maxBuy : row?.maxSell;
         return max !== undefined && intent.shares >= 1 && intent.shares <= max;
       }
+      if (intent.type === 'BOARD_LIST' || intent.type === 'BOARD_DELIST' || intent.type === 'BOARD_BUY') {
+        if (o.menuActions.used >= o.menuActions.limit) return false;
+        if (intent.type === 'BOARD_LIST') return o.board.canList && o.board.mine < 7 && intent.price >= 1;
+        const l = o.board.listings.find((x) => x.id === intent.listingId);
+        return intent.type === 'BOARD_DELIST' ? l?.mine === true : l !== undefined && !l.mine && l.affordable;
+      }
+      if (intent.type === 'SURRENDER') return o.canSurrender;
       return true;
+    }
+    case 'AUCTION_BID': {
+      const o = (a as DecisionForYou<'AUCTION_BID'>).options;
+      return intent.type !== 'BID' || o.increments.includes(intent.inc);
+    }
+    case 'MAGIC_CAST': {
+      const o = (a as DecisionForYou<'MAGIC_CAST'>).options;
+      return intent.type !== 'MAGIC_CAST' || o.effects.includes(intent.effect);
+    }
+    case 'BIRTHDAY_PICK': {
+      const o = (a as DecisionForYou<'BIRTHDAY_PICK'>).options;
+      if (intent.type !== 'PICK_CARDS') return true;
+      const victims = o.victims.filter((v) => v.cards.length > 0);
+      if (intent.picks.length !== victims.length) return false;
+      return victims.every((v) =>
+        intent.picks.some((p) => p.from === v.seat && v.cards.some((c) => c.slot === p.slot)),
+      );
+    }
+    case 'DEATH_GOD_TARGET': {
+      const o = (a as DecisionForYou<'DEATH_GOD_TARGET'>).options;
+      return intent.type !== 'DEATH_GOD_TARGET' || o.candidates.includes(intent.target);
     }
     case 'BANK_ATM': {
       const o = (a as DecisionForYou<'BANK_ATM'>).options;

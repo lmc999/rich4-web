@@ -7,9 +7,12 @@ import { type CardId, ITEM_IDS } from '../../data/tables/ids';
 import type { EngineMap } from '../core/mapCache';
 import { cardEffect } from '../effects/cards/index';
 import { itemEffect } from '../effects/items/index';
+import { timeMachineStatus } from '../effects/timeMachine';
 import type { MenuRow } from '../effects/types';
+import { canSurrender } from '../flow/surrender';
 import { isMarketClosedDay } from '../rules/calendar';
 import { diceAllowed } from '../rules/movement';
+import { boardOptions } from '../rules/noticeBoard';
 import { playerAt } from '../rules/payment';
 import { canBuyLand, canUpgradeLand, fortuneBonus, upgradedLevel } from '../rules/purchase';
 import { isLimitDown, isLimitUp, maxBuyShares, maxSellShares } from '../rules/stock';
@@ -78,9 +81,9 @@ export function buildTurnMenu(s: GameState, em: EngineMap, seat: SeatIndex): Tur
       return { item, count: p.items[item]!, usable: row.usable, reason: row.reason, targets: row.targets };
     }),
     stock: { open, reason, rows: stockRows(s, seat, open), deposit: p.deposit },
-    board: { listings: [], mine: 0, canList: false, lotCaps: [] },
-    canSurrender: false,
-    timeMachine: { usable: false, anchorTurn: null },
+    board: boardOptions(s, em, seat),
+    canSurrender: canSurrender(s, seat),
+    timeMachine: timeMachineStatus(s, seat),
     turnLog: p.turn.log.slice(),
     menuActions: { used: p.turn.menuActions, limit: MENU_ACTION_LIMIT },
   };

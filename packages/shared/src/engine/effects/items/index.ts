@@ -3,9 +3,10 @@
  * 道具全部在 USE_ITEM 时立即结算；遥控骰子与对自己用传送机是终结 intent（TURN 帧随后掷骰 / 结束回合）。
  */
 import type { ItemId } from '../../../data/tables/ids';
+import { timeMachine } from '../timeMachine';
 import type { ItemEffect } from '../types';
 import { mine, roadblock, robotDoll, timeBomb } from './objects';
-import { robotWorker, teleporter, timeMachine } from './research';
+import { robotWorker, teleporter } from './research';
 import { car, engineeringVehicle, motorcycle, remoteDice } from './vehicle';
 import { missile, nuke } from './weapons';
 

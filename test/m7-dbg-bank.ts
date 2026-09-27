@@ -1,0 +1,10 @@
+import { scenario } from '../packages/shared/src/engine/testing/scenario';
+const sc = scenario({ players: ['human', 'human', 'human'] }).untilMenu(0);
+sc.teleport(0, 18, 17).force('dice', 1).roll(0).act(0, { type: 'SKIP' });
+sc.act(0, { type: 'LOAN', amount: 30000 });
+const due = sc.player(0).loanDue;
+sc.bench(1, 2).bench(2, 2);
+sc.setCash(0, 1000, 2000).apply({ type: 'SYS_DEBUG', op: { op: 'setDate', date: due - 1 } });
+const n = sc.log.length;
+sc.until((s) => !s.players[0]!.alive);
+console.log(sc.log.slice(n).map((e) => e.type + ' ' + JSON.stringify({ ...e, post: undefined })).join('\n'));

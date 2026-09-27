@@ -186,6 +186,8 @@ export type Frame = FrameBase &
         revenge: boolean;
         /** 已改嫁（新目标不再检查被动卡） */
         scapegoated: boolean;
+        /** 施加前先毁掉最终目标的座驾（命运 12/13「先毁座驾再住院」）；旧存档缺字段按 false */
+        wreck: boolean;
         stage: 'hostility' | 'bless' | 'exempt' | 'scapegoat' | 'apply' | 'revenge' | 'done';
       }
     | { k: 'CARD'; seat: SeatIndex; card: CardId; target: UseTarget; stage: string; data: FrameData }
@@ -198,16 +200,37 @@ export type Frame = FrameBase &
         stage: 'displace' | 'attach' | 'power' | 'done';
         cursor: number;
       }
-    | { k: 'NEWS'; id: NewsId; stage: string; data: FrameData }
-    | { k: 'FATE'; seat: SeatIndex; id: FateId; stage: string; data: FrameData }
     | {
+        /**
+         * 新闻（effects/news）：apply（抽定目标、公布、结算，可能压子帧）→ done；
+         * 新闻 11/12/13 的税：apply 公布后转入 tax，按座位逐人收（data.seats 名单、data.idx 游标），有人付不起时
+         * 先返回、等他的 BANKRUPT 帧处理完再收下一人 → done
+         */
+        k: 'NEWS';
+        id: NewsId;
+        stage: 'apply' | 'tax' | 'done';
+        data: FrameData;
+      }
+    | {
+        /**
+         * 命运（effects/fate）：draw（魔法屋「连抽三张」时现抽）→ bless（加持判定）→ apply → 罚金类：free（免费卡，
+         * rules.freeCardOnFines）→ scapegoat → pay → insure（保险赔付）→ done；生日：pick（真人 BIRTHDAY_PICK）→ done
+         */
+        k: 'FATE';
+        seat: SeatIndex;
+        id: FateId;
+        stage: 'draw' | 'bless' | 'apply' | 'pick' | 'free' | 'scapegoat' | 'pay' | 'insure' | 'done';
+        data: FrameData;
+      }
+    | {
+        /** 魔法屋（effects/magic）：cond（抽条件）→ cast（MAGIC_CAST 决策）→ apply（名单逐人，idx 为游标）→ done */
         k: 'MAGIC';
         caster: SeatIndex;
         cond: MagicConditionId;
         targets: SeatIndex[];
         effect: MagicEffectId | null;
         idx: number;
-        stage: string;
+        stage: 'cond' | 'cast' | 'apply' | 'done';
       }
     | { k: 'BANK'; seat: SeatIndex; mode: 'pass' | 'stop'; stage: 'atm' | 'counter' | 'done' }
     | {
@@ -229,8 +252,13 @@ export type Frame = FrameBase &
         stage: 'gift' | 'open' | 'done';
       }
     | {
+        /**
+         * 并发拍卖（flow/auction.ts；design/engine.md §9.5）：start（AUCTION_STARTED）→ ask（给每个可出价、手上没有待答决策的
+         * 竞拍者各发一个 AUCTION_BID）→ wait（等回答；BID 清掉其余待答、PASS 只清自己）→ ask … → settle → done
+         */
         k: 'AUCTION';
         lot: LotId;
+        /** 成交款的收款人（拍卖卡：出卡者；魔法屋：目标玩家）；null 表示进公库（破产、投降、新闻） */
         seller: SeatIndex | null;
         source: AuctionSource;
         start: number;
@@ -238,7 +266,7 @@ export type Frame = FrameBase &
         leader: SeatIndex | null;
         bidders: AuctionBidder[];
         unsold: 'ownerless' | 'keep';
-        stage: 'ask' | 'wait' | 'settle';
+        stage: 'start' | 'ask' | 'wait' | 'settle' | 'done';
       }
     | {
         k: 'BANKRUPT';
@@ -248,9 +276,23 @@ export type Frame = FrameBase &
         stage: 'detach' | 'endcheck' | 'liquidate' | 'auctions' | 'beggar' | 'done';
         auctionLots: LotId[];
       }
-    | { k: 'SURRENDER'; seat: SeatIndex; stage: 'liquidate' | 'auctions' | 'target' | 'done'; auctionLots: LotId[] }
+    | {
+        /**
+         * 投降（flow/surrender.ts）：announce（SURRENDERED）→ target（DEATH_GOD_TARGET：召唤死神附身一名对手）→ detach
+         * → endcheck → liquidate → auctions（> 3 处随机拍 3 处，成交款进公库）→ beggar → done
+         */
+        k: 'SURRENDER';
+        seat: SeatIndex;
+        stage: 'announce' | 'target' | 'detach' | 'endcheck' | 'liquidate' | 'auctions' | 'beggar' | 'done';
+        auctionLots: LotId[];
+      }
     | { k: 'DAY'; stage: DayStage; cursor: number }
-    | { k: 'VILLAIN'; v: VillainKind; stage: 'start' | 'moving' | 'act' | 'done' }
+    | {
+        /** 四大恶人的回合（flow/villain.ts）：start（计数器倒数、步数）→ 压 MOVE(villain) → done（TURN_ENDED） */
+        k: 'VILLAIN';
+        v: VillainKind;
+        stage: 'start' | 'moving' | 'act' | 'done';
+      }
   );
 
 export type FrameKind = Frame['k'];

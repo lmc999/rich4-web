@@ -7,6 +7,8 @@
  *   → engine.migrateState → engine.validateState → 座位与 state.players 对应；签名无效仍可读，verified=false。
  * - 导出与读档：存档所在对局（或由它读档的对局）仍在进行时拒绝（SAVE_FORBIDDEN{gameInProgress}）：
  *   导出文件里有 state.secret（随机数状态、牌堆顺序），另开房间读档试走也能预知进行中对局的随机结果。
+ *   对局中全员 room:leave（没有在线的座位真人）时房间先自动存档再关闭（rooms/Room.leave），此后不再算进行中；
+ *   只是断线的对局仍在等人回来，照旧拒绝，直到 abandon TTL 回收（同样先自动存档）。
  * - 导入：解码 → 同读档的全部校验 → 以导入者为 owner 重新编码入库；未验证的存档 sig 存空串（再导出仍是非官方存档）。
  * - 解压后 JSON 上限 SAVE_DECODE_MAX_JSON_BYTES（2MB），state.engine 必须是 semver：导入存档是任何匿名 token 都能提交的
  *   不可信输入，宽松字段里塞的垃圾会随每个 view、快照与自动存档放大。

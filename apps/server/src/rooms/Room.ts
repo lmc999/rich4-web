@@ -9,6 +9,8 @@
  *   Room.restore 恢复（epoch+1、全员视为断线并暂停）。
  * - 存档读档：game:save（房主）、DAY_END 自动存档覆盖 auto:<code>、room:loadSave（大厅锁定为存档座位，
  *   tokenHash 匹配的成员自动入座）、room:claimSeat；解散或无人回收前自动存档。
+ * - 对局中座位上的真人全部 room:leave 后：自动存档并关闭房间（之后存档不再算「进行中」，可导出、可另开房间读档）；
+ *   有人只是断线时仍暂停等人回来（abandon TTL 回收）。
  */
 import { applyTrusteeSettings, isValidTrusteeSettings, type TrusteeSettings } from '@rich4/shared/ai';
 import {
@@ -630,6 +632,13 @@ export class Room implements PersistableRoom {
       if (this.isHost(tokenHash)) this.migrateHost(tokenHash);
     }
     this.deps.onMemberRemoved(tokenHash);
+    // 对局中座位上的真人全部 room:leave 了（没有在线的，也没有只是断线、可能回来的）：自动存档后关闭房间
+    // （close('idle') 先写 auto:<code>）。房间一关，存档不再「正被进行中的对局使用」，所有 owner 都能立即导出或
+    // 另开房间读档（手动存档与自动存档都行），不必等 abandon TTL（30 分钟）。有人只是断线时仍按原规则暂停等人回来。
+    if (leftInGame && this.allSeatHumansLeft()) {
+      this.close('idle');
+      return ok(undefined);
+    }
     this.refreshLobbyTimer();
     this.broadcastState();
     // 对局中座位归属变化立即落盘（同 kick），不等防抖
@@ -743,9 +752,20 @@ export class Room implements PersistableRoom {
     if (this.phase !== 'lobby') return fail('ROOM_IN_GAME');
     const slot = this.seats[seat]!;
     if (slot.occupant?.kind === 'human') return fail('SEAT_TAKEN');
-    if (this.loaded && !this.savedSeat(seat)) return fail('BAD_REQUEST', { reason: 'notInSave' });
+    const ss = this.savedSeat(seat);
+    if (this.loaded && !ss) return fail('BAD_REQUEST', { reason: 'notInSave' });
     if (ai === null) {
       this.releaseSeat(slot);
+    } else if (ss?.kind === 'ai') {
+      // 存档里本来就是电脑的座位：配置沿用存档（读档开局用存档 state 里的 aiTraits，大厅改预设不会生效，
+      // 前端也只读显示原预设）；移除后再补上仍是原配置
+      slot.occupant = {
+        kind: 'ai',
+        ai: ss.ai
+          ? { ...ss.ai, ...(ss.ai.overrides ? { overrides: { ...ss.ai.overrides } } : {}) }
+          : { preset: 'character' },
+        name: ss.nickname || `AI${seat + 1}`,
+      };
     } else {
       slot.occupant = {
         kind: 'ai',
@@ -1050,6 +1070,17 @@ export class Room implements PersistableRoom {
     let n = 0;
     for (const s of this.seats) if (s.occupant?.kind === 'human' && s.occupant.socketId !== null) n++;
     return n;
+  }
+
+  /** 座位上的真人都已在对局中 room:leave（离线且座位为 autopilot:left）；只是断线的不算 */
+  private allSeatHumansLeft(): boolean {
+    const humans = this.seats.filter((s) => s.occupant?.kind === 'human');
+    return (
+      humans.length > 0 &&
+      humans.every(
+        (s) => (s.occupant as HumanOcc).socketId === null && this.runner?.controlOf(s.index) === 'autopilot:left',
+      )
+    );
   }
 
   /** 全员（座位上的真人）离线时暂停（pauseWhenAllAway） */

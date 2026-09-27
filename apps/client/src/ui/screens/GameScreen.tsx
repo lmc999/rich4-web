@@ -229,7 +229,7 @@ export default function GameScreen({ room, onLeave }: { room: RoomView; onLeave(
           <TurnBanner />
           <DiceOverlay />
           <PausedBanner room={room} />
-          <PopupLayer />
+          <PopupLayer map={map} />
           {map && <DecisionLayer view={view} map={map} room={room} />}
           {map && <PanelHost view={view} map={map} room={room} />}
           <GameOverPanel view={view} room={room} onLeave={onLeave} />

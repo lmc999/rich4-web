@@ -63,3 +63,16 @@
   justify-content: center;
   margin-top: var(--space-4);
 }
+
+/* 首页「读取存档」面板 */
+.homeSaves {
+  margin: var(--space-4) auto 0;
+  max-height: min(60dvh, 560px);
+  overflow: auto;
+  text-align: left;
+}
+
+.homeSaves h2 {
+  margin: 0 0 var(--space-1);
+  font-size: 20px;
+}

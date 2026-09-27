@@ -204,6 +204,100 @@ describe('integration/save-load', () => {
     expect(host.gaps).toEqual([]);
   }, 60_000);
 
+  it('对局中全员离开：自动存档并关闭房间；之后可导出、可另开房间读档（手动与自动存档）；只是断线仍算进行中', async () => {
+    srv = await startTestServer({ rateLimitScale: 0 });
+    const s = await setupRoom(srv.url, {
+      humans: 2,
+      ais: [{ seat: 2, ai: { preset: 'cunning' } }],
+      settings: { timerPreset: 'off' },
+    });
+    bots.push(...s.bots);
+    const [host, p1] = s.bots as [BotClient, BotClient];
+    const spec = await connectBot(srv.url, { nickname: '观众' });
+    bots.push(spec);
+    expect((await spec.req('room:join', { code: s.code, role: 'spectator' })).ok).toBe(true);
+    await startGame(s, [spec]);
+    const sv = await host.req('game:save', { name: '全员离开' });
+    if (!sv.ok) throw new Error(sv.error.code);
+    const saveId = sv.data.saveId;
+    const f = srv.app.fastify;
+    const exportAs = (token: string, id: string) =>
+      f.inject({
+        method: 'GET',
+        url: `/api/saves/${encodeURIComponent(id)}/export`,
+        headers: { 'x-player-token': token },
+      });
+
+    // P1 离开，房主还在：对局继续，存档仍算进行中
+    expect((await p1.req('room:leave', {})).ok).toBe(true);
+    expect(srv.app.rooms.get(s.code)?.inGame).toBe(true);
+    expect((await exportAs(p1.token, saveId)).json()).toMatchObject({
+      ok: false,
+      error: { code: 'SAVE_FORBIDDEN', details: { reason: 'gameInProgress' } },
+    });
+
+    // 房主只是断线（没有 room:leave）：房间暂停等人回来，仍然禁止导出与另开房间读档
+    host.drop();
+    await spec.until(() => spec.room?.phase === 'paused', 3000, 'paused');
+    expect(srv.app.rooms.get(s.code)?.phase).toBe('paused');
+    expect((await exportAs(p1.token, saveId)).statusCode).toBe(409);
+    await newRoom(p1);
+    expect(await p1.req('room:loadSave', { saveId })).toMatchObject({
+      ok: false,
+      error: { code: 'SAVE_FORBIDDEN', details: { reason: 'gameInProgress' } },
+    });
+    expect((await p1.req('room:leave', {})).ok).toBe(true);
+
+    // 房主回来再离开：座位上已没有在线真人 → 自动存档并关闭房间，观战者收到 room:closed
+    expect((await host.reconnect(s.code)).ok).toBe(true);
+    await spec.until(() => spec.room?.phase === 'playing', 3000, 'resumed');
+    expect((await host.req('room:leave', {})).ok).toBe(true);
+    await spec.until(() => spec.closedReason !== null, 3000, 'spectator closed');
+    expect(spec.closedReason).toBe('idle');
+    expect(srv.app.rooms.get(s.code)).toBeUndefined();
+    expect(srv.app.persistence.rooms.listActive(0).map((r) => r.code)).not.toContain(s.code);
+    for (const b of [host, p1]) {
+      const mine = await listSaves(b);
+      expect(mine.find((x) => x.saveId === autoSaveId(s.code))).toMatchObject({ kind: 'auto', compatible: true });
+      expect(mine.map((x) => x.saveId)).toContain(saveId);
+    }
+    // 两位真人都能导出（手动与自动存档）
+    for (const id of [saveId, autoSaveId(s.code)]) {
+      const r = await exportAs(p1.token, id);
+      expect(r.statusCode, r.body).toBe(200);
+      expect(r.body.startsWith('R4S1.')).toBe(true);
+    }
+
+    // P1 新建房间读自动存档：P1 回到自己的座位，存档里的电脑按原配置补上
+    const code2 = await newRoom(p1);
+    expect(await p1.req('room:loadSave', { saveId: autoSaveId(s.code) })).toEqual({ ok: true, data: undefined });
+    await p1.until(() => p1.room?.loadedSave !== undefined, 3000, 'loaded');
+    expect(p1.room!.you).toEqual({ role: 'player', seat: 1, isHost: true });
+    expect(p1.room!.seats[2]!.occupant).toMatchObject({ kind: 'ai', ai: { preset: 'cunning' } });
+    expect(p1.room!.seats[2]!.savedSeat).toMatchObject({ wasHuman: false });
+    // 存档里本来是电脑的座位：改预设不生效，移除后再补仍是原配置
+    expect((await p1.req('room:setSeatAi', { seat: 2, ai: { preset: 'gentle' } })).ok).toBe(true);
+    expect(srv.app.rooms.get(code2)!.seats[2]!.occupant).toMatchObject({ kind: 'ai', ai: { preset: 'cunning' } });
+    expect((await p1.req('room:setSeatAi', { seat: 2, ai: null })).ok).toBe(true);
+    expect(srv.app.rooms.get(code2)!.seats[2]!.occupant).toBeNull();
+    expect((await p1.req('room:setSeatAi', { seat: 2, ai: { preset: 'gentle' } })).ok).toBe(true);
+    await p1.until(() => p1.room?.seats[2]?.occupant?.kind === 'ai', 3000, 'ai back');
+    expect(p1.room!.seats[2]!.occupant).toMatchObject({ kind: 'ai', ai: { preset: 'cunning' } });
+    // 存档里是真人的座位补电脑：按请求的预设（只在服务器层代打）
+    expect((await p1.req('room:setSeatAi', { seat: 0, ai: { preset: 'gentle' } })).ok).toBe(true);
+    await p1.until(() => p1.room?.seats[0]?.occupant?.kind === 'ai', 3000, 'seat 0 ai');
+    expect(p1.room!.seats[0]!.occupant).toMatchObject({ kind: 'ai', ai: { preset: 'gentle' } });
+    expect((await p1.req('room:start', {})).ok).toBe(true);
+    await p1.until(() => p1.room?.phase === 'playing' && p1.epoch >= 1, 5000, 'started');
+    expect(srv.app.rooms.get(code2)!.sourceSaveId).toBe(autoSaveId(s.code));
+
+    // 房主另开房间读手动存档：读档对局（code2）来自自动存档，手动存档不受影响
+    await newRoom(host);
+    expect(await host.req('room:loadSave', { saveId })).toEqual({ ok: true, data: undefined });
+    // 自动存档正被 code2 使用：仍然禁止导出
+    expect((await exportAs(host.token, autoSaveId(s.code))).statusCode).toBe(409);
+  }, 60_000);
+
   it('读档时 owner 在观战席：自动入座；owner 后来加入：直接回到自己的座位', async () => {
     srv = await startTestServer({ rateLimitScale: 0 });
     const s = await setupRoom(srv.url, { humans: 2, settings: { timerPreset: 'off' } });

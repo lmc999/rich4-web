@@ -216,7 +216,8 @@ describe('property/lobby', () => {
     );
     // 生成器必须能覆盖开局之后的路径
     expect(started).toBeGreaterThanOrEqual(5);
-  });
+    // 500 组随机序列单跑约 2.5 秒；与其他 project 并行时会超过默认的 5 秒
+  }, 30_000);
 
   it('开局失败的原因互斥且可解释', () => {
     const { room } = harness();

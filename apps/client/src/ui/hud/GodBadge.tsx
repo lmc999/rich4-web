@@ -1,5 +1,6 @@
 // 附身神明徽章（design/client.md §3.6「HUD 的 GodBadge 显示图标和剩余天数环」）：
 // 神明立绘缩略图 + 神明配色光环 + 剩余天数环（total 给出时按比例，缺省满环）+ 天数数字。
+// compact：只有头像环与天数（玩家条用），名字放进 title 与无障碍标签。
 import { GOD_KEYS, type GodKind } from '@rich4/shared/engine';
 import type { CSSProperties, ReactNode } from 'react';
 import { GOD_PALETTES } from '../../game/actors/godPalettes';
@@ -12,9 +13,11 @@ export interface GodBadgeProps {
   /** 附身总天数（天数环的分母）；缺省不画比例 */
   total?: number;
   size?: number;
+  /** 紧凑：不显示名字（玩家条） */
+  compact?: boolean;
 }
 
-export function GodBadge({ kind, days, total, size = 36 }: GodBadgeProps): ReactNode {
+export function GodBadge({ kind, days, total, size = 36, compact = false }: GodBadgeProps): ReactNode {
   const t = useTx();
   const pal = GOD_PALETTES[kind];
   const name = t(`gods:${GOD_KEYS[kind]}.name`);
@@ -25,16 +28,18 @@ export function GodBadge({ kind, days, total, size = 36 }: GodBadgeProps): React
     position: 'relative',
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 4,
-    padding: '0 8px 0 0',
+    gap: compact ? 2 : 4,
+    padding: compact ? '0 5px 0 0' : '0 8px 0 0',
     border: '2px solid var(--c-ink)',
     borderRadius: 999,
     background: pal.good ? 'var(--c-sun)' : '#e6e0f5',
-    fontSize: 12,
+    fontSize: compact ? 11 : 12,
     lineHeight: 1,
+    whiteSpace: 'nowrap',
   };
+  const label = `${name} · ${t('hud:days', { n: days })}`;
   return (
-    <span style={wrap} data-testid="god-badge" data-god={kind} data-days={days} title={`${name} · ${days}`}>
+    <span style={wrap} data-testid="god-badge" data-god={kind} data-days={days} title={label}>
       <span style={{ position: 'relative', width: size, height: size, display: 'inline-block' }}>
         <svg
           width={size}
@@ -64,8 +69,8 @@ export function GodBadge({ kind, days, total, size = 36 }: GodBadgeProps): React
           style={{ position: 'absolute', inset: 0, objectFit: 'cover', objectPosition: 'top', borderRadius: '50%' }}
         />
       </span>
-      <span>{name}</span>
-      <strong className="num">{t('hud:days', { n: days })}</strong>
+      <span className={compact ? 'visually-hidden' : undefined}>{name}</span>
+      <strong className="num">{compact ? days : t('hud:days', { n: days })}</strong>
     </span>
   );
 }

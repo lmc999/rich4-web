@@ -1,6 +1,6 @@
 // 演出弹窗渲染（client-dom）：NewsPopup / FatePopup / GameOverScreen / 出卡 / 神明 / 乐透 / 魔法屋、弹窗层的跳过、
 // 公开竞价横幅，以及 HUD 的 GodBadge / StatusBadges。
-import type { PlayerView } from '@rich4/shared/view';
+import type { GameView, PendingView, PlayerView } from '@rich4/shared/view';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -54,6 +54,17 @@ describe('NewsPopup', () => {
     const affected = screen.getByTestId('news-affected');
     expect(within(affected).getByText('孙小美')).toBeInTheDocument();
     expect(within(affected).getByText(/\+10,000/)).toBeInTheDocument();
+  });
+
+  it('经弹窗层打开：data-news 是新闻编号，不被弹窗实例号覆盖', () => {
+    render(<PopupLayer />);
+    act(() => {
+      usePopupStore
+        .getState()
+        .open({ kind: 'news', id: 1, category: 0, categoryLabel: '奇闻', headline: 'x', body: '', affected: [] }, 1000);
+      usePopupStore.getState().open({ ...news, id: 11 }, 1000);
+    });
+    expect(screen.getByTestId('news-popup')).toHaveAttribute('data-news', '11');
   });
 
   it('打字机：标题逐字出现，最后完整显示', () => {
@@ -292,6 +303,36 @@ describe('PopupLayer', () => {
     });
     expect(screen.queryByTestId('auction-banner')).toBeNull();
     expect(usePopupStore.getState().auction).toBeNull();
+  });
+
+  it('公开竞价横幅：没有经过演出（后台标签页 / instant / 刷新）时按待决策补一条', () => {
+    const view = {
+      players: [
+        { seat: 0, character: 9 },
+        { seat: 1, character: 4 },
+      ],
+    } as unknown as GameView;
+    const bid = (seat: 0 | 1): PendingView => ({
+      decisionId: `d${seat}`,
+      seat,
+      kind: 'AUCTION_BID',
+      timing: 'auction',
+      deadlineAt: null,
+      control: 'human',
+      publicInfo: { kind: 'AUCTION_BID', seat, lot: 'L1', amount: 3500, labelKey: null },
+    });
+    render(<PopupLayer />);
+    act(() => {
+      useGameStore.getState().setAnim({ playing: false, backlogMs: 0, speed: 1, instant: true });
+      useGameStore.getState().commitView(view);
+      useGameStore.getState().commitPending([bid(0), bid(1)], null);
+    });
+    const b = screen.getByTestId('auction-banner');
+    expect(b).toHaveAttribute('data-derived', 'true');
+    expect(screen.getByTestId('auction-price')).toHaveTextContent('3,500');
+    expect(b).toHaveTextContent('竞价中');
+    act(() => useGameStore.getState().commitPending([], null));
+    expect(screen.queryByTestId('auction-banner')).toBeNull();
   });
 });
 

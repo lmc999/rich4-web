@@ -54,7 +54,10 @@
     "cards": "卡片",
     "items": "道具",
     "stock": "股票",
+    "board": "公布栏",
     "info": "查看",
+    "more": "更多",
+    "moreTitle": "展开回合菜单（公布栏、投降等）",
     "autopilot": "托管",
     "autopilotOn": "托管中",
     "focus": "回到当前玩家",
@@ -211,7 +214,8 @@
     "SAVE_NOT_FOUND": "存档不存在",
     "SAVE_INCOMPATIBLE": "存档与当前版本或地图不兼容",
     "SAVE_FORBIDDEN": "你无权读取这个存档",
-    "CHAT_DISABLED": "聊天已关闭"
+    "CHAT_DISABLED": "聊天已关闭",
+    "ACCESS_REQUIRED": "需要访问口令或邀请链接才能进入"
   },
   "errorReason": {
     "timeout": "请求超时，请检查网络",

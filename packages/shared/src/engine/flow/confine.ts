@@ -24,7 +24,7 @@ import { CARD } from '../../data/tables/ids';
 import { add32, mul32 } from '../../util/int32';
 import type { Ctx } from '../core/ctx';
 import type { FrameHandler } from '../core/frameHandler';
-import { addHostility } from '../effects/common';
+import { addHostility, destroyVehicle } from '../effects/common';
 import { confineVillain } from '../effects/villainState';
 import { EngineInvariantError } from '../errors';
 import { insuranceCompanyIdx } from '../rules/bank';
@@ -69,6 +69,8 @@ export function applyConfinement(
     const hold = where === 'jail' ? ctx.map.index.jailHold : ctx.map.index.hospitalHold;
     p.node = hold;
     p.prevNode = hold;
+    // 首回合还没跳伞的人（魔法屋、嫁祸可以关到他）：直接落在监狱 / 医院，获释后从这里出发，不再跳伞
+    p.placed = true;
   } else if (where === 'hotel') {
     value = days > 1 ? (days - 1) & ECON.COUNTER_MASK : COUNTER_PENDING;
     p.st.hotel = value;
@@ -84,7 +86,7 @@ export function applyConfinement(
 }
 
 /** 投保中被关押 / 出国 / 住旅馆：赔 2000 × 天数 × PI（首家保险公司的盈余 → 现金） */
-function payInsurance(ctx: Ctx, seat: SeatIndex, days: number): void {
+export function payInsurance(ctx: Ctx, seat: SeatIndex, days: number): void {
   const s = ctx.s;
   const p = ctx.player(seat);
   if (p.insuranceDays === 0 || days <= 0) return;
@@ -117,6 +119,8 @@ export interface ConfineChain {
   hate?: number;
   selfDays?: number | null;
   revenge?: boolean;
+  /** 施加前先毁掉最终目标的座驾（命运 12/13） */
+  wreck?: boolean;
 }
 
 /** 压 CONFINE 帧（actor 为玩家时 orig 记为原目标） */
@@ -134,6 +138,7 @@ export function pushConfine(ctx: Ctx, actor: ActorRef, c: ConfineChain): void {
     selfDays: c.selfDays ?? null,
     revenge: c.revenge ?? false,
     scapegoated: false,
+    wreck: c.wreck ?? false,
     stage: 'hostility',
   });
 }
@@ -195,6 +200,7 @@ export const CONFINE: FrameHandler<ConfineFrame> = {
           return;
         }
         if (p === null || !p.alive) return;
+        if (f.wreck === true) destroyVehicle(ctx, p.seat);
         applyConfinement(ctx, p.seat, f.where, f.days, f.cause);
         return;
       }

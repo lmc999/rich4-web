@@ -1,8 +1,10 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import type { SaveSummary } from '@rich4/shared/net';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { memoryLocation } from 'wouter/memory-location';
 import { useRoomStore } from '../store/roomStore';
+import { useUiStore } from '../store/uiStore';
 import { makeTestClient } from '../test/fakeTransport';
 import { roomView } from '../test/roomFixtures';
 import { App } from './App';
@@ -29,7 +31,24 @@ function renderAt(path: string, setup?: (t: ReturnType<typeof makeTestClient>) =
 
 afterEach(() => {
   useRoomStore.getState().clear();
+  useUiStore.getState().clear();
 });
+
+const SAVE: SaveSummary = {
+  saveId: 'sv-1',
+  name: '周末那局',
+  kind: 'manual',
+  mapId: 'test',
+  gameDay: 12,
+  date: 20100112,
+  seats: [
+    { characterId: 9, nickname: '我', wasHuman: true },
+    { characterId: 4, nickname: '电脑', wasHuman: false },
+  ],
+  createdAt: 1,
+  compatible: true,
+  verified: true,
+};
 
 describe('路由', () => {
   it('/ 首页：标题、昵称、建房、加入、单机、设置、开发页入口', () => {
@@ -54,6 +73,53 @@ describe('路由', () => {
     await userEvent.type(screen.getByTestId('home-join-code'), '56');
     await userEvent.click(screen.getByTestId('home-watch'));
     expect(loc.history?.at(-1)).toBe('/r/123456?watch=1');
+  });
+
+  it('首页「读取存档」：列出本人的存档（可导入）；读取时新建私密房间 → room:loadSave → 保持私密 → 进入该房间', async () => {
+    const { loc, transport } = renderAt('/', (t) =>
+      t.transport.respond('saves:list', () => ({ ok: true, data: { saves: [SAVE] } })),
+    );
+    const open = screen.getByTestId('home-load-open');
+    expect(open).toHaveTextContent('读取存档');
+    await userEvent.click(open);
+    const panel = await screen.findByTestId('home-saves');
+    expect(within(panel).getByTestId('save-import')).toBeInTheDocument();
+    const item = await within(panel).findByTestId('save-sv-1');
+    expect(item).toHaveTextContent('周末那局');
+    // 首页没有存档表单
+    expect(within(panel).queryByTestId('save-name')).toBeNull();
+    await userEvent.click(within(item).getByTestId('save-load-sv-1'));
+    await waitFor(() => expect(loc.history?.at(-1)).toBe('/r/123456'));
+    const order = transport.sent.map((x) => x.event).filter((e) => e.startsWith('room:'));
+    expect(order.slice(0, 3)).toEqual(['room:create', 'room:loadSave', 'room:updateSettings']);
+    expect(transport.payloads('room:create')).toEqual([{ settings: { visibility: 'private' } }]);
+    expect(transport.payloads('room:loadSave')).toEqual([{ saveId: 'sv-1' }]);
+    expect(transport.payloads('room:updateSettings')).toEqual([{ patch: { visibility: 'private' } }]);
+  });
+
+  it('首页读档失败（对局还在进行）：离开临时房间、留在首页并提示原因', async () => {
+    const { loc, transport } = renderAt('/', (t) => {
+      t.transport.respond('saves:list', () => ({ ok: true, data: { saves: [SAVE] } }));
+      t.transport.respond('room:loadSave', () => ({
+        ok: false,
+        error: { code: 'SAVE_FORBIDDEN', message: 'x', details: { reason: 'gameInProgress' } },
+      }));
+    });
+    await userEvent.click(screen.getByTestId('home-load-open'));
+    await userEvent.click(await screen.findByTestId('save-load-sv-1'));
+    expect(await screen.findByText('这个存档所在的对局还在进行中，请先结束或解散那个房间')).toBeInTheDocument();
+    expect(transport.payloads('room:leave')).toHaveLength(1);
+    expect(transport.payloads('room:updateSettings')).toEqual([]);
+    expect(loc.history?.at(-1)).toBe('/');
+    expect(screen.getByTestId('screen-home')).toBeInTheDocument();
+  });
+
+  it('首页「读取存档」要先填昵称', async () => {
+    renderAt('/');
+    await userEvent.clear(screen.getByTestId('home-nickname'));
+    await userEvent.click(screen.getByTestId('home-load-open'));
+    expect(screen.getByTestId('home-error')).toHaveTextContent('请先填写昵称');
+    expect(screen.queryByTestId('home-saves')).toBeNull();
   });
 
   it('/r/:code 进房：发 room:join，收到 room:state 后显示房间大厅', async () => {

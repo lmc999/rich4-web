@@ -1,31 +1,29 @@
 // 事件格演出（design/client.md §4.5、§5.4）：新闻（NewsPopup：主播 + 打字机标题 + 受影响玩家）、命运（FatePopup 卡片翻面）、
 // 魔法屋（女巫挥杖 + 魔法阵 + 结果条）、四大恶人（雇用、作案、回家）、乞丐施舍。
-// 新闻、命运文案按编号取自 i18n（news / fate，自拟概括扩写，不照抄原版）；插值参数由 textParams 解析名字。
-import type { FateId, NewsId, SeatIndex, VillainKind } from '@rich4/shared/engine';
+// 新闻、命运文案按编号取自 i18n（news / fate，自拟概括扩写，不照抄原版）；插值参数与命运的金额含义见 ../eventText。
+import { NEWS_TABLE } from '@rich4/shared/data';
+import type { SeatIndex, VillainKind } from '@rich4/shared/engine';
 import type { FatePopupSpec, MagicPopupSpec, NewsPopupSpec, PlayerRef } from '../../ui/popups/popupStore';
+import {
+  fateShown,
+  fateTitle,
+  magicEffectName,
+  newsBody,
+  newsCategory,
+  newsHeadline,
+  villainActionText,
+} from '../eventText';
 import { formatEvent } from '../logFormat';
 import type { EventHandler, PresentationContext } from '../types';
 import { showAllDeltas, syncFromPost } from './common';
-import { affectedRows, playerRef, showPopup, signedMoney, textParams } from './popups';
+import { affectedRows, playerRef, showPopup } from './popups';
 import { stageOf } from './stage';
 import { blessingText } from './status';
 
-/** 新闻分类（exe newsCategories；0 奇闻、1 政府公告、2 社会、3 路况、4 气象、5 财经） */
-export const NEWS_CATEGORY: readonly number[] = [
-  0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-];
+/** 新闻分类（exe newsCategories；0 奇闻、1 政府公告、2 社会、3 路况、4 气象、5 财经），取自 shared 新闻表 */
+export const NEWS_CATEGORY: readonly number[] = NEWS_TABLE.map((d) => d.category);
 
-export function newsCategory(id: NewsId): number {
-  return NEWS_CATEGORY[id] ?? 0;
-}
-
-/** 奖金类命运（加持高档加倍、低档作废）；其余为罚金 / 劫难或中性 */
-const FATE_GOOD: ReadonlySet<number> = new Set([5, 20, 21, 22, 25, 27, 28, 29, 31]);
-const FATE_NEUTRAL: ReadonlySet<number> = new Set([1, 4, 32]);
-
-export function fateTone(id: FateId): FatePopupSpec['tone'] {
-  return FATE_GOOD.has(id) ? 'good' : FATE_NEUTRAL.has(id) ? 'neutral' : 'bad';
-}
+export { newsCategory };
 
 export const NEWS_POPUP_MS = 3400;
 export const FATE_POPUP_MS = 2250;
@@ -33,15 +31,14 @@ export const MAGIC_COND_POPUP_MS = 1500;
 export const MAGIC_CAST_POPUP_MS = 1650;
 
 export const NEWS: EventHandler<'NEWS'> = async (e, ctx) => {
-  const params = textParams(ctx, e.params);
   const category = newsCategory(e.id);
   const spec: NewsPopupSpec = {
     kind: 'news',
     id: e.id,
     category,
     categoryLabel: ctx.t(`news:category.${category}`),
-    headline: ctx.t(`news:${e.id}.headline`, { ...params, defaultValue: ctx.t('events:show.news') }),
-    body: ctx.t(`news:${e.id}.body`, { ...params, defaultValue: '' }),
+    headline: newsHeadline(ctx.names, e.id, e.params),
+    body: newsBody(ctx.names, e.id, e.params),
     affected: affectedRows(ctx, e, e.affected),
   };
   await showPopup(ctx, spec, NEWS_POPUP_MS, 1500);
@@ -54,24 +51,21 @@ export const FATE: EventHandler<'FATE'> = async (e, ctx) => {
   const stage = stageOf(ctx);
   const player = playerRef(ctx, e.seat);
   stage.bubble({ seat: e.seat }, '？', 600);
-  const who = ctx.names.seat(e.seat);
-  const params = {
-    who,
-    amount: e.amount === null ? ctx.t('events:param.amount') : ctx.names.money(e.amount),
-  };
-  const tone = fateTone(e.id);
+  const shown = fateShown(ctx.names, e);
   if (player) {
     const spec: FatePopupSpec = {
       kind: 'fate',
       player,
       id: e.id,
-      title: ctx.t(`fate:${e.id}.title`, { defaultValue: ctx.t('events:popup.fateNo', { n: e.id + 1 }) }),
-      text: ctx.t(`fate:${e.id}.text`, { ...params, defaultValue: '' }),
-      amountText: e.amount === null ? null : signedMoney(ctx, tone === 'bad' ? -Math.abs(e.amount) : e.amount),
-      tone,
-      blessingText: e.blessing === null ? null : blessingText(ctx, tone === 'good' ? 'reward' : 'penalty', e.blessing),
+      title: fateTitle(ctx.names, e.id),
+      text: ctx.t(`fate:${e.id}.text`, { ...shown.params, defaultValue: '' }),
+      amountText: shown.amountText,
+      amountTone: shown.amountTone,
+      tone: shown.tone,
+      blessingText:
+        e.blessing === null || shown.category === null ? null : blessingText(ctx, shown.category, e.blessing),
     };
-    ctx.board.setActorPose(e.seat, tone === 'good' ? 'cheer' : tone === 'bad' ? 'sad' : 'idle');
+    ctx.board.setActorPose(e.seat, shown.tone === 'good' ? 'cheer' : shown.tone === 'bad' ? 'sad' : 'idle');
     await showPopup(ctx, spec, FATE_POPUP_MS, 1100);
   } else {
     await ctx.wait(FATE_POPUP_MS);
@@ -109,7 +103,7 @@ export const MAGIC_CONDITION: EventHandler<'MAGIC_CONDITION'> = async (e, ctx) =
 export const MAGIC_CAST: EventHandler<'MAGIC_CAST'> = async (e, ctx) => {
   const stage = stageOf(ctx);
   const caster = playerRef(ctx, e.caster);
-  const effect = ctx.t(`magic:effect.${e.effect}.name`);
+  const effect = magicEffectName(ctx.names, e.effect);
   const desc = ctx.t(`magic:effect.${e.effect}.desc`);
   for (const s of e.targets) stage.burst({ seat: s }, 0x9b6bff, 14);
   void stage.pillar({ seat: e.caster }, 0x9b6bff, ctx.signal);
@@ -152,14 +146,7 @@ const VILLAIN_COLOR: Readonly<Record<VillainKind, number>> = {
 export const VILLAIN_ACTION: EventHandler<'VILLAIN_ACTION'> = async (e, ctx) => {
   const stage = stageOf(ctx);
   const villain = ctx.names.villain(e.kind);
-  const who = ctx.names.seat(e.victim);
-  const text = ctx.t(`events:villainAction.${e.what}`, {
-    villain,
-    who,
-    amount: ctx.names.money(e.amount),
-    defaultValue: formatEvent(e, ctx.names) ?? villain,
-  });
-  ctx.ui.toast(text, 'warn');
+  ctx.ui.toast(villainActionText(ctx.names, e), 'warn');
   const from = stage.villainAnchor(e.kind);
   if (e.victim !== null) {
     await ctx.board.focus({ seat: e.victim }, 250, ctx.signal);

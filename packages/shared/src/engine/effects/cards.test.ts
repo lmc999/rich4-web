@@ -151,13 +151,47 @@ describe('cards（30 张卡的效果）', () => {
     expect(sc.state.facilities[0]).toMatchObject({ owner: 1, level: 1, type: 'gas' });
   });
 
-  it.todo('8 拍卖：压 AUCTION 帧（M7 实现并发拍卖；本期菜单里不可用）');
-
-  it('8 拍卖：本期不可用，提交被拒绝、卡保留', () => {
+  it('8 拍卖：脚下的地产开拍（起拍 trunc(地价 × (1 + 等级 × 0.5)) × PI），出卡者不能出价，成交款进他的存款', () => {
     const sc = setup([8]);
     setLand(sc, 'L1', 1, 2);
-    expect(() => sc.useCard(0, 8, { t: 'underfoot', facility: null })).toThrow(/NOT_USABLE/);
-    expect(sc.player(0).cards).toEqual([8]);
+    const landPrice = sc.state.lands[0]!.landPrice;
+    const start = landPrice * 2;
+    const dep0 = sc.player(0).deposit;
+    sc.useCard(0, 8, { t: 'underfoot', facility: null });
+    expect(sc.event('AUCTION_STARTED')).toMatchObject({ lot: 'L1', seller: 0, source: 'card', start, bidders: [1, 2] });
+    // 1、2 号同时被问；出卡者没有
+    sc.expectAsk(1, 'AUCTION_BID').expectAsk(2, 'AUCTION_BID').expectNoAsk(0);
+    expect(sc.pending(1).options).toMatchObject({ lot: 'L1', level: 2, start, price: start, leader: null, others: 1 });
+    const stale = sc.pending(2).id;
+    sc.act(1, { type: 'BID', inc: 100 });
+    expect(sc.event('AUCTION_BID')).toMatchObject({ seat: 1, price: start + 100 });
+    // 1 号领先后 2 号的旧询问作废、重新发出；1 号不再被问
+    expect(() => sc.apply({ type: 'PASS', seat: 2, decisionId: stale })).toThrow(/STALE_DECISION/);
+    sc.expectAsk(2, 'AUCTION_BID').expectNoAsk(1);
+    expect((sc.pending(2).options as { increments: number[] }).increments).not.toContain(0);
+    sc.act(2, { type: 'PASS' });
+    expect(sc.event('AUCTION_ENDED')).toMatchObject({ lot: 'L1', winner: 1, price: start + 100 });
+    expect(sc.state.lands[0]).toMatchObject({ owner: 1, level: 2 });
+    expect(sc.player(0).deposit).toBe(dep0 + start + 100);
+    expect(sc.player(0).cards).toEqual([]);
+    sc.expectAsk(0, 'TURN_MENU');
+  });
+
+  it('8 拍卖：没人出价（流拍）则该地变为无主、建筑保留；自己的地也能拍', () => {
+    const sc = setup([8, 8]);
+    setLand(sc, 'L1', 0, 3);
+    sc.useCard(0, 8, { t: 'underfoot', facility: null });
+    sc.act(1, { type: 'PASS' }).act(2, { type: 'QUIT' });
+    expect(sc.event('AUCTION_ENDED')).toMatchObject({ lot: 'L1', winner: null });
+    expect(sc.state.lands[0]).toMatchObject({ owner: null, level: 3 });
+    // 现金 ≤ 起拍价、受困者不能出价
+    sc.setCash(1, 10, 0).edit((s) => {
+      s.players[2]!.st.hibernate = 3;
+    });
+    sc.useCard(0, 8, { t: 'underfoot', facility: null });
+    expect(sc.event('AUCTION_STARTED')).toMatchObject({ bidders: [] });
+    expect(sc.event('AUCTION_ENDED')).toMatchObject({ winner: null });
+    sc.expectAsk(0, 'TURN_MENU');
   });
 
   it('9 天使：同名路段每块 +1（不论地主，满级跳过）；0 级设施首建需附带类型', () => {

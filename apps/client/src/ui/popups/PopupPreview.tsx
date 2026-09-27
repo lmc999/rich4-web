@@ -114,7 +114,7 @@ export function PopupPreview(): ReactNode {
     const s = POPUP_SAMPLES[i]!;
     const st = usePopupStore.getState();
     const cur = st.current;
-    if (cur) st.close(cur.id);
+    if (cur) st.close(cur.popupId);
     const id = st.open(s.spec, s.ms, 600);
     // 预览里按真实时间自动关闭（对局中由 handler 按动画时钟关闭）
     setTimeout(() => usePopupStore.getState().close(id), Math.max(4000, s.ms * 2));

@@ -145,11 +145,17 @@ describe('items（13 种道具的效果）', () => {
     expect(sc.state.facilities[0]).toMatchObject({ level: 1, type: 'lab' });
   });
 
-  it('10 时光机：本期（M7 之前）不可用', () => {
+  it('10 时光机：还没有真人掷过骰（没有锚点）时不可用，道具保留；有锚点后可用（timeMachine 详见 scenario/endgame.test.ts）', () => {
     const sc = setup();
     give(sc, 0, ITEM.TIME_MACHINE);
     expect(() => sc.useItem(0, ITEM.TIME_MACHINE)).toThrow(/NOT_USABLE/);
     expect(sc.player(0).items[10]).toBe(1);
+    // 真人掷骰前记锚点：回到 0 号的回合菜单后就能用
+    sc.roll(0)
+      .untilMenu(0)
+      .give(0, { items: [{ item: ITEM.TIME_MACHINE, qty: 1 }] });
+    sc.useItem(0, ITEM.TIME_MACHINE);
+    sc.expectEvents(['ITEM_USED', 'TIME_REWOUND', 'SYNC']);
   });
 
   it('11 传送机：传送别人、神明、房屋；传送自己视为已掷骰（不结算落点）', () => {

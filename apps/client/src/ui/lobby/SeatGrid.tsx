@@ -2,6 +2,8 @@
 // 房主可以踢人、补电脑、改电脑预设、转让房主。
 // 读档后（net.md §8.4）：存档里的座位显示「原：角色 / 昵称」，没人坐的标「待认领」；可认领的座位给出认领按钮
 // （room:claimSeat：自己的存档座位可以把占座者让到观战），房主可给待认领的座位补电脑；不在存档里的座位不可用。
+// 读档后电脑座位的预设只读：存档里本来是电脑的显示原预设（服务器也锁定为存档配置），存档里是真人、由电脑补上的
+// 标「电脑代打」——读档开局用存档 state 里的 aiTraits，大厅改预设不会生效。
 import { AI_PRESETS, type AiPreset, CHARACTER_KEYS, type CharacterId, type SeatIndex } from '@rich4/shared/engine';
 import type { Result, RoomView, SeatView } from '@rich4/shared/net';
 import clsx from 'clsx';
@@ -98,7 +100,13 @@ function SeatCard({ seat, room }: { seat: SeatView; room: RoomView }): ReactNode
         <>
           <div className={l.seatName}>🤖 {t('lobby:seat.ai')}</div>
           <div className={l.seatSub}>{charName ?? t('lobby:seat.randomCharacter')}</div>
-          {host ? (
+          {ss ? (
+            <div className={l.seatStatus} data-testid={`seat-${i}-ai-saved`}>
+              {ss.wasHuman
+                ? t('lobby:saved.aiStandIn')
+                : t('lobby:saved.aiPresetSaved', { preset: t(`lobby:aiPreset.${o.ai.preset}`) })}
+            </div>
+          ) : host ? (
             <select
               className="select"
               value={o.ai.preset}

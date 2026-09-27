@@ -221,6 +221,8 @@ export interface TargetPickerProps {
   onConfirm(target: UseTarget): void;
   onCancel(): void;
   disabled?: boolean;
+  /** 额外说明（例如时光机要回到的回合），显示在目标区上方 */
+  note?: ReactNode;
 }
 
 /** 通用候选按钮 */
@@ -259,6 +261,7 @@ export function TargetPicker({
   map,
   me,
   source,
+  note,
   onConfirm,
   onCancel,
   disabled = false,
@@ -353,7 +356,16 @@ export function TargetPicker({
   let body: ReactNode;
   switch (c.t) {
     case 'none':
-      body = <p className={s.note}>{t('dlg.target.none')}</p>;
+      body = (
+        <>
+          {note && (
+            <p className={s.warn} data-testid="target-note">
+              {note}
+            </p>
+          )}
+          <p className={s.note}>{t('dlg.target.none')}</p>
+        </>
+      );
       break;
     case 'auto':
       body = <p className={s.note}>{t('dlg.target.auto')}</p>;

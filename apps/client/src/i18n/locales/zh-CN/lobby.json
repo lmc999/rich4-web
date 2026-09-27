@@ -14,7 +14,10 @@
     "settings": "设置",
     "devMap": "地图预览",
     "devGallery": "美术画廊",
-    "devDecisions": "对话框样板"
+    "devDecisions": "对话框样板",
+    "loadSave": "读取存档",
+    "loadTitle": "读取存档",
+    "loadHint": "选一个存档，会新建一个私密房间并读档：存档里的玩家进房后自动回到原座位，其余座位可以认领或补电脑。也可以导入 .r4save 文件。"
   },
   "closed": {
     "dissolved": "房间 {{code}} 已被房主解散",
@@ -182,6 +185,8 @@
     "fillAi": "补电脑",
     "notInSave": "未使用",
     "characterLocked": "读档后角色按存档锁定。",
-    "startHint": "还有座位待认领（{{seats}}）：等玩家认领，或由房主补电脑"
+    "startHint": "还有座位待认领（{{seats}}）：等玩家认领，或由房主补电脑",
+    "aiPresetSaved": "存档设定：{{preset}}",
+    "aiStandIn": "电脑代打（沿用存档里的设定）"
   }
 }

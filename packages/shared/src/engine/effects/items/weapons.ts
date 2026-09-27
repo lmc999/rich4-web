@@ -7,8 +7,9 @@
  *   hospitalDays > 0 时，窗内棋盘上的玩家毁车、住院（施放者本人也在判定范围内），窗内的恶人送医院。
  * 敌意：地主对施放者 +30×PI，被炸的人对施放者 +90×PI。
  * 事件：STRIKE（携带地产与物件的变化）→ GOD_LEFT / GOD_SPAWNED → RESEARCH_CANCELLED → 逐人 VEHICLE_DESTROYED、CONFINED。
- * 新闻 4（外星人）与 20（台风）属于 M7，复用本函数。
+ * 新闻 4（外星人：清为无主、伤人）与 20（台风：拆一级、不伤人）复用本函数（effects/news），以地产锚点为中心。
  */
+import type { World } from '../../../data/maps/types';
 import { CMB } from '../../../data/tables/combat';
 import { ECON } from '../../../data/tables/economy';
 import { inViewWindow } from '../../../geom/viewWindow';
@@ -42,11 +43,13 @@ export interface StrikeSpec {
   cause: Cause;
   /** 不在棋盘上、但也要受伤的座位（炸弹携带者本人） */
   extraVictims?: readonly SeatIndex[];
+  /** 方窗中心的世界坐标（新闻 4 / 20 以地产的锚点为中心）；缺省取 center 格的坐标 */
+  world?: World;
 }
 
 export function strike(ctx: Ctx, spec: StrikeSpec): void {
   const s = ctx.s;
-  const c = tileWorld(ctx.map, spec.center);
+  const c = spec.world ?? tileWorld(ctx.map, spec.center);
   const inWin = (tile: TileId) => ctx.map.hasTile(tile) && inViewWindow(c, tileWorld(ctx.map, tile), spec.half);
   const pi = (n: number) => timesPI(ctx, n);
 

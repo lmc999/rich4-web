@@ -16,7 +16,8 @@
  *     菜单里用卡（USE_CARD）与用道具（USE_ITEM）：候选与合法性来自 effects 注册表，扣卡 / 扣道具后发 CARD_USED / ITEM_USED
  *     再结算效果；遥控骰子（选点即掷）与对自己用传送机（视为已掷骰）是终结 intent。
  *     非终结操作之后回到 menu 时先复查：被关押（复仇、嫁祸、自己的飞弹）或冬眠 → 结束回合；被嫁祸梦游 → 自动乱走。
- * 钩子：时光机锚点（M7）。
+ * M7：ROLL 时记时光机锚点（effects/timeMachine.ts）；SURRENDER 压 SURRENDER 帧（flow/surrender.ts）；
+ *     公布栏的挂牌 / 撤牌 / 购买（flow/board.ts），回合开始时撤下失效的挂牌。
  */
 import { CMB } from '../../data/tables/combat';
 import { ECON } from '../../data/tables/economy';
@@ -31,6 +32,7 @@ import { timesPI } from '../effects/common';
 import { attachedSlot, leaveGod } from '../effects/gods/lifecycle';
 import { itemEffect } from '../effects/items/index';
 import { restoreEngineer, tickEngineer } from '../effects/items/vehicle';
+import { captureAnchor } from '../effects/timeMachine';
 import type { MenuRow } from '../effects/types';
 import { EngineInvariantError, EngineRuleError } from '../errors';
 import { daysBetween } from '../rules/calendar';
@@ -42,7 +44,9 @@ import type { ConfineWhere, FrameOf } from '../types/frames';
 import type { DiceFace, SeatIndex, TileId } from '../types/ids';
 import type { IntentOf, PlayerAction } from '../types/intent';
 import type { PlayerState, PlayerTurnState } from '../types/state';
+import { buyFromBoard, delistFromBoard, listOnBoard, pruneListings } from './board';
 import { buyStock, sellStock } from './stock';
+import { canSurrender } from './surrender';
 
 type TurnFrame = FrameOf<'TURN'>;
 
@@ -115,6 +119,8 @@ function start(ctx: Ctx, f: TurnFrame): void {
   const engineerDue = tickEngineer(p);
   const research = tickResearch(ctx, f.seat);
   ctx.emit('TURN_STARTED', { actor, turnNo: s.clock.turnNo });
+  // 公布栏：撤下资产已不在的挂牌
+  pruneListings(ctx);
 
   if (checkLoan(ctx, f.seat)) {
     f.stage = 'end';
@@ -234,7 +240,6 @@ function roll(ctx: Ctx, f: TurnFrame, p: PlayerState, a: IntentOf<'ROLL'>): void
     }
     p.diceCount = a.dice;
   }
-  // TODO(M7)：timeMachine !== 'disabled' 且 controller=human 时，用 applyAction 入参（掷骰前的世界）刷新时光机锚点
   const seat: SeatIndex = f.seat;
   let steps: number;
   let dice: DiceFace[] = [];
@@ -299,7 +304,7 @@ function useItem(ctx: Ctx, f: TurnFrame, p: PlayerState, a: IntentOf<'USE_ITEM'>
   else if (p.turn.teleportedSelf) f.stage = 'end';
 }
 
-/** 非终结的菜单操作：股票买卖（M4）、卡片与道具（M6）；公布栏属于 M7（现在抛 NOT_USABLE） */
+/** 非终结的菜单操作：股票买卖（M4）、卡片与道具（M6）、公布栏（M7，flow/board.ts） */
 function menuAction(ctx: Ctx, f: TurnFrame, p: PlayerState, a: PlayerAction): void {
   switch (a.type) {
     case 'USE_CARD':
@@ -317,8 +322,17 @@ function menuAction(ctx: Ctx, f: TurnFrame, p: PlayerState, a: PlayerAction): vo
       p.turn.log.push('stockSell');
       sellStock(ctx, f.seat, a.stock, a.shares);
       return;
+    case 'BOARD_LIST':
+      listOnBoard(ctx, f.seat, a.asset, a.price);
+      return;
+    case 'BOARD_DELIST':
+      delistFromBoard(ctx, f.seat, a.listingId);
+      return;
+    case 'BOARD_BUY':
+      buyFromBoard(ctx, f.seat, a.listingId);
+      return;
     default:
-      throw new EngineRuleError('NOT_USABLE', `${a.type} is not available yet`, { intent: a.type });
+      throw new EngineRuleError('NOT_USABLE', `${a.type} is not available`, { intent: a.type });
   }
 }
 
@@ -424,11 +438,16 @@ export const TURN: FrameHandler<TurnFrame> = {
     const p = ctx.player(f.seat);
     switch (a.type) {
       case 'ROLL':
+        // 时光机锚点：真人掷骰前的世界（还没有任何修改；rules.timeMachine='disabled' 或电脑座位时不记）
+        captureAnchor(ctx, f.seat);
         roll(ctx, f, p, a);
         return;
       case 'SURRENDER':
-        // TODO(M7)：投降（≥2 名真人时召唤死神）；options.canSurrender=false
-        throw new EngineRuleError('NOT_ALLOWED', 'surrender is not available yet');
+        // 投降（真人 ≥ 2、在场 ≥ 3）：压 SURRENDER 帧（召唤死神 → 清算），本回合随即结束
+        if (!canSurrender(ctx.s, f.seat)) throw new EngineRuleError('NOT_ALLOWED', 'cannot surrender now');
+        f.stage = 'end';
+        ctx.push({ k: 'SURRENDER', seat: f.seat, stage: 'announce', auctionLots: [] });
+        return;
       default:
         if (p.turn.menuActions >= MENU_ACTION_LIMIT) {
           throw new EngineRuleError('MENU_LIMIT', `more than ${MENU_ACTION_LIMIT} menu actions this turn`);

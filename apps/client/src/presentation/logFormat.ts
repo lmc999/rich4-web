@@ -1,6 +1,7 @@
 // 事件 → 中文日志行（design/client.md §2 logFormat）。对 GameEvent['type'] 穷举；返回 null 表示不记日志。
 // 文案模板在 i18n events:log.<TYPE>，参数里的名字、金额已经格式化。
 import type { GameEvent, GameEventOf, GameEventType } from '@rich4/shared/engine';
+import { fateShown, fateTitle, magicEffectName, newsBody, newsHeadline, villainActionText } from './eventText';
 import type { NameKit } from './names';
 
 type Fmt<T extends GameEventType> = (e: GameEventOf<T>, n: NameKit) => string | null;
@@ -122,10 +123,32 @@ export const LOG_FORMAT = {
       { who: n.seat(e.seat), n: e.days },
       (e as { reason?: string }).reason === 'sunday' ? 'sunday' : undefined,
     ),
-  NEWS: (e, n) => L(n, 'NEWS', { id: e.id + 1, text: n.t(`news:${e.id}.headline`, { ...e.params, defaultValue: '' }) }),
-  FATE: (e, n) => L(n, 'FATE', { who: n.seat(e.seat), id: e.id + 1 }),
-  MAGIC_CONDITION: (e, n) => L(n, 'MAGIC_CONDITION', { who: n.seat(e.caster) }),
-  MAGIC_CAST: (e, n) => L(n, 'MAGIC_CAST', { who: n.seat(e.caster) }),
+  NEWS: (e, n) => L(n, 'NEWS', { text: newsHeadline(n, e.id, e.params), body: newsBody(n, e.id, e.params) }),
+  FATE: (e, n) => {
+    const shown = fateShown(n, e);
+    return L(n, 'FATE', {
+      who: n.seat(e.seat),
+      title: fateTitle(n, e.id),
+      text: n.t(`fate:${e.id}.text`, { ...shown.params, defaultValue: '' }),
+    });
+  },
+  MAGIC_CONDITION: (e, n) =>
+    L(
+      n,
+      'MAGIC_CONDITION',
+      {
+        who: n.seat(e.caster),
+        cond: n.t(`magic:condition.${e.cond}`),
+        targets: e.targets.map((s) => n.seat(s)).join(n.t('events:listSep')),
+      },
+      e.targets.length === 0 ? 'none' : undefined,
+    ),
+  MAGIC_CAST: (e, n) =>
+    L(n, 'MAGIC_CAST', {
+      who: n.seat(e.caster),
+      effect: magicEffectName(n, e.effect),
+      targets: e.targets.map((s) => n.seat(s)).join(n.t('events:listSep')),
+    }),
   LOTTERY_TICKET: (e, n) => L(n, 'LOTTERY_TICKET', { who: n.seat(e.seat), n: e.number + 1 }),
   LOTTERY_DRAW: (e, n) =>
     e.number === null
@@ -141,7 +164,7 @@ export const LOG_FORMAT = {
   MINIGAME_ENDED: (e, n) => L(n, 'MINIGAME_ENDED', { who: n.seat(e.seat), n: e.score }),
   BAIL: (e, n) => L(n, 'BAIL', { who: n.seat(e.by), target: n.seat(e.seat) }),
   VILLAIN_HIRED: (e, n) => L(n, 'VILLAIN_HIRED', { who: n.seat(e.by), villain: n.villain(e.kind) }),
-  VILLAIN_ACTION: (e, n) => L(n, 'VILLAIN_ACTION', { villain: n.villain(e.kind), target: n.seat(e.victim) }),
+  VILLAIN_ACTION: (e, n) => villainActionText(n, e),
   VILLAIN_HOME: (e, n) => L(n, 'VILLAIN_HOME', { villain: n.villain(e.kind) }),
   BEGGAR_ALMS: (e, n) => L(n, 'BEGGAR_ALMS', { who: n.seat(e.payer), amount: m(n, e.amount) }),
   STOCK_TRADED: (e, n) =>

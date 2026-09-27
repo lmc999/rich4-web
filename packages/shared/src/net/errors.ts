@@ -39,7 +39,9 @@ export type ErrorCode =
   | 'SAVE_INCOMPATIBLE'
   | 'SAVE_FORBIDDEN'
   // 社交
-  | 'CHAT_DISABLED';
+  | 'CHAT_DISABLED'
+  // 访问控制（原版素材包门禁：共享口令或房间邀请授权，docs/design/original-skin.md U4）
+  | 'ACCESS_REQUIRED';
 
 export const ERROR_MESSAGES_ZH = Object.freeze({
   BAD_HANDSHAKE: '连接参数无效，请刷新页面',
@@ -73,6 +75,7 @@ export const ERROR_MESSAGES_ZH = Object.freeze({
   SAVE_INCOMPATIBLE: '存档与当前版本或地图不兼容',
   SAVE_FORBIDDEN: '你无权读取这个存档',
   CHAT_DISABLED: '聊天已关闭',
+  ACCESS_REQUIRED: '需要访问口令或邀请链接才能进入',
 } as const satisfies { readonly [C in ErrorCode]: string });
 
 export const ERROR_CODES: readonly ErrorCode[] = Object.freeze(Object.keys(ERROR_MESSAGES_ZH) as ErrorCode[]);

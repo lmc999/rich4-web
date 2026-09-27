@@ -3,7 +3,8 @@
  * 使用独立的 xoshiro 流，不消耗引擎 RNG。覆盖 M1 的 TURN_MENU（掷骰颗数）、BUY_LAND、UPGRADE_LAND，
  * M4 的股票买卖、银行、设施、研究所、百货、乐透、认购、建设公司，
  * M6 的用卡、用道具（按候选取样）、保释、免费卡、嫁祸卡、满手弃牌；
- * 其余 kind 退回 defaultIntent（它总是合法的），后续里程碑实现相应决策时在这里补上候选。
+ * M7 的公布栏（挂牌 / 撤牌 / 购买）、投降、雇恶人、拍卖出价、魔法屋、死神目标、生日挑卡；
+ * 其余 kind 退回 defaultIntent（它总是合法的）。
  * anyNode（飞弹、核弹）没有候选列表：用 hint.nodes（randomAction 取玩家与物件所在格）。
  */
 import { seedFromHex, type XoshiroState, xoshiroInt } from '../../util/rng/xoshiro';
@@ -122,11 +123,64 @@ export function candidateIntents(d: PendingDecision, hint: IntentHint = { nodes:
           if (!r.usable) continue;
           for (const target of sampleTargets(r.targets, hint)) out.push({ type: 'USE_ITEM', item: r.item, target });
         }
+        // M7 公布栏：买别人的、撤自己的、挂一件（地产按上限的一半标价）
+        for (const l of o.board.listings.slice(0, TARGET_SAMPLES)) {
+          if (l.mine) out.push({ type: 'BOARD_DELIST', listingId: l.id });
+          else if (l.affordable) out.push({ type: 'BOARD_BUY', listingId: l.id });
+        }
+        if (o.board.canList && o.board.mine < 7) {
+          // 未挂出的数量 = 持有量 − 自己有效挂牌已认领的数量（options 只列有效挂牌）
+          const mine = o.board.listings.filter((l) => l.mine).map((l) => l.asset);
+          const listed = (pred: (a: (typeof mine)[number]) => number) => mine.reduce((n, a) => n + pred(a), 0);
+          const cap = o.board.lotCaps[0];
+          if (cap) out.push({ type: 'BOARD_LIST', asset: { t: 'lot', lot: cap.lot }, price: half(cap.cap) });
+          const card = o.cards.find(
+            (r) =>
+              o.cards.filter((x) => x.card === r.card).length -
+                listed((a) => (a.t === 'card' && a.card === r.card ? 1 : 0)) >
+              0,
+          );
+          if (card) out.push({ type: 'BOARD_LIST', asset: { t: 'card', card: card.card }, price: 1000 });
+          for (const r of o.stock.rows) {
+            const free = r.shares - listed((a) => (a.t === 'stock' && a.stock === r.idx ? a.shares : 0));
+            if (free > 0) {
+              out.push({ type: 'BOARD_LIST', asset: { t: 'stock', stock: r.idx, shares: free }, price: 500 });
+              break;
+            }
+          }
+          const item = o.items.find(
+            (r) => r.count - listed((a) => (a.t === 'item' && a.item === r.item ? a.qty : 0)) > 0,
+          );
+          if (item) out.push({ type: 'BOARD_LIST', asset: { t: 'item', item: item.item, qty: 1 }, price: 300 });
+        }
       }
+      if (o.canSurrender) out.push({ type: 'SURRENDER' });
       return out;
     }
     case 'BAIL':
-      return [{ type: 'SKIP' }, ...a.options.inmates.map((i): PlayerIntent => ({ type: 'BAIL', target: i.seat }))];
+      return [
+        { type: 'SKIP' },
+        ...a.options.inmates.map((i): PlayerIntent => ({ type: 'BAIL', target: i.seat })),
+        ...a.options.villains.filter((v) => v.available).map((v): PlayerIntent => ({ type: 'HIRE', villain: v.kind })),
+      ];
+    case 'AUCTION_BID':
+      return [
+        { type: 'PASS' },
+        { type: 'QUIT' },
+        ...a.options.increments.map((inc): PlayerIntent => ({ type: 'BID', inc })),
+      ];
+    case 'MAGIC_CAST':
+      return a.options.effects.map((effect): PlayerIntent => ({ type: 'MAGIC_CAST', effect }));
+    case 'DEATH_GOD_TARGET':
+      return a.options.candidates.map((target): PlayerIntent => ({ type: 'DEATH_GOD_TARGET', target }));
+    case 'BIRTHDAY_PICK':
+      return [
+        d.defaultIntent,
+        {
+          type: 'PICK_CARDS',
+          picks: a.options.victims.map((v) => ({ from: v.seat, slot: v.cards[v.cards.length - 1]!.slot })),
+        },
+      ];
     case 'USE_FREE_CARD':
       return [{ type: 'CONFIRM' }, { type: 'DECLINE' }];
     case 'SCAPEGOAT':

@@ -37,6 +37,8 @@ export interface FatePopupSpec {
   title: string;
   text: string;
   amountText: string | null;
+  /** 金额行的颜色（缺省按 amountText 是否以 '-' 开头） */
+  amountTone?: 'gain' | 'loss' | 'neutral';
   tone: 'good' | 'bad' | 'neutral';
   blessingText: string | null;
 }
@@ -110,7 +112,11 @@ export type PopupSpec =
 export type PopupKind = PopupSpec['kind'];
 
 export type OpenPopup = PopupSpec & {
-  id: number;
+  /**
+   * 弹窗实例号（open 返回值，close / skip 用它）。不能叫 id：新闻、命运的 spec 自带 id（新闻 / 命运编号），
+   * 合并时会被覆盖（曾让 data-news / data-fate 显示成实例号）。
+   */
+  popupId: number;
   /** 展示时长（1x 时钟毫秒） */
   ms: number;
   /**
@@ -138,6 +144,8 @@ export interface AuctionBannerState {
   result: string | null;
   /** 每次出价 +1（组件用它重放出价动画） */
   tick: number;
+  /** 由待决策推出（没有经过演出）：领先者未知，价格为现价 */
+  derived?: boolean;
 }
 
 export interface PopupState {
@@ -170,11 +178,11 @@ export const usePopupStore = create<PopupState>()((set, get) => ({
   open: (spec, ms, minMs = Math.min(ms, 1200), speed = 1) => {
     const id = ++seq;
     const k = speed > 0 ? speed : 1;
-    set({ current: { ...spec, id, ms, realMs: ms / k, minMs: minMs / k } as OpenPopup });
+    set({ current: { ...spec, popupId: id, ms, realMs: ms / k, minMs: minMs / k } as OpenPopup });
     return id;
   },
   close: (id) => {
-    if (get().current?.id === id) set({ current: null });
+    if (get().current?.popupId === id) set({ current: null });
     skipListeners.delete(id);
   },
   skip: (id) => {

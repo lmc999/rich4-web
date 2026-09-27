@@ -1,7 +1,7 @@
 // HUD（design/client.md §5.1、§12.1 dom）：玩家条数值、行动区掷骰、等待条、决策层（动画播完才出现）、断线遮罩、终局。
 // Pixi 不在 jsdom 挂载：BoardCanvas 用替身。
 import type { YourDecision } from '@rich4/shared/net';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClientProvider } from '../../app/services';
@@ -14,6 +14,8 @@ import { ai, human, roomView } from '../../test/roomFixtures';
 import { selfPlay } from '../../test/selfPlay';
 import GameScreen from '../screens/GameScreen';
 import { ReconnectOverlay } from '../system/ReconnectOverlay';
+import { useTrusteeDialog } from '../system/TrusteeSettings';
+import { AUTOPILOT_LONG_PRESS_MS } from './ActionPad';
 import { Toasts } from './Overlays';
 
 vi.mock('../screens/BoardCanvas', () => ({
@@ -47,6 +49,7 @@ afterEach(() => {
   useGameStore.getState().clear();
   useUiStore.getState().clear();
   useConnectionStore.getState().reset();
+  useTrusteeDialog.getState().setOpen(false);
 });
 
 describe('GameScreen HUD', () => {
@@ -161,6 +164,23 @@ describe('GameScreen HUD', () => {
     await waitFor(() => expect(screen.queryByTestId('decision-layer')).toBeNull());
   });
 
+  it('本人回合点「更多」：展开完整回合菜单（公布栏、投降入口）；点「公布栏」直接打开公布栏子页', async () => {
+    const b = sp.batches.find((x) => x.yourDecision?.kind === 'TURN_MENU')!;
+    act(() =>
+      useGameStore
+        .getState()
+        .resetTo({ epoch: 1, seq: b.seq, view: b.view, pending: b.pending, decision: b.yourDecision as YourDecision }),
+    );
+    renderGame();
+    await userEvent.click(screen.getByTestId('action-menu'));
+    expect(await screen.findByTestId('decision-layer')).toHaveAttribute('data-kind', 'TURN_MENU');
+    expect(await screen.findByTestId('turn-board')).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('decision-collapse'));
+    await waitFor(() => expect(screen.queryByTestId('decision-layer')).toBeNull());
+    await userEvent.click(screen.getByTestId('action-board'));
+    expect(await screen.findByTestId('turn-board-sheet')).toBeInTheDocument();
+  });
+
   it('非本人回合点「查看」打开玩家与地产面板', async () => {
     const b = sp.batches[5]!;
     act(() =>
@@ -186,6 +206,166 @@ describe('GameScreen HUD', () => {
     expect(screen.getByTestId('game-over')).toHaveTextContent('游戏结束');
     await userEvent.click(screen.getByTestId('over-rematch'));
     expect(transport.payloads('room:rematch')).toHaveLength(1);
+  });
+
+  it('终局面板用 GameOverScreen：按排名列出每人的资产构成（现金 / 存款 / 股票 / 地产，贷款另列）', async () => {
+    const b = sp.batches[3]!;
+    const view = {
+      ...b.view,
+      players: b.view.players.map((p) => (p.seat === 1 ? { ...p, loan: 5000, alive: false } : p)),
+    };
+    const ranking = [...view.players]
+      .map((p) => ({ seat: p.seat, netWorth: p.cash + p.deposit - p.loan + 1000 * (p.seat + 1), alive: p.alive }))
+      .sort((x, y) => y.netWorth - x.netWorth);
+    act(() => {
+      useGameStore.getState().resetTo({ epoch: 1, seq: b.seq, view, pending: [], decision: null });
+      useGameStore.getState().setOver({
+        epoch: 1,
+        result: { reason: 'wealthTarget', code: 2, winner: ranking[0]!.seat, date: 20050601, elapsedDays: 30, ranking },
+        ranking: ranking.map(({ seat, netWorth }) => ({ seat, netWorth })),
+      });
+    });
+    const { transport } = renderGame();
+    const over = screen.getByTestId('game-over');
+    const scr = within(over).getByTestId('game-over-screen');
+    expect(scr).toHaveTextContent('游戏结束');
+    expect(scr).toHaveTextContent('资产达到目标');
+    // 排名与 result.ranking 一致，每行都有资产构成条（aria-label 列出各项金额）
+    ranking.forEach((r, i) => {
+      const row = within(scr).getByTestId(`over-rank-${i + 1}`);
+      expect(row).toHaveAttribute('data-seat', String(r.seat));
+      const parts = within(row).getByTestId(`over-parts-${r.seat}`);
+      const p = view.players.find((x) => x.seat === r.seat)!;
+      expect(parts.getAttribute('aria-label')).toContain(`现金 ${p.cash.toLocaleString('en-US')}`);
+      expect(parts.getAttribute('aria-label')).toContain('地产');
+    });
+    // 贷款另列；出局者标出
+    const loanRow = within(scr).getByTestId(`over-parts-1`);
+    expect(loanRow.getAttribute('aria-label')).toContain('-5,000');
+    // 结算后的操作仍在：离开与再来一局（房主）
+    await userEvent.click(within(over).getByTestId('over-rematch'));
+    expect(transport.payloads('room:rematch')).toHaveLength(1);
+    expect(within(over).getByTestId('over-leave')).toBeInTheDocument();
+  });
+
+  it('game:over 的 result.ranking 为空时退回消息里的排名', () => {
+    const b = sp.batches[3]!;
+    act(() => {
+      useGameStore.getState().resetTo({ epoch: 1, seq: b.seq, view: b.view, pending: [], decision: null });
+      useGameStore.getState().setOver({
+        epoch: 1,
+        result: { reason: 'timeLimit', code: 2, winner: null, date: 20050601, elapsedDays: 30, ranking: [] },
+        ranking: b.view.players.map((p) => ({ seat: p.seat, netWorth: p.cash })),
+      });
+    });
+    renderGame();
+    expect(screen.getByTestId('game-over-screen')).toHaveTextContent('没有赢家');
+    expect(screen.getAllByTestId(/^over-rank-/)).toHaveLength(b.view.players.length);
+  });
+});
+
+describe('ActionPad 托管按钮', () => {
+  const turn = () => {
+    const i = sp.batches.findIndex((x) => x.yourDecision?.kind === 'TURN_MENU');
+    const b = sp.batches[i]!;
+    act(() =>
+      useGameStore.getState().resetTo({
+        epoch: 1,
+        seq: b.seq,
+        view: b.view,
+        pending: b.pending,
+        decision: b.yourDecision as YourDecision,
+      }),
+    );
+  };
+
+  it('短按切换托管（game:autopilot），不打开托管设置', async () => {
+    turn();
+    const { transport } = renderGame();
+    await userEvent.click(screen.getByTestId('action-autopilot'));
+    expect(transport.payloads('game:autopilot')).toEqual([{ on: true }]);
+    expect(screen.queryByTestId('trustee-dialog')).toBeNull();
+  });
+
+  it('⚙「托管设置…」打开托管设置对话框，不切换托管', async () => {
+    turn();
+    const { transport } = renderGame();
+    const gear = screen.getByTestId('action-trustee-settings');
+    expect(gear).toHaveAccessibleName('托管设置…');
+    await userEvent.click(gear);
+    expect(await screen.findByTestId('trustee-dialog')).toBeInTheDocument();
+    expect(transport.payloads('game:autopilot')).toEqual([]);
+  });
+
+  it('长按或右键 🤖 打开托管设置；随后的 click 不切换托管', async () => {
+    turn();
+    const { transport } = renderGame();
+    const btn = screen.getByTestId('action-autopilot');
+    fireEvent.pointerDown(btn, { button: 0 });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, AUTOPILOT_LONG_PRESS_MS + 60));
+    });
+    fireEvent.pointerUp(btn, { button: 0 });
+    fireEvent.click(btn, { detail: 1 });
+    expect(await screen.findByTestId('trustee-dialog')).toBeInTheDocument();
+    expect(transport.payloads('game:autopilot')).toEqual([]);
+    act(() => useTrusteeDialog.getState().setOpen(false));
+    await waitFor(() => expect(screen.queryByTestId('trustee-dialog')).toBeNull());
+    fireEvent.contextMenu(btn);
+    expect(await screen.findByTestId('trustee-dialog')).toBeInTheDocument();
+    expect(transport.payloads('game:autopilot')).toEqual([]);
+    // 按下不久就松开：照常切换
+    act(() => useTrusteeDialog.getState().setOpen(false));
+    fireEvent.pointerDown(btn, { button: 0 });
+    fireEvent.pointerUp(btn, { button: 0 });
+    fireEvent.click(btn, { detail: 1 });
+    expect(transport.payloads('game:autopilot')).toEqual([{ on: true }]);
+  });
+});
+
+describe('HUD 徽章', () => {
+  it('玩家面板用 GodBadge / StatusBadges；玩家条显示紧凑徽章（神明头像 + 天数、状态图标 + 数字）', () => {
+    const b = sp.batches[10]!;
+    const view = {
+      ...b.view,
+      players: b.view.players.map((p) =>
+        p.seat === 2
+          ? {
+              ...p,
+              god: { kind: 2 as const, days: 4 },
+              st: { ...p.st, jail: 3 },
+              bomb: { fuse: 12 },
+              alliance: { seat: 0 as const, days: 5 },
+            }
+          : p,
+      ),
+    };
+    act(() => {
+      useGameStore.getState().resetTo({ epoch: 1, seq: b.seq, view, pending: [], decision: null });
+      useUiStore.getState().setInspectSeat(2);
+    });
+    renderGame();
+    const panel = screen.getByTestId('player-panel');
+    expect(panel).toHaveAttribute('data-seat', '2');
+    const badges = within(panel).getByTestId('status-badges-2');
+    expect(within(badges).getByTestId('god-badge')).toHaveTextContent('大财神');
+    expect(within(badges).getByTestId('god-badge')).toHaveAttribute('data-days', '4');
+    expect(badges.querySelector('[data-status="jail"]')).toHaveTextContent('坐牢 4 天');
+    expect(badges.querySelector('[data-status="bomb"]')).toHaveTextContent('12 步');
+    // 同盟对象按角色名显示
+    const p0 = view.players.find((p) => p.seat === 0)!;
+    expect(p0).toBeDefined();
+    expect(badges.querySelector('[data-status="alliance"]')?.textContent).toMatch(/5 天 · \S+/);
+    // 玩家条：紧凑徽章，完整文案在无障碍标签里
+    const chip = screen.getByTestId('chip-2');
+    const compact = within(chip).getByTestId('chip-status-2');
+    const god = within(compact).getByTestId('god-badge');
+    expect(god).toHaveAttribute('title', '大财神 · 4 天');
+    expect(god).toHaveTextContent('4');
+    expect(within(compact).getByRole('img', { name: '坐牢 4 天' })).toHaveTextContent('4');
+    expect(within(compact).getByRole('img', { name: /💣 12 步/ })).toBeInTheDocument();
+    // 没有状态的座位不渲染徽章行
+    expect(within(screen.getByTestId('chip-1')).queryByTestId('chip-status-1')).toBeNull();
   });
 });
 

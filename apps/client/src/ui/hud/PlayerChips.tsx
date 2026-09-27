@@ -1,5 +1,5 @@
 // 玩家条 ×4（design/client.md §5.1）：头像、名字、现金 / 存款 / 点券（带 data-testid 与精确数值，E2E 比对四个页面一致）、
-// 轮次高亮、离线 / 托管 / 破产徽标；点击切换 PlayerPanel 查看对象。
+// 轮次高亮、离线 / 托管 / 破产徽标、紧凑的神明与状态徽章（GodBadge / StatusBadges compact）；点击切换 PlayerPanel 查看对象。
 import { CHARACTER_KEYS, type SeatIndex } from '@rich4/shared/engine';
 import type { RoomView } from '@rich4/shared/net';
 import { type GameView, isAutopilot, type PlayerView } from '@rich4/shared/view';
@@ -12,6 +12,7 @@ import { type StatField, useUiStore } from '../../store/uiStore';
 import { Avatar, SeatMark } from '../common/Avatar';
 import { useHeadBubble } from '../social/socialStore';
 import h from './hud.module.css';
+import { StatusBadges } from './StatusBadges';
 
 export const FLASH_MS = 1300;
 
@@ -98,6 +99,7 @@ function Chip({ p, room, current }: { p: PlayerView; room: RoomView; current: bo
             <Stat seat={p.seat} field="deposit" value={p.deposit} short label={t('hud:stat.deposit')} test />
             <Stat seat={p.seat} field="points" value={p.points} label={t('hud:stat.points')} test />
           </span>
+          <StatusBadges player={p} compact testId={`chip-status-${p.seat}`} />
         </span>
         <span className={h.chipBadges}>
           {!p.alive && <span className={h.badgeOut}>{t('hud:chips.out')}</span>}

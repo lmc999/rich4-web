@@ -104,6 +104,28 @@ export const COMBAT = Object.freeze({
   /** 工程车在加油站的收费倍率、骰子数见 facilities / setup；持续回合数见 ECON.ENGINEER_TURNS */
   BLESS_HIGH: c(100, '加持：值 > 100 必定 high', [X('0x44b896'), R('docs/research/g_arbitration.md §2.b')]),
   BLESS_MID: c(50, '加持：50 < 值 ≤ 100 时 rand & 1', [X('0x44b896'), R('docs/research/g_arbitration.md §2.b')]),
+
+  // ───────────── M7：四大恶人、拍卖、投降、公布栏 ─────────────
+  /** 强盗路过银行：每位非雇主在场玩家 trunc(存款 × 0.2)（先存款后现金，进雇主现金） */
+  ROBBER_BANK_RATE: c(0.2, '强盗抢银行比例（常量 0x463b60 = 0.2；社区 50% 不采用）', [
+    X('0x463b60'),
+    R('docs/research/g_villains.md §3、§7.2'),
+  ]),
+  /** 小偷拿走宝箱：雇主点券 +500 */
+  THIEF_CHEST_POINTS: c(500, '小偷拿走宝箱，雇主点券 +500', [R('docs/research/g_villains.md §3')]),
+  /** 拍卖加价的最小一档（出价档 0/100/500/1000/5000/10000） */
+  AUCTION_MIN_INC: c(100, '加价最小一档 100', [
+    R('docs/research/g_arbitration.md §2.j'),
+    R('docs/design/engine.md §9.5'),
+  ]),
+  /** 破产 / 投降清算：释放的地产 > 3 处时随机抽 3 处拍卖（成交款进公库） */
+  LIQUIDATION_AUCTIONS: c(3, '清算拍卖场数（释放 > 3 处才拍）', [R('docs/research/r_property.md §9.4')]),
+  /** 投降召唤死神：真人 ≥ 2、参赛 ≥ 3（投降后仍 ≥ 2 人） */
+  SURRENDER_MIN_HUMANS: c(2, '投降需要至少 2 名在场真人', [R('docs/research/r_deities.md §7.13')], 'medium'),
+  SURRENDER_MIN_PLAYERS: c(3, '投降需要至少 3 名在场玩家', [R('docs/research/r_deities.md §7.13')], 'medium'),
+  /** 公布栏：每人 7 个挂牌槽；地产标价上限 = 市价 × 10（市价 = (地价 + 等级 × 房价) × PI） */
+  BOARD_SLOTS: c(7, '公布栏每人 7 个挂牌槽', [R('docs/research/r_property.md §9.3')], 'medium'),
+  BOARD_LOT_CAP_X: c(10, '地产挂牌标价上限 = 市价 × 10', [R('docs/research/r_property.md §9.3')], 'medium'),
 } as const);
 
 export type CombatKey = keyof typeof COMBAT;

@@ -1,19 +1,94 @@
 // 行动按钮区（design/client.md §5.1）：[卡片][道具][股票][查看][托管] + 骰子数选择 + [🎲 掷骰]；另有倍速与跳过动画。
 // 掷骰按钮只在「我的 TURN_MENU 已就绪（动画播完）且未提交」时可用；按钮全部带 data-testid，E2E 一律点这里。
+// 🤖：点按切换托管（game:autopilot）；长按 / 右键或旁边的 ⚙ 打开托管设置（openTrusteeSettings，对话框挂在 SystemMenu）。
 import type { DiceCount } from '@rich4/shared/engine';
 import type { RoomView } from '@rich4/shared/net';
 import { isAutopilot, isDecisionForYouOf } from '@rich4/shared/view';
 import clsx from 'clsx';
-import type { ReactNode } from 'react';
+import { type MouseEvent, type PointerEvent, type ReactNode, useEffect, useRef } from 'react';
 import { useClient } from '../../app/services';
 import { useTx } from '../../i18n/tx';
 import { useGameStore } from '../../store/gameStore';
 import { mySeat } from '../../store/roomStore';
 import { type AnimSpeed, useSettingsStore } from '../../store/settingsStore';
 import { type PanelId, useUiStore } from '../../store/uiStore';
+import { openTrusteeSettings } from '../system/TrusteeSettings';
 import h from './hud.module.css';
 
 const DICE_GLYPH = ['⚀', '⚁', '⚂'] as const;
+
+/** 🤖 长按多久打开托管设置 */
+export const AUTOPILOT_LONG_PRESS_MS = 550;
+
+/** 托管按钮：点按切换；长按、右键或 ⚙ 打开托管设置 */
+function AutopilotButtons({ auto, onToggle }: { auto: boolean; onToggle(): void }): ReactNode {
+  const t = useTx();
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 本次按下已触发长按：随后的 click 不再切换 */
+  const longPressed = useRef(false);
+  const clear = (): void => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  useEffect(
+    () => () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+    },
+    [],
+  );
+  const openSettings = (): void => {
+    clear();
+    longPressed.current = true;
+    openTrusteeSettings();
+  };
+  const down = (e: PointerEvent<HTMLButtonElement>): void => {
+    longPressed.current = false;
+    clear();
+    // 只有主键（鼠标左键、触摸、笔）才计长按；右键另由 contextmenu 处理
+    if (e.button > 0) return;
+    timer.current = setTimeout(openSettings, AUTOPILOT_LONG_PRESS_MS);
+  };
+  const click = (e: MouseEvent<HTMLButtonElement>): void => {
+    // 键盘触发的 click（detail 0）总是切换
+    if (longPressed.current && e.detail !== 0) {
+      longPressed.current = false;
+      return;
+    }
+    onToggle();
+  };
+  return (
+    <span className={h.padSplit}>
+      <button
+        type="button"
+        className={clsx('btn btn--sm', auto ? 'btn--blue' : 'btn--cream')}
+        aria-pressed={auto}
+        title={t('ui:trustee.toggleHint')}
+        onPointerDown={down}
+        onPointerUp={clear}
+        onPointerLeave={clear}
+        onPointerCancel={clear}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          openSettings();
+        }}
+        onClick={click}
+        data-testid="action-autopilot"
+      >
+        🤖 <span className={h.padLabel}>{auto ? t('hud:action.autopilotOn') : t('hud:action.autopilot')}</span>
+      </button>
+      <button
+        type="button"
+        className="btn btn--sm btn--cream"
+        onClick={() => openTrusteeSettings()}
+        aria-label={t('ui:trustee.openSettings')}
+        title={t('ui:trustee.openSettings')}
+        data-testid="action-trustee-settings"
+      >
+        ⚙
+      </button>
+    </span>
+  );
+}
 
 export function ActionPad({ room, onFocusMe }: { room: RoomView; onFocusMe(): void }): ReactNode {
   const t = useTx();
@@ -85,18 +160,29 @@ export function ActionPad({ room, onFocusMe }: { room: RoomView; onFocusMe(): vo
         >
           📈 <span className={h.padLabel}>{t('hud:action.stock')}</span>
         </button>
+        <button
+          type="button"
+          className="btn btn--sm btn--cream"
+          onClick={() => open('board')}
+          data-testid="action-board"
+        >
+          📋 <span className={h.padLabel}>{t('hud:action.board')}</span>
+        </button>
         <button type="button" className="btn btn--sm btn--cream" onClick={() => open('info')} data-testid="action-info">
           🔍 <span className={h.padLabel}>{t('hud:action.info')}</span>
         </button>
+        {/* 本人回合：展开完整的回合菜单（公布栏、投降、时光机提示等都在这里） */}
         <button
           type="button"
-          className={clsx('btn btn--sm', auto ? 'btn--blue' : 'btn--cream')}
-          aria-pressed={auto}
-          onClick={() => void client.autopilot(!auto)}
-          data-testid="action-autopilot"
+          className="btn btn--sm btn--cream"
+          disabled={!ready}
+          onClick={() => useUiStore.getState().openMenu(null)}
+          data-testid="action-menu"
+          title={t('hud:action.moreTitle')}
         >
-          🤖 <span className={h.padLabel}>{auto ? t('hud:action.autopilotOn') : t('hud:action.autopilot')}</span>
+          ⋯ <span className={h.padLabel}>{t('hud:action.more')}</span>
         </button>
+        <AutopilotButtons auto={auto} onToggle={() => void client.autopilot(!auto)} />
         <button
           type="button"
           className="btn btn--sm btn--cream"

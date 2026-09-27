@@ -260,7 +260,8 @@ const PendingSchema = z.strictObject({
 
 const u32 = z.int().min(0).max(0xffffffff);
 
-export const GameStateSchema = z.strictObject({
+/** 公开世界（PublicWorld）的字段；GameState 与时光机锚点世界共用 */
+const PUBLIC_WORLD_SHAPE = {
   v: z.int().min(1),
   // 有界字符串：这些字段属于公开世界，随每个 view 下发；导入存档里超长的值会被放大（apps/server SaveService）
   engine: z.string().max(32),
@@ -318,17 +319,40 @@ export const GameStateSchema = z.strictObject({
   pools: z.strictObject({ cards: z.array(nonneg).length(31), items: z.array(nonneg).length(14) }),
   lottery: z.strictObject({ owners: z.array(seat.nullable()).length(36) }),
   noticeBoard: z.array(ListingSchema),
+};
+
+const DECK_SHAPE = {
+  newsOrder: z.array(z.literal(NEWS_IDS)).length(NEWS_IDS.length),
+  newsCursor: nonneg,
+  fateOrder: z.array(z.literal(FATE_IDS)).length(FATE_IDS.length),
+  fateCursor: nonneg,
+};
+
+/**
+ * 时光机锚点（effects/timeMachine.ts）：锚点世界 = 公开世界 + 帧栈 + 牌序与游标，与 GameState 同样严格校验。
+ * 回滚会把它整体写回 state，导入存档时不能让未校验的世界借锚点进入对局（不变量另由 validate/index.ts 检查）。
+ */
+export const TimeAnchorSchema = z.strictObject({
+  takenAtTurn: nonneg,
+  seat,
+  world: z.strictObject({
+    ...PUBLIC_WORLD_SHAPE,
+    flow: z.array(FrameSchema).min(1),
+    decks: z.strictObject(DECK_SHAPE),
+  }),
+});
+
+export const GameStateSchema = z.strictObject({
+  ...PUBLIC_WORLD_SHAPE,
   flow: z.array(FrameSchema).min(1),
   pending: z.array(PendingSchema),
   counters: z.strictObject({ action: nonneg, decision: nonneg, frame: nonneg, object: nonneg, listing: nonneg }),
   secret: z.strictObject({
     rng: z.tuple([u32, u32, u32, u32]),
-    newsOrder: z.array(z.literal(NEWS_IDS)).length(NEWS_IDS.length),
-    newsCursor: nonneg,
-    fateOrder: z.array(z.literal(FATE_IDS)).length(FATE_IDS.length),
-    fateCursor: nonneg,
-    timeAnchor: z.unknown().nullable(),
-    timeAnchors: z.array(z.unknown().nullable()),
+    ...DECK_SHAPE,
+    timeAnchor: TimeAnchorSchema.nullable(),
+    // perSeat：下标 = 座位（最多 4 个）；其他模式为 []
+    timeAnchors: z.array(TimeAnchorSchema.nullable()).max(4),
     aiSeed: u32,
     debugQueue: z.array(z.strictObject({ purpose: z.enum(RAND_PURPOSES), values: z.array(int).min(1) })),
   }),

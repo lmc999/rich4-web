@@ -6,7 +6,8 @@ import type { PublicWorld } from './types/state';
 
 /**
  * 跨包一致性（architecture §8「postPatch.fold.test.ts」）：20 个种子 × 300 个 action，
- * 逐个 action 断言 fold(applyPostPatch, publicWorld(prev), events) ≡ publicWorld(next)，且不出现 SYNC。
+ * 逐个 action 断言 fold(applyPostPatch, publicWorld(prev), events) ≡ publicWorld(next)，且不出现 SYNC
+ * （时光机回滚后的那一个 SYNC{timeRewind} 除外）。
  * 客户端 viewFold.test.ts 用同一个 applyPostPatch。
  */
 function snapshot(w: PublicWorld): PublicWorld {
@@ -14,7 +15,9 @@ function snapshot(w: PublicWorld): PublicWorld {
 }
 
 describe('post 折叠一致性', () => {
-  it('20 个种子 × 300 个 action：fold(applyPostPatch) == publicWorld(next)，没有 SYNC', { timeout: 120_000 }, () => {
+  it('20 个种子 × 300 个 action：fold(applyPostPatch) == publicWorld(next)，没有 SYNC（时光机除外）', {
+    timeout: 180_000,
+  }, () => {
     let actions = 0;
     let events = 0;
     for (let seed = 0; seed < 20; seed++) {
@@ -30,7 +33,9 @@ describe('post 折叠一致性', () => {
         const a = randomAction(state, rng)!;
         const prev = snapshot(state);
         const r = g.engine.applyAction(state, a);
-        expect(r.events.some((e) => e.type === 'SYNC')).toBe(false);
+        // 唯一允许的 SYNC：时光机回滚之后的那一个（TIME_REWOUND + SYNC{timeRewind}）
+        const rewound = r.events.some((e) => e.type === 'TIME_REWOUND');
+        expect(r.events.filter((e) => e.type === 'SYNC').length).toBe(rewound ? 1 : 0);
         const folded = foldPosts(prev, r.events);
         expect(folded).toEqual(snapshot(r.state));
         state = r.state;

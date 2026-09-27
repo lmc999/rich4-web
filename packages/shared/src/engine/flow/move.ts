@@ -7,17 +7,17 @@
  *   工程车 MANUAL（engineeringVehicle='manual'）：经过与停留的对手房屋各拆 1 级
  *   银行   还有剩余步数、正常移动而非梦游、银行格上没有路障：先公布已走的路段，压 BANK(pass)，完成后回到本帧继续走
  * 岔路随机：候选为空掉头（不耗随机数），否则 候选[rand15()%n]（1 个候选也消耗一次）。
- * 走完后把自身替换为 LAND(node, steps=total)。
+ * 走完后把自身替换为 LAND(node, steps=total)。恶人（mode 'villain'）另见 villainMove。
  */
 import type { Ctx } from '../core/ctx';
 import type { FrameHandler } from '../core/frameHandler';
 import { lotState } from '../decisions/targets';
 import { mutateLot } from '../effects/common';
 import { hitRoadblock, tickCarriedBomb } from '../effects/objects';
-import { EngineInvariantError } from '../errors';
+import { onNpcStep, villainOf } from '../effects/villains/index';
 import { nextTile } from '../rules/movement';
 import type { FrameOf } from '../types/frames';
-import type { SeatIndex, TileId } from '../types/ids';
+import type { SeatIndex, TileId, VillainKind } from '../types/ids';
 
 type MoveFrame = FrameOf<'MOVE'>;
 
@@ -45,9 +45,37 @@ function manualEngineer(ctx: Ctx, f: MoveFrame, seat: SeatIndex, tile: TileId): 
   mutateLot(ctx, lot, 0, { k: 'engineer', ref: lot, by: seat });
 }
 
+/**
+ * 恶人移动（mode 'villain'；docs/research/g_villains.md §2–§3）：每一步先走再按 onNpcStep 结算；
+ * 结算可能压子帧（受害者破产、雇主满手弃牌）：此时先返回，子帧完成后从下一步继续（本格已结算完）。
+ * 恶人被送医院 / 送回老家或被路障拦下时，剩余步数作废；走完后本帧出栈（恶人没有落点结算）。
+ */
+function villainMove(ctx: Ctx, f: MoveFrame, kind: VillainKind): void {
+  const v = villainOf(ctx.s, kind);
+  while (f.remaining > 0) {
+    if (!v.onBoard || v.employer === null) {
+      f.remaining = 0;
+      break;
+    }
+    const next = nextTile(ctx.map.index, v.node, v.prevNode, (n) => ctx.pick('fork', n));
+    v.prevNode = v.node;
+    v.node = next;
+    f.seg.push(next);
+    f.remaining -= 1;
+    const r = onNpcStep(ctx, f, v, next, () => emitSegment(ctx, f));
+    if (r !== 'go') f.remaining = 0;
+    if (ctx.top() !== f) return;
+  }
+  emitSegment(ctx, f);
+  ctx.pop(f);
+}
+
 export const MOVE: FrameHandler<MoveFrame> = {
   step(ctx, f) {
-    if (f.actor.t !== 'seat') throw new EngineInvariantError('NOT_IMPLEMENTED', 'villain movement (M7)');
+    if (f.actor.t !== 'seat') {
+      villainMove(ctx, f, f.actor.kind);
+      return;
+    }
     const seat = f.actor.seat;
     const p = ctx.player(seat);
     while (f.remaining > 0) {

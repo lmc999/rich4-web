@@ -1,5 +1,6 @@
 // 玩家状态徽章（design/client.md §3.6、§5.1）：坐牢 / 住院 / 住旅馆 / 不在场 / 冬眠 / 梦游 / 停留 / 乌龟、
 // 拒绝往来、保险、身上的定时炸弹、同盟、贷款；附身神明用 GodBadge。计数按两段式计数器的显示天数。
+// compact（玩家条）：只显示图标 + 数字，完整文案放进 title 与无障碍标签。
 import type { SeatIndex } from '@rich4/shared/engine';
 import type { PlayerView } from '@rich4/shared/view';
 import type { CSSProperties, ReactNode } from 'react';
@@ -22,6 +23,7 @@ const ICONS: Readonly<Record<string, string>> = {
   insurance: '🛡️',
   alliance: '🤝',
   loan: '💳',
+  bomb: '💣',
 };
 
 export interface StatusBadge {
@@ -59,34 +61,60 @@ const pill: CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
+const pillCompact: CSSProperties = {
+  ...pill,
+  gap: 1,
+  padding: '0 4px',
+  borderWidth: 1.5,
+  fontSize: 11,
+  lineHeight: '16px',
+};
+
 export function StatusBadges({
   player,
   nameOf,
   showGod = true,
+  compact = false,
+  testId,
 }: {
   player: PlayerView;
   /** 同盟对象的名字 */
   nameOf?: (seat: SeatIndex) => string;
   showGod?: boolean;
+  /** 紧凑：图标 + 数字（玩家条） */
+  compact?: boolean;
+  /** 缺省 status-badges-<seat> */
+  testId?: string;
 }): ReactNode {
   const t = useTx();
   const list = statusBadges(player);
   if (list.length === 0 && !(showGod && player.god)) return null;
+  const text = (s: StatusBadge): string =>
+    s.key === 'alliance'
+      ? t('hud:days', { n: s.n }) + (s.seat !== undefined && nameOf ? ` · ${nameOf(s.seat)}` : '')
+      : t(`hud:status.${s.key}`, { n: s.n, due: s.due });
   return (
     <span
-      style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}
-      data-testid={`status-badges-${player.seat}`}
+      style={{ display: 'flex', flexWrap: 'wrap', gap: compact ? 2 : 4 }}
+      data-testid={testId ?? `status-badges-${player.seat}`}
       data-seat={player.seat}
     >
-      {showGod && player.god && <GodBadge kind={player.god.kind} days={player.god.days} size={24} />}
-      {list.map((s) => (
-        <span key={s.key} style={pill} data-status={s.key}>
-          {ICONS[s.key] && <span aria-hidden="true">{ICONS[s.key]}</span>}
-          {s.key === 'alliance'
-            ? t('hud:days', { n: s.n }) + (s.seat !== undefined && nameOf ? ` · ${nameOf(s.seat)}` : '')
-            : t(`hud:status.${s.key}`, { n: s.n, due: s.due })}
-        </span>
-      ))}
+      {showGod && player.god && (
+        <GodBadge kind={player.god.kind} days={player.god.days} size={compact ? 18 : 24} compact={compact} />
+      )}
+      {list.map((s) =>
+        compact ? (
+          <span key={s.key} style={pillCompact} data-status={s.key} title={text(s)} role="img" aria-label={text(s)}>
+            <span aria-hidden="true">{ICONS[s.key]}</span>
+            {s.key !== 'loan' && <span className="num">{s.n}</span>}
+          </span>
+        ) : (
+          <span key={s.key} style={pill} data-status={s.key}>
+            {ICONS[s.key] && s.key !== 'bomb' && <span aria-hidden="true">{ICONS[s.key]}</span>}
+            {text(s)}
+          </span>
+        ),
+      )}
     </span>
   );
 }

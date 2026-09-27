@@ -234,7 +234,8 @@ describe('M6 场景', () => {
       inmates: [{ seat: 1, remaining: 6 }],
       costs: { bail: 30, hire: 300 },
     });
-    expect(() => bail.act(0, { type: 'HIRE', villain: 'thief' })).toThrow(/NOT_ALLOWED/);
+    // 雇恶人要 300 点券：点券不足时恶人列出但不可雇
+    expect(() => bail.act(0, { type: 'HIRE', villain: 'thief' })).toThrow(/INVALID_TARGET/);
     bail.act(0, { type: 'BAIL', target: 1 });
     expect(bail.event('BAIL')).toMatchObject({ by: 0, seat: 1, cost: 30 });
     expect(bail.player(0).points).toBe(10);

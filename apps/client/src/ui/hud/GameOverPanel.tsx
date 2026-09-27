@@ -1,15 +1,49 @@
-// 终局（design/client.md §4.5 gameOver）：动画播完后显示排名与总资产；房主可以「再来一局」回到大厅
-import { CHARACTER_KEYS } from '@rich4/shared/engine';
-import type { RoomView } from '@rich4/shared/net';
+// 终局（design/client.md §4.5 gameOver）：终局演出（烟花 + GameOverScreen）播完后由这里接手，
+// 同样用 GameOverScreen 显示排名与每人的资产构成（现金、存款、股票、地产，贷款另列；presentation/handlers/endgame 的
+// buildGameOverRows），底部是「再来一局」（房主）与「离开房间」。
+import { CHARACTER_KEYS, type GameResult, type SeatIndex } from '@rich4/shared/engine';
+import type { GameOverMsg, RoomView } from '@rich4/shared/net';
 import type { GameView } from '@rich4/shared/view';
 import type { ReactNode } from 'react';
 import { useClient } from '../../app/services';
-import { useTx } from '../../i18n/tx';
-import { formatMoney } from '../../presentation/names';
+import { type LooseT, useTx } from '../../i18n/tx';
+import { buildGameOverRows } from '../../presentation/handlers/endgame';
 import { useGameStore } from '../../store/gameStore';
 import { useUiStore } from '../../store/uiStore';
-import { Avatar } from '../common/Avatar';
+import { GameOverScreen } from '../popups/GameOverScreen';
+import type { GameOverPopupSpec } from '../popups/popupStore';
 import h from './hud.module.css';
+
+/** GAME_OVER 结果 → 终局画面（排名以引擎 result.ranking 为准；缺失时退回 game:over 消息里的排名） */
+export function gameOverSpec(over: GameOverMsg, view: GameView, t: LooseT): GameOverPopupSpec {
+  const r = over.result;
+  const result: GameResult =
+    r.ranking.length > 0
+      ? r
+      : {
+          ...r,
+          ranking: over.ranking.map((x) => ({
+            seat: x.seat,
+            netWorth: x.netWorth,
+            alive: view.players.find((p) => p.seat === x.seat)?.alive ?? true,
+          })),
+        };
+  const name = (seat: SeatIndex): string => {
+    const p = view.players.find((x) => x.seat === seat);
+    return p ? t(`characters:${CHARACTER_KEYS[p.character]}.name`) : `${seat + 1}P`;
+  };
+  const rows = buildGameOverRows(result, view, name);
+  const w = r.winner === null ? null : view.players.find((p) => p.seat === r.winner);
+  return {
+    kind: 'gameOver',
+    title: t('hud:over.title'),
+    subtitle: `${r.winner === null ? t('hud:over.noWinner') : t('hud:over.winner', { who: name(r.winner) })} · ${t(
+      `hud:over.reason.${r.reason}`,
+    )}`,
+    winner: w ? { seat: w.seat, character: w.character, name: name(w.seat) } : null,
+    rows,
+  };
+}
 
 export function GameOverPanel({ view, room, onLeave }: { view: GameView; room: RoomView; onLeave(): void }): ReactNode {
   const t = useTx();
@@ -17,11 +51,7 @@ export function GameOverPanel({ view, room, onLeave }: { view: GameView; room: R
   const over = useGameStore((s) => s.over);
   const playing = useGameStore((s) => s.anim.playing);
   if (!over || playing) return null;
-  const r = over.result;
-  const name = (seat: number): string => {
-    const p = view.players.find((x) => x.seat === seat);
-    return p ? t(`characters:${CHARACTER_KEYS[p.character]}.name`) : `${seat + 1}P`;
-  };
+  const spec = gameOverSpec(over, view, t);
   return (
     <div
       className={h.gameOver}
@@ -30,44 +60,30 @@ export function GameOverPanel({ view, room, onLeave }: { view: GameView; room: R
       aria-label={t('hud:over.title')}
       data-testid="game-over"
     >
-      <div className={`panel ${h.gameOverCard}`}>
-        <h2>{t('hud:over.title')}</h2>
-        <p>
-          {r.winner === null ? t('hud:over.noWinner') : t('hud:over.winner', { who: name(r.winner) })} ·{' '}
-          {t(`hud:over.reason.${r.reason}`)}
-        </p>
-        <ol className={h.ranking}>
-          {over.ranking.map((x, i) => {
-            const p = view.players.find((q) => q.seat === x.seat);
-            return (
-              <li key={x.seat} data-testid={`rank-${i + 1}`} data-seat={x.seat}>
-                <span className="num">{i + 1}</span>
-                {p && <Avatar character={p.character} size={36} seat={x.seat} />}
-                <span>{name(x.seat)}</span>
-                <span className="num">{formatMoney(x.netWorth)}</span>
-              </li>
-            );
-          })}
-        </ol>
-        <div className={h.overActions}>
-          {room.you.isHost && (
-            <button
-              type="button"
-              className="btn btn--green"
-              onClick={async () => {
-                const res = await client.rematch();
-                if (!res.ok) useUiStore.getState().toast(client.errorText(res.error), 'warn');
-              }}
-              data-testid="over-rematch"
-            >
-              {t('hud:over.rematch')}
+      <GameOverScreen
+        spec={spec}
+        fireworks={false}
+        actions={
+          <>
+            {room.you.isHost && (
+              <button
+                type="button"
+                className="btn btn--green"
+                onClick={async () => {
+                  const res = await client.rematch();
+                  if (!res.ok) useUiStore.getState().toast(client.errorText(res.error), 'warn');
+                }}
+                data-testid="over-rematch"
+              >
+                {t('hud:over.rematch')}
+              </button>
+            )}
+            <button type="button" className="btn btn--cream" onClick={onLeave} data-testid="over-leave">
+              {t('hud:over.leave')}
             </button>
-          )}
-          <button type="button" className="btn btn--cream" onClick={onLeave} data-testid="over-leave">
-            {t('hud:over.leave')}
-          </button>
-        </div>
-      </div>
+          </>
+        }
+      />
     </div>
   );
 }

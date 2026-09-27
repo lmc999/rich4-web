@@ -148,6 +148,7 @@ export type RandPurpose =
   | 'minigameSeed' // 小游戏种子（写入 PendingDecision.minigame）
   | 'minigameSkip' // 不玩分支：50+rand15()%20 与台词槽 rand15()&1
   | 'birthday' // 电脑座位的「生日」随机拿卡
+  | 'auction' // 破产 / 投降清算时随机抽 3 处拍卖
   | 'aiSeed'; // 开局派生 secret.aiSeed
 
 export const RAND_PURPOSES: readonly RandPurpose[] = Object.freeze([
@@ -176,6 +177,7 @@ export const RAND_PURPOSES: readonly RandPurpose[] = Object.freeze([
   'minigameSeed',
   'minigameSkip',
   'birthday',
+  'auction',
   'aiSeed',
 ] as const);
 

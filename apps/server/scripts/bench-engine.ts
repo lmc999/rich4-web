@@ -10,6 +10,7 @@
  *   --warmup <n>        预热 action 数（默认 2000，不计时）
  *   --policy <p>        random | default（defaultIntent）| original（OriginalAiPolicy，另报 AI decide 的耗时），默认 random
  *   --players <n>       2..4（默认 4）
+ *   --humans <n>        前 n 个座位 controller='human'（仍由策略代打；真人掷骰会记时光机锚点，默认 0）
  *   --seed <hex>        基础种子（默认 be0c4）
  *   --no-assert         只报告，不因超出阈值而返回非 0
  *   --json              输出 JSON
@@ -34,6 +35,7 @@ interface Options {
   warmup: number;
   policy: 'random' | 'default' | 'original';
   players: number;
+  humans: number;
   seed: string;
   assert: boolean;
   json: boolean;
@@ -49,6 +51,7 @@ function parseArgs(argv: readonly string[]): Options {
     warmup: 2000,
     policy: 'random',
     players: 4,
+    humans: 0,
     seed: 'be0c4',
     assert: true,
     json: false,
@@ -86,6 +89,9 @@ function parseArgs(argv: readonly string[]): Options {
       case '--players':
         o.players = Math.min(4, Math.max(2, int(need(i++, a), a, 2)));
         break;
+      case '--humans':
+        o.humans = Math.min(4, int(need(i++, a), a, 0));
+        break;
       case '--seed':
         o.seed = need(i++, a);
         break;
@@ -120,7 +126,7 @@ function main(): void {
   const setups = Array.from({ length: o.players }, (_, i) => ({
     seat: i as SeatIndex,
     character: DEFAULT_CHARACTERS[i]!,
-    controller: 'ai' as const,
+    controller: i < o.humans ? ('human' as const) : ('ai' as const),
   }));
   let gameNo = 0;
   const newState = (): GameState => {

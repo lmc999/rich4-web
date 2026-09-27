@@ -1190,3 +1190,75 @@ RICH4_AI_POLICY=original|basic  RICH4_TIMER_SCALE=<(0,1]，仅 RICH4_TEST_MODE=1
 
 - `npm run check` 全绿；client-browser 全部通过；E2E 10 个 spec 全部通过（lobby、turn-cycle、timeout-ai、bank-stock、anim-unmount、minigame、reconnect、chat-spectate、save-load、cards）。
 - simulate（original，限时 365 天）：test-allkinds 500 局 `finished=500 rejects=0 invariantErrors=0 errors=0 actions=796642 finalHash=1be3a315f2c74539`；台湾 50 局 `finished=50 rejects=0 invariantErrors=0 errors=0 actions=74104 finalHash=7c27f741f1cacbd1`（与引擎代理两次运行一致）。
+
+## 21. M7「事件与收尾规则」实施记录与整合实测（2026-09-27）
+
+本轮完成 M7（engine.md §17 L5 + 原版 AI 的 AI4，ENGINE_VERSION 0.4.0），随后把新闻、命运、魔法屋、拍卖、四大恶人、公布栏、投降 / 死神、时光机的真实引擎载荷接到前端演出、日志与文案，并在台湾图实机测试。以下只列与本文件、design/*.md 不一致的实现与原因；标 ⚑ 的是缺证据时的暂定默认，结论见 VERIFY.md；行为上有意与原版不同的已进 DEVIATIONS.md。
+
+### 21.1 引擎与数据（M7）
+
+- **数据表**：新增 `data/tables/news.ts`（36 条）、`fate.ts`（37 条 + v2.06 地图组文案变体 37..48、按座驾换号 10↔11 / 12↔13 / 14–16、`insured` / `passive` 标记）、`magic.ts`（12 条件、12 效果、流程常量）；每条带 effect、params、feasible、加持类别与 src（exe VA + events-from-exe 章节），文案只存 i18n key。TABLES 增加 news / fate / magic，tablesHash 变化。`events.test.ts` 与 `.cache/extract/tables.v206.json` 逐条比对（缓存存在时）。
+- **与 engine.md 的出入以 events-from-exe §4 为准**：新闻 9 在全体在场玩家中取最少（含 0 块）；新闻 15 的可行条件收紧为「有等级 > 0 的住宅」（medium）；新闻 27 停牌写 15 天；命运 33 条查加持，其中 3/8/9/10/11/32 只处理免付 / 逃过、不加倍；命运 32 与魔法屋 0/8 按商店价全价折点券；罚金类命运投保期间由保险公司赔同额（加持免付时不赔）；新闻 ×1.3 / ×0.7 / ×0.05 与强盗 ×0.2 用 `Math.trunc(x × f)` 双精度实现（与 x87 结果一致性 medium）。
+- **加持**：PROGRAM 下新闻不查加持；MANUAL（`blessingOnNews`）下新闻 1/3（延长刑期）按劫难类 low 天数 ×2、保险按实际天数赔，新闻 16/17（停留）low 不加倍。FATE 事件在加持结果为 none 时 `blessing: null`。
+- ⚑ 命运按座驾替换时工程车保持原号（步行专属命运对工程车不可行）；小偷梦游期间不处理物件；间谍盈余为负时雇主先存款后现金反付（可能破产）；强盗抢银行按 0x463b60 = 0.2；魔法屋 11「拍卖脚下地产」流拍后地产变无主（V-R7）；投降者按破产流程变成乞丐（V-R9）。
+- **拍卖（AUCTION 帧）**：多人并发出价，每个出价者独立计时；有人加价后同一帧其他人的待答作废（在途请求收到 STALE_DECISION）、按新价重新询问，「这轮不加价」只保持到下一次有人加价；卖方、受困者、现金 ≤ 起拍价者不能出价（DEV-17、V-R15）。拍卖卡开放；破产与投降共用 `flow/liquidation.ts`：释放的地产超过 3 处时随机拍卖 3 处（RandPurpose `'auction'`），成交款进公库。
+- **时光机**（DEV-05）：默认 `'global'`（全场一个锚点 = 最近一次真人掷骰之前的世界），也支持 `'perSeat'` / `'disabled'`；回滚时 RNG 与决策 id 不回退，先发 `TIME_REWOUND`，同一批末尾补 `SYNC{reason:'timeRewind'}`；恢复后的世界里使用者的时光机 −1（最低 0）。
+- **公布栏**：BOARD_LIST / DELIST / BUY 为 TURN_MENU 非终结操作；挂牌不冻结资产，按挂牌 id 贪心认领持有资产判定是否有效，回合开始撤下失效挂牌（`LISTING_REMOVED{invalid}`）；地产标价上限 = 市价 × 10（medium）；AI 不改价（DEV-11）。
+- **恶人**：BAIL 的 HIRE（300 点券）开放；VILLAIN 帧 rand % 9 + 2 步（乌龟卡 1 步），`onNpcStep`、回老家、雇主出局送回都已实现。恶人的回合也发 `TURN_STARTED{actor:{t:'villain'}}`，回合号照常递增。
+- **首回合未跳伞者被关押**（remake 适配）：被魔法屋或嫁祸关进监狱 / 医院时直接落在关押格（`placed=true`，之后不再跳伞）；魔法屋「向后转」跳过还没落地的人。
+- **契约**：DebugOp 新增 `stackDeck{deck:'news'|'fate', ids}`（把指定的牌换到游标处，只在测试模式）；`AuctionBidOptions` 增加可选 `others`（除自己与领先者外仍可能出价的人数）与 `source`（兼容旧存档与测试桩，引擎总会给出）；以下决策现在由真实引擎发出：MAGIC_CAST、BIRTHDAY_PICK、DEATH_GOD_TARGET、BAIL 的 HIRE、TURN_MENU 的 BOARD_* 与 SURRENDER。**GameEvent 载荷与 view/pacing.ts 本轮均未改动**。`flow/stubs.ts` 已删除，引擎不再抛 NOT_IMPLEMENTED。
+- **AI4**：`OriginalAiPolicy` 的 23 种决策全部按原版规则处理，不再委托 BasicAiPolicy。
+- **simulate / bench**：simulate 新增 `--max-years`（无限局默认 20 年）、`--min-finish`、`--workers`（worker_threads，结果与并发数无关），输出 finalHash 与 journalHash；bench-engine 新增 `--humans`。
+
+### 21.2 前端接通（本轮整合）
+
+- **文案参数（`presentation/eventText.ts`，日志与演出共用）**：新闻 params 按键名解析（lot / company → 地块名，stock → 股票名，seat → 人名，amount / fine / gain / loss / reward / subsidy → 千分位金额，days / pct 原样），缺失的键给中性占位；新闻分类读 shared 新闻表（不再在客户端手抄一份）。命运金额的含义（补偿 / 奖金为收入，罚金 / 收回的股票为支出，冒名贷款、卖股进存款、折点券各带说明）、色调、加持类别、天数（劫难类 low ×2）、百分比一律读 shared 命运表；罚金 high 显示「免付」、奖金 low 显示「奖金作废」。恶人作案文案按 `what` 取（抢银行没有单一受害人，不再出现「无人」）。
+- **日志**：NEWS 记标题与正文、FATE 记标题与正文（不再只有编号）、MAGIC_CONDITION / MAGIC_CAST 记条件、点名的人与效果名、VILLAIN_ACTION 与 toast 同一句话。
+- **文案对齐引擎语义**（news / fate / magic / ui.json）：新闻 4（外星人：地产变无主、波及的人住院）、5、15、21（拆一层而不是夷平）、22（挤兑：只收存款）、26/27/29/30–35 带天数、罚款、盈余金额；地名前后留空格（同名编号地块如「台东县 3 一带」）；命运 0/1 带补偿金额、3/6/7/12/13/33–36 带天数、4/8 带百分比、9/13/32 按实际效果改写；魔法屋条件改成完整名词（「现金最多的人」「所有男生」），效果说明补上免罪 / 嫁祸可挡、拍卖成交款归目标本人（流拍变无主）；保释对话框的恶人说明按 g_villains 改写，不可雇用的原因改为「点券不足」；投降确认写明死神附身与清算拍卖。
+- **修复（弹窗编号被覆盖）**：`popupStore` 的弹窗实例号原本叫 `id`，与新闻 / 命运 spec 自带的 `id`（编号）合并时覆盖了后者，NewsPopup / FatePopup 的 `data-news` / `data-fate` 显示成实例号。实例号改名 `popupId`，弹窗层与 close / skip 同步。
+- **拍卖横幅**：有人加价后，此前「这轮不加价」的竞拍者恢复为竞拍中（与引擎一致）；没有经过演出（后台标签页走 instant、`?anim=instant`、积压跳过、刷新 / 中途进房）时按待决策的 publicInfo 补一条横幅（`derivedAuction`：标的、现价、被问的座位，领先者未知时显示「竞价中」）；PopupLayer 由 GameScreen 传入 map。AuctionDialog 增加「来源」「其他竞拍者」两行。
+- **回合菜单入口（实机发现的缺口）**：M3 起 TURN_MENU 平时收起，只有卡片 / 道具 / 股票快捷键能展开对应子页，完整菜单里的「公布栏」「投降」没有任何入口。ActionPad 增加「📋 公布栏」（本人回合直接打开公布栏子页，否则打开只读面板）与「⋯ 更多」（本人回合展开完整回合菜单）。
+- **时光机**：目标面板对时光机显示「将回到第 N 回合（最近一次真人掷骰之前），此后所有人的变化都会撤销」（`TurnMenuOptions.timeMachine.anchorTurn`）；无目标说明不再写「这张卡」。
+- **恶人回合**：TURN_STARTED 的恶人分支镜头飞到恶人身上并冒「××出动」气泡（此前只等 200ms，恶人在镜头外走路）。
+- **i18n**：补 `hud:error.ACCESS_REQUIRED`（另一工作流新增的错误码）。
+
+### 21.3 新增与调整的测试
+
+- client-unit `presentation/handlers/realEngineM7.test.ts`（定向覆盖）：新闻 36 条、命运 37 条逐条经 `stackDeck` + 强制骰子触发（10–16 先换座驾），魔法屋 12 种效果逐一施放，拍卖卡三人出价 / 放弃 / 加价 / 退出并核对竞价横幅状态，四种恶人雇用后原版 AI 接着玩 600 步，投降 + 死神 + 清算拍卖、时光机、公布栏挂牌 / 撤牌 / 成交；每个样本交给未封顶的 handler：不抛错、日志与弹窗文案无 undefined / NaN / 残留插值 / 未命中键、新闻与命运正文不出现缺省占位词、自然用时 ≤ 预算。播放台架移到 `src/test/realEngineHarness.ts`（分层守卫：engine-testing 与 shared/ai 只能在测试目录使用），`realEngine.test.ts` 的自对弈样本把 M7 事件纳入重点类型（每种至多 40 条）。
+- client-unit `presentation/eventText.test.ts`；client-dom：`realEngineCombat.dom.test.tsx` 拍卖卡可用、AUCTION_BID 对话框多人出价成交、时光机回到最近一次真人掷骰之前；`realEngine.dom.test.tsx` 的 ATM 路过用例预置命运牌（终点是命运格）；`popups.dom.test.tsx` 弹窗编号不被覆盖、推导横幅；`hud.dom.test.tsx`「更多」「公布栏」入口。
+- E2E `e2e/specs/events.spec.ts`：4 个真人（P4 走演出路径），debug:act 触发新闻（所得税）、命运（继承遗产）、魔法屋（DOM 选「现金全部存入」）、拍卖卡（P1–P3 在 AuctionDialog 里出价 / 放弃 / 加价 / 退出，P2 成交、成交款进卖方存款）；每步 4 页面 HUD 与服务器快照一致、显示态与事件日志一致且无坏文案；演出页出现新闻、命运、魔法屋弹窗与竞价横幅。
+
+### 21.4 台湾图实机测试（浏览器面板；RICH4_TEST_MODE=1，2 真人 + 2 原版 AI，第二个真人用 `p2.localhost` 隔离身份）
+
+- **新闻**：预置新闻 6 → 主播弹窗打字机标题「市政规划利好」，正文「台东县 3 一带纳入新建设计划…」，日志「新闻「市政规划利好」：…」。
+- **命运**：预置命运 2 → 「身份被冒用」，贷款 +10,000 进 HUD 贷款徽标；魔法屋连抽 3 次命运时依次弹出「清仓大拍卖 +155 点券」「跌进水沟 住院 3 天」「外星人绑架 3 天」「互助会被倒 −8,000」等，日志逐条完整。
+- **魔法屋**：条件预置「所有男生」→ 对话框列出点名的两人与 12 种效果说明，施放后弹窗与日志正确。
+- **雇恶人**：监狱保释格雇用强盗 / 小偷（点券 −300），恶人从关押格出发；之后「小偷偷走了 小丹尼 一半的点券」「小偷顺手牵走了路上的东西」。
+- **拍卖**：台北市 1 出拍卖卡 → 电脑与另一真人竞价，对话框显示来源、卖方、起拍价、其他竞拍者；成交后卖方存款 +成交价、买方插旗。发现后台标签页没有竞价横幅 → 加推导横幅（21.2）。
+- **时光机**：目标面板提示回到第 8 回合 → 确认后回到 1 月 2 日第 8 回合，另一真人的雇恶人与之后的拍卖全部撤销。
+- **投降**：发现完整回合菜单无入口 → 加「⋯ 更多」（21.2）；投降 → 死神附身对话框选对手 → 糖糖挂上死神（13 天）、投降者出局成乞丐，日志 SURRENDERED → DEATH_GOD_SUMMONED → GOD_ATTACHED → GOD_POWER → LIQUIDATION → BECAME_BEGGAR。
+- 控制台无错误；「超过预算」警告只出现在浏览器面板隐藏期间（动画时钟退化为 200ms 定时器，每个 handler 多出一格），与本轮无关。
+- 遗留：魔法屋连抽三张命运时，同一人可能先「住院 3 天」再「出国 3 天」，引擎的 `applyConfinement` 对 away 不清 jail / hospital，两个计数同时存在（不变量允许，HUD 同时显示两枚徽章，两者一起倒数）；是否应互斥待 V-R8 / V-R13 实机核对，本轮未改引擎。同格的恶人与玩家名牌重叠。
+
+### 21.5 验证
+
+- `npm run check` 全绿；client-browser 6 个文件 24 通过 1 跳过；E2E 12 个 spec 13 个用例全部通过（新增 events）。
+- simulate（original）：test-allkinds 限时 365 天 1000 局 `finished=1000 rejects=0 invariantErrors=0 errors=0 actions=1858538 finalHash=28d1a5559e12c65a journalHash=ccaf5266694b3998`（与引擎代理的运行一致）；台湾 100 局 `finished=100 rejects=0 invariantErrors=0 errors=0 actions=171009 finalHash=b854f624db6574f4 journalHash=5f29333d95a48780`。
+
+### 21.6 M7 审查修复（2026-09-27）
+
+逐条复核审查意见后的处理（GameEvent 载荷与 view/pacing.ts 均未改动；AuctionBidOptions.others 只改了计数口径）：
+
+- **新闻 11/12/13 税款逐人结算**（修复）：NEWS 帧新增 `tax` 阶段（`data.seats` 名单、`data.idx` 游标），公布后一次收一人；有人付不起就先返回，让他的 BANKRUPT 帧跑完（可能直接终局）再收下一人，税额按收的那一刻的状态计算。此前同一步压多个 BANKRUPT 帧、后进先出，剩 2 人都付不起时先结算的是座位号大的人，另一位还没结算的付不起者被判 lastStanding 赢家（1 真人对 1 电脑时应为 noHumansLeft）。没有采用「栈里有 BANKRUPT 帧的座位视为出局」的兜底：月结分红（flow/day.ts）有意按座位倒序压帧、让座位小的先破产，兜底会改变它与原版「当场破产」一致的结果。
+- **魔法屋 8 道具全卖**（修复）：座驾改回步行时单独发 `VEHICLE{seat, vehicle:'walk', dice:1}`（`sellAllItemsDetailed` 返回 `vehicleChanged`）；此前工程车 + 空背包的目标一个事件都没有，变化夹带进 TURN_ENDED 的 post。命运 32 随后发 FATE，不变。
+- **新闻 1/3 投保理赔**（修复，⚑ V-R28）：exe 的处理函数只加天数、不调保险，PROGRAM 不再理赔；MANUAL（`blessingOnNews`）保留社区说法、按加的天数理赔。
+- **新闻 22 挤兑的计数**（确认、暂不改）：原版是每人一份两段式计数，实现为全场按日倒数，抽到新闻者本人及座位在他之前的人少生效最后 1 个回合。改为每人一份要升 state 结构（v2 + 迁移，含锚点）并改银行面板，记为 DEV-18，留待 V-R21 一并处理。
+- **电脑保释 / 雇恶人**（修复）：候选按个性组、关在这里的恶人全部列入（不看点券），抽中恶人后才检查点券 ≥ 700；rand 消耗顺序 rand&1 →（个性 1）rand%3 → rand%n 与 g_villains §1 一致。
+- **时光机与系统状态**（修复）：回滚不恢复 v / engine / dataRef / config，players 恢复时保留各座位当前的 controller 与 aiTraits（SYS_SET_CONTROLLER 的踢人与读档认领、SYS_SET_AI_TRAITS 的托管设置）。此前被踢的座位回滚后在引擎里变回真人（服务器仍让电脑代打，noHumansLeft 失效、锚点被它的掷骰覆盖），读档认领的座位变回电脑。新增场景测试与服务器集成测试 `integration/time-machine.test.ts`。
+- **时光机 perSeat 的锚点**（修复）：回滚时其他座位在恢复点之后（`takenAtTurn ≥ 恢复点`）记下的锚点属于被撤销的时间线，作废；恢复点之前的锚点保留，其中使用者的时光机同样 −1。不再能「前跳」、用掉的时光机也不会因别人回滚而回来。目标面板在 perSeat 下显示「你上一次掷骰之前」（`dlg.target.timeMachinePerSeat`）。
+- **锚点校验**（修复）：`secret.timeAnchor / timeAnchors` 由 `TimeAnchorSchema` 严格校验（与 GameState 共用公开世界字段；`timeAnchors` 至多 4 个），`explainState` 另把每个锚点世界拼成 GameState 跑全部不变量（不要求待决策非空），并检查座位集合与对局一致、perSeat 锚点在自己的下标、锚点世界进行中、`takenAtTurn` 与世界回合号一致。导入存档不能再借锚点注入未校验的世界。
+- **AUCTION_BID.others**（修复）：改为与「可出价」同一判据（未放弃、未退出、在场且现金 ≥ 下一口价，不含自己与领先者）；出不起下一口价的人不再算入，AI 在只剩一个对手时照规格压最小档。
+- **两台电脑 +100 交替加价**（确认是规格行为，暂不改）：原版 AI 规则「只剩一个可出价座位时压成最小档」与 DEV-17「这轮不加价只保持到下一次有人加价」的组合；上一条修复会让这种情形略多。是否放大档位、合并 AI 连续出价的演出或减少对已放弃真人的重问，需要在原版规则与联机体验之间权衡，留给产品决定。
+- **拍卖对话框的建筑预览**（修复）：按地块的真实地主上色（`lotStatus(view, lot).owner`），不再用卖方；卖方仍在「卖方」一行显示。
+
+验证：`npm run check` 全绿（223 个文件 2112 通过 1 跳过）；E2E 12 个 spec 13 个用例全部通过；simulate（original）test-allkinds 限时 365 天 1000 局 `finished=1000 rejects=0 invariantErrors=0 errors=0 actions=1855308 finalHash=7564c5f1685091a8 journalHash=f475e533bfa9de40`（AI 保释的随机数消耗与拍卖 others 口径变化，哈希随之改变）；另跑 `--humans 2` 200 局（锚点每 50 步随结构校验检查）`finished=200 rejects=0 invariantErrors=0 errors=0`。

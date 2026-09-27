@@ -162,7 +162,9 @@ export type DebugOp =
   | { op: 'give'; seat: SeatIndex; cards: CardId[]; items: { item: ItemId; qty: number }[] }
   | { op: 'setDate'; date: DateNum }
   /** 收走路上的神明与路面物件（路障、地雷、炸弹回共享库存）：E2E 在开局后调用，排除开局随机摆放对强制路线的干扰 */
-  | { op: 'clearBoard' };
+  | { op: 'clearBoard' }
+  /** 让新闻 / 命运牌堆接下来依次抽到 ids（换到游标处，牌序仍是完整排列；M7 集成测试与 E2E 用） */
+  | { op: 'stackDeck'; deck: 'news' | 'fate'; ids: number[] };
 
 export type SystemAction =
   /** MinigameReferee 重放后提交；score 以服务器重放为准 */
@@ -333,4 +335,9 @@ export const DebugOpSchema = z.discriminatedUnion('op', [
   }),
   z.strictObject({ op: z.literal('setDate'), date: int(19980101, 21001231) }),
   z.strictObject({ op: z.literal('clearBoard') }),
+  z.strictObject({
+    op: z.literal('stackDeck'),
+    deck: z.enum(['news', 'fate']),
+    ids: z.array(z.int().min(0).max(36)).min(1).max(37),
+  }),
 ]);

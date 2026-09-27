@@ -5,6 +5,8 @@
 //    读取篡改存档时大厅横幅也标「非官方存档」；再改读导入的官方存档；
 // 4) P2 以玩家身份进房自动回到原座位；P3 以观战身份进房后认领原座位；P4 没来，房主补电脑；
 // 5) 开局后 P1..P3 的 HUD 数值与权威 view 与存档前完全一致（状态没有被改动）。
+// 第二个用例：对局中全员离开（没有在线的座位真人）→ 服务器自动存档并关闭房间 → 首页「读取存档」可导出、
+// 新建私密房间读自动存档 → 原玩家回到原座位、存档里的电脑座位只读显示原预设 → 开局后状态与离开前一致。
 import { readFileSync } from 'node:fs';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import type { Page } from '@playwright/test';
@@ -17,9 +19,14 @@ import {
   joinRoom,
   latestViewJson,
   openMenu,
+  type Player,
+  pickCharacter,
   pickReadyStart,
   playTurn,
+  Q,
+  roomOf,
   setReady,
+  startGame,
   syncPages,
   test,
   waitIdle,
@@ -187,4 +194,90 @@ test('存档 → 全员离开 → 新房间读档认领座位 → 状态一致�
   await waitMyTurn(a);
 
   expectNoErrors(fourPlayers);
+});
+
+test('对局中全员离开 → 自动存档并关闭房间 → 首页读取存档（新建私密房间）→ 回到原座位、状态一致', async ({
+  fourPlayers,
+}) => {
+  test.setTimeout(240_000);
+  const [pa, pb] = fourPlayers as [Player, Player, Player, Player];
+  const [a, b] = [pa.page, pb.page];
+  // 房主 + 1 个电脑（2P）+ P2 真人（3P）
+  const code = await createRoom(a, { map: 'test', timer: 'off', aiCount: 1 });
+  await expect(a.getByTestId('seat-1')).toHaveAttribute('data-kind', 'ai');
+  await a.getByTestId('seat-1-ai-preset').selectOption('cunning');
+  await expect(a.getByTestId('seat-1-ai-preset')).toHaveValue('cunning');
+  await joinRoom(b, code);
+  await expect(b.getByTestId('seat-2-name')).toHaveText('P2');
+  await pickCharacter(a, 9);
+  await pickCharacter(b, 4);
+  await setReady(b);
+  await startGame(a, [a, b]);
+
+  // 第 1 轮：P1 买 L1，电脑与 P2 各走一步，回到 P1
+  await playTurn(a, 0, { node: 4, prev: 3, choice: 'confirm' });
+  await playTurn(b, 2, { node: 10, prev: 9, choice: 'decline' });
+  await waitMyTurn(a);
+  await syncPages([a, b], a);
+  const beforeHud: HudSnapshot[] = await Promise.all([a, b].map((p) => hudSnapshot(p)));
+  const beforeView: string[] = await Promise.all([a, b].map((p) => latestViewJson(p)));
+  expect(beforeHud[0]!.lots.L1?.owner).toBe('0');
+
+  // 全员离开：P2 先走（房主还在，对局继续），房主再走 → 服务器自动存档并关闭房间
+  for (const p of [b, a]) {
+    await openMenu(p);
+    await p.getByTestId('menu-leave').click();
+    await expect(p.getByTestId('screen-home')).toBeVisible();
+  }
+  // 房间已关闭：再用邀请链接进不去
+  await b.goto(`/r/${code}?${Q}`);
+  await expect(b.getByTestId('room-error')).toBeVisible();
+  await b.goto(`/?${Q}`);
+  await expect(b.getByTestId('screen-home')).toBeVisible();
+
+  // 首页「读取存档」：自动存档在列表里，可以导出（对局已不在进行）
+  const autoId = `auto:${code}`;
+  await a.getByTestId('home-load-open').click();
+  await expect(a.getByTestId('home-saves')).toBeVisible();
+  const item = a.getByTestId(`save-${autoId}`);
+  await expect(item).toBeVisible();
+  await expect(item).toHaveAttribute('data-verified', 'true');
+  const [download] = await Promise.all([a.waitForEvent('download'), a.getByTestId(`save-export-${autoId}`).click()]);
+  expect(download.suggestedFilename()).toMatch(/\.r4save$/);
+  expect(readFileSync(await download.path(), 'utf8').startsWith('R4S1.')).toBe(true);
+
+  // 读取：新建私密房间并读档，直接进入新房间的大厅
+  await a.getByTestId(`save-load-${autoId}`).click();
+  await a.waitForURL(/\/r\/\d{6}/);
+  await expect(a.getByTestId('screen-room')).toBeVisible();
+  const code2 = /\/r\/(\d{6})/.exec(a.url())?.[1];
+  expect(code2).toBeTruthy();
+  expect(code2).not.toBe(code);
+  await expect(a.getByTestId('loaded-save')).toContainText('自动存档');
+  await expect.poll(async () => (await roomOf(a))?.settings.visibility).toBe('private');
+  await expect(a.getByTestId('seat-0')).toHaveAttribute('data-kind', 'human');
+  // 存档里的电脑座位：只读显示原预设，没有可改的下拉框
+  await expect(a.getByTestId('seat-1')).toHaveAttribute('data-kind', 'ai');
+  await expect(a.getByTestId('seat-1-ai-saved')).toHaveText('存档设定：大老奸 · 困难');
+  await expect(a.getByTestId('seat-1-ai-preset')).toHaveCount(0);
+  await expect(a.getByTestId('seat-2-unclaimed')).toHaveText('待认领');
+
+  // P2 凭邀请链接进房，自动回到原座位
+  await joinRoom(b, code2!);
+  await expect(b.getByTestId('seat-2-name')).toHaveText('P2');
+  await expect(a.getByTestId('seat-2')).toHaveAttribute('data-saved', 'claimed');
+  await setReady(b);
+  await expect(a.getByTestId('room-start')).toBeEnabled();
+  await a.getByTestId('room-start').click();
+  for (const p of [a, b]) {
+    await expect(p.getByTestId('screen-game')).toBeVisible();
+    await waitIdle(p);
+  }
+  for (const [i, p] of [a, b].entries()) {
+    expect(await hudSnapshot(p), `P${i + 1} HUD`).toEqual(beforeHud[i]);
+    expect(await latestViewJson(p), `P${i + 1} view`).toBe(beforeView[i]);
+  }
+  await waitMyTurn(a);
+
+  expectNoErrors([pa, pb]);
 });

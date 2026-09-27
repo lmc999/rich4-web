@@ -3,7 +3,7 @@
  * step 时按当前状态重新构造 options（不再适用就直接出栈、不问），resume 时交给 ASK_HANDLERS[kind].resolve。
  *
  * M1 实现 BUY_LAND、UPGRADE_LAND；M4 实现设施（买、首建、加盖、免费首建）、研究所、乐透、认购、建设公司；
- * 其余 kind 的构造器在对应里程碑补上（现在调用会抛 NOT_IMPLEMENTED）。
+ * M6 实现保释、满手弃牌；被动卡、魔法屋、生日、死神目标由持有流程的帧直接询问（flow/askCombat.ts）。
  */
 import type { Ctx } from '../core/ctx';
 import type { FrameHandler } from '../core/frameHandler';
@@ -34,7 +34,15 @@ import type { DecisionOptionsMap, PendingMinigame } from '../types/decision';
 import type { FrameOf, SimpleAskKind } from '../types/frames';
 import type { CompanyLotId, FacilityLotId, LotId } from '../types/ids';
 import type { PlayerAction, PlayerIntent } from '../types/intent';
-import { BAIL_ASK, DISCARD_ASK, SCAPEGOAT_ASK, USE_FREE_CARD_ASK } from './askCombat';
+import {
+  BAIL_ASK,
+  BIRTHDAY_PICK_ASK,
+  DEATH_GOD_TARGET_ASK,
+  DISCARD_ASK,
+  MAGIC_CAST_ASK,
+  SCAPEGOAT_ASK,
+  USE_FREE_CARD_ASK,
+} from './askCombat';
 import { chargeConstructionNoTarget } from './fee';
 
 type AskFrame = FrameOf<'ASK'>;
@@ -68,13 +76,6 @@ function companyOf(f: AskFrame): CompanyLotId {
   const c = f.data.company;
   if (typeof c !== 'string') throw new EngineInvariantError('ASK_DATA', `ASK ${f.kind} without company`);
   return c as CompanyLotId;
-}
-
-function notImplemented<K extends SimpleAskKind>(kind: K): AskHandler<K> {
-  const fail = (): never => {
-    throw new EngineInvariantError('NOT_IMPLEMENTED', `ASK ${kind}`);
-  };
-  return { build: fail, resolve: fail };
 }
 
 export const ASK_HANDLERS = Object.freeze({
@@ -196,10 +197,10 @@ export const ASK_HANDLERS = Object.freeze({
   USE_FREE_CARD: USE_FREE_CARD_ASK,
   SCAPEGOAT: SCAPEGOAT_ASK,
   DISCARD_CARD: DISCARD_ASK,
-  // TODO(M7)：魔法屋、生日、死神目标
-  MAGIC_CAST: notImplemented('MAGIC_CAST'),
-  BIRTHDAY_PICK: notImplemented('BIRTHDAY_PICK'),
-  DEATH_GOD_TARGET: notImplemented('DEATH_GOD_TARGET'),
+  // M7：魔法屋（MAGIC 帧）、生日（FATE 帧）、死神目标（SURRENDER 帧）由各自的帧直接询问
+  MAGIC_CAST: MAGIC_CAST_ASK,
+  BIRTHDAY_PICK: BIRTHDAY_PICK_ASK,
+  DEATH_GOD_TARGET: DEATH_GOD_TARGET_ASK,
   MINIGAME: MINIGAME_ASK,
 } satisfies { readonly [K in SimpleAskKind]: AskHandler<K> });
 

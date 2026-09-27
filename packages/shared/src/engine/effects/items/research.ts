@@ -2,7 +2,7 @@
  * 研究所产物（design/engine.md §10.4；docs/research/r_items.md §5.9–§5.11）。
  *
  * 9  机器工人  范围内一块地产 +1 级，不看归属（住宅普通 5 级 / 连锁店 1 级封顶；设施按类型封顶；0 级设施需附带类型）
- * 10 时光机    M7（联机语义见 design/engine.md §10.10）；本期在菜单里不可用
+ * 10 时光机    见 effects/timeMachine.ts（联机语义 design/engine.md §10.10）
  * 11 传送机    被传送物：范围内的演员（含自己、恶人）、未附身的神明、路面物件、房屋（有主或有建筑的地产）；
  *             目的地：范围内的空道路格（人物、神明、物件）或同类空地（房屋：连同地主、等级、类型、地契一起搬）⚑范围；
  *             被传送者不触发落点、过路费、炸弹倒数；对自己使用则本回合视为已掷骰（终结 intent）
@@ -19,13 +19,12 @@ import {
   propertyLotsInRange,
   tileWorld,
 } from '../../decisions/targets';
-import { EngineInvariantError } from '../../errors';
 import type { TeleportSource } from '../../types/decision';
 import type { LotId, SeatIndex, TileId } from '../../types/ids';
 import type { GameState } from '../../types/state';
 import { raiseLot } from '../common';
 import type { ItemEffect } from '../types';
-import { unusable, usableIf } from '../types';
+import { usableIf } from '../types';
 
 /** 还能 +1 级的地产（0 级设施也算，需附带类型） */
 function raisable(s: GameState, em: EngineMap, lot: LotId): boolean {
@@ -47,15 +46,6 @@ export const robotWorker: ItemEffect = {
   apply(ctx, seat, t) {
     if (t.t !== 'lot') return;
     raiseLot(ctx, t.lot, { k: 'item', ref: 9, by: seat }, t.facility);
-  },
-};
-
-export const timeMachine: ItemEffect = {
-  consume: 'pool',
-  menu: () => unusable('noAnchor'),
-  apply() {
-    // TODO(M7)：恢复锚点世界（rng 与决策 id 不回退）→ TIME_REWOUND + SYNC
-    throw new EngineInvariantError('NOT_IMPLEMENTED', 'time machine (M7)');
   },
 };
 

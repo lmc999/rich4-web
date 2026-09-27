@@ -258,22 +258,6 @@
   gap: 4px;
 }
 
-.godBadge,
-.statusBadge {
-  padding: 0 8px;
-  border: 2px solid var(--c-ink);
-  border-radius: 999px;
-  font-size: 12px;
-}
-
-.godBadge {
-  background: var(--c-sun);
-}
-
-.statusBadge {
-  background: var(--c-white);
-}
-
 @media (max-width: 1023px), (max-height: 560px) {
   .playerPanel {
     display: none;
@@ -519,6 +503,26 @@
   flex-direction: row-reverse;
 }
 
+/* 🤖 托管 + ⚙ 托管设置：拼成一个分段按钮 */
+.padSplit {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.padSplit > :first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.padSplit > :last-child {
+  margin-left: -3px;
+  padding-inline: 6px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
 .diceChoice {
   display: inline-flex;
   gap: 2px;
@@ -681,6 +685,51 @@
   pointer-events: auto;
   max-height: 100%;
   overflow: auto;
+}
+
+/* 决策层里的 DecisionFrame（ui/decisions）改用网格排版：Chromium 里 <fieldset> 作为 flex 项被压缩时，
+   它内部的匿名内容盒不跟着缩（不成为滚动容器，内容画到底栏下面）。手机横屏 844×390 的小游戏开场对话框
+   因此出现「底栏压住最后一行键值」。网格轨道给内容区 fieldset 确定的高度：内容区照常滚动，底栏完整。
+   行按元素显式放置（状态条可有可无）：标题 / 状态条 / 内容区 / 底栏。 */
+.decisionLayer > [role="dialog"][data-kind] {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  /* 不超出决策层（生产构建里对话框 chunk 的 CSS 在后面加载，.frame 的 78dvh 会盖过上面的 max-height:100%，
+     手机横屏时对话框高出决策层、挡住顶栏的菜单按钮） */
+  max-height: 100%;
+  overflow: auto;
+}
+
+.decisionLayer > [role="dialog"][data-kind] > header {
+  grid-row: 1;
+}
+
+.decisionLayer > [role="dialog"][data-kind] > [role="status"] {
+  grid-row: 2;
+}
+
+.decisionLayer > [role="dialog"][data-kind] > fieldset:first-of-type {
+  grid-row: 3;
+  min-height: 0;
+  /* 滚动提示：还有内容在上 / 下方时，边缘出现淡阴影（local 背景随内容滚动遮住阴影） */
+  background:
+    linear-gradient(var(--c-cream) 30%, rgb(255 246 220 / 0)) center top / 100% 24px no-repeat local,
+    linear-gradient(rgb(255 246 220 / 0), var(--c-cream) 70%) center bottom / 100% 24px no-repeat local,
+    radial-gradient(farthest-side at 50% 0, rgb(58 42 26 / 0.22), transparent) center top / 100% 10px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, rgb(58 42 26 / 0.22), transparent) center bottom / 100% 10px no-repeat
+    scroll;
+}
+
+.decisionLayer > [role="dialog"][data-kind] > fieldset:nth-of-type(2) {
+  grid-row: 4;
+}
+
+/* 手机横屏等矮屏：顶栏与行动区都更矮，决策层多占一些高度（844×390 下约 266px） */
+@media (max-height: 560px) {
+  .decisionLayer {
+    top: calc(var(--top-h) + 6px);
+    bottom: 76px;
+  }
 }
 
 .decisionClose {
@@ -870,35 +919,23 @@
   background: rgb(20 30 50 / 0.45);
 }
 
-.gameOverCard {
-  width: min(460px, 100%);
-  text-align: center;
+/* 终局面板用 GameOverScreen（ui/popups）：矮屏时排名在卡片里滚动，「再来一局 / 离开房间」贴在底部始终可见 */
+.gameOver > section {
+  max-height: 100%;
 }
 
-.ranking {
-  margin: var(--space-3) 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 6px;
+.gameOver > section > :last-child {
+  position: sticky;
+  bottom: calc(-1 * var(--space-3));
+  margin-bottom: calc(-1 * var(--space-3));
+  padding: var(--space-2) 0 var(--space-3);
+  background: var(--c-cream);
 }
 
-.ranking li {
-  display: grid;
-  grid-template-columns: 2em auto 1fr auto;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 4px 8px;
-  border: 2px solid var(--c-cream-deep);
-  border-radius: var(--radius-sm);
-  background: var(--c-white);
-  text-align: left;
-}
-
-.overActions {
-  display: flex;
-  justify-content: center;
-  gap: var(--space-2);
+@media (max-height: 560px) {
+  .gameOver {
+    padding: var(--space-2);
+  }
 }
 
 .chipItem {

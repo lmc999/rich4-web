@@ -4,7 +4,8 @@
  * - SCAPEGOAT：过路费、设施费、罚款：金额 > (rng%4000+4000)·PI 才用；查税：自己现金 ≥ 20000·PI 才用；
  *   陷害、梦游、关押：一律用。目标 = 候选中最恨的人（严格大于才替换，全为 0 则没有），否则 rng 随机
  * - BAIL（@0x43d3d8 / 0x43ea9a）：先 rng.bit()==0 → 不理会；候选按个性：0 只保释玩家；1 保释玩家，另外 rng%3==0 时
- *   把可雇的恶人也加入；2 只雇恶人。目标 = 候选[rng%n]。保释玩家要求点券 > 30；雇恶人要求点券 ≥ 700（实际收 300）
+ *   把关在这里的恶人全部加入；2 只雇恶人。目标 = 候选[rng%n]（候选不看点券）。抽中玩家要求点券 > 30；抽中恶人要求
+ *   点券 ≥ 700（实际收 300），不够就什么也不做
  */
 import type { PlayerIntent, SeatIndex, VillainKind } from '../../engine/types/index';
 import type { DecisionForYou } from '../../view/types';
@@ -53,13 +54,15 @@ export function scapegoat(v: AiView, d: DecisionForYou<'SCAPEGOAT'>, ctx: AiCont
   return { type: 'SCAPEGOAT', target };
 }
 
-type BailPick = { k: 'seat'; seat: SeatIndex } | { k: 'villain'; kind: VillainKind };
+type BailPick = { k: 'seat'; seat: SeatIndex } | { k: 'villain'; kind: VillainKind; available: boolean };
 
 export function bail(v: AiView, d: DecisionForYou<'BAIL'>, ctx: AiContext): PlayerIntent {
   const o = d.options;
   if (ctx.rng.bit() === 0) return { type: 'SKIP' };
   const players: BailPick[] = o.inmates.map((i) => ({ k: 'seat', seat: i.seat }));
-  const villains: BailPick[] = o.villains.filter((x) => x.available).map((x) => ({ k: 'villain', kind: x.kind }));
+  // 候选只按个性决定（关在这里的恶人全部列入，不看点券）；点券门槛在抽中之后才检查（g_villains §1 步骤 2–4）：
+  // 点券不足 700 时抽中恶人就什么也不做，rand % 候选数的分母与原版一致
+  const villains: BailPick[] = o.villains.map((x) => ({ k: 'villain', kind: x.kind, available: x.available }));
   let cands: BailPick[];
   switch (ctx.traits.personality) {
     case 0:
@@ -75,5 +78,5 @@ export function bail(v: AiView, d: DecisionForYou<'BAIL'>, ctx: AiContext): Play
   const pick = cands[ctx.rng.mod(cands.length)]!;
   const points = v.me.points;
   if (pick.k === 'seat') return points > BAIL_MIN_POINTS ? { type: 'BAIL', target: pick.seat } : { type: 'SKIP' };
-  return points >= HIRE_MIN_POINTS ? { type: 'HIRE', villain: pick.kind } : { type: 'SKIP' };
+  return points >= HIRE_MIN_POINTS && pick.available ? { type: 'HIRE', villain: pick.kind } : { type: 'SKIP' };
 }

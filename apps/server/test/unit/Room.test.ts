@@ -133,6 +133,27 @@ describe('Room：对局中无人在线的回收', () => {
     expect(h.room.phase).toBe('closed');
   });
 
+  it('座位上的真人全部 room:leave：立即自动存档（owner 为全部真人）并关闭房间；有人只是断线则不关', () => {
+    const { saves, stored } = recordingSaves();
+    const { persist, log } = recordingPersist();
+    const h = harness({ saves, persist });
+    h.startTwo();
+    // B 只是断线、A 离开：B 还可能回来，房间保留（暂停等人）
+    h.room.socketDisconnected('T1', 'sock-T1');
+    expect(h.room.leave('T0').ok).toBe(true);
+    expect(h.room.phase).toBe('paused');
+    expect(h.closed).toEqual([]);
+    expect(stored).toEqual([]);
+    // B 回来后也离开：全员离开 → 自动存档、关闭、删除快照
+    expect(h.room.resume(h.who('T1'), 0, 0).ok).toBe(true);
+    expect(h.room.phase).toBe('playing');
+    expect(h.room.leave('T1').ok).toBe(true);
+    expect(h.room.phase).toBe('closed');
+    expect(h.closed).toEqual(['idle']);
+    expect(stored.map((x) => [x.kind, [...x.owners].sort()])).toEqual([['auto', ['T0', 'T1']]]);
+    expect(log.closed).toBe(1);
+  });
+
   it('有真人重连就取消回收计时（暂停原因为 host 时房间保持暂停）', () => {
     const h = harness();
     h.startTwo();

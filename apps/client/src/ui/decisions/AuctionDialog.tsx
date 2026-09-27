@@ -17,6 +17,8 @@ import { lotStatus } from './helpers';
 import type { DecisionProps } from './types';
 import { useDecision } from './useDecision';
 
+type Row = [ReactNode, ReactNode];
+
 /** 出价后的新价格：无人领先时按起拍价 + inc，否则现价 + inc */
 export function bidPrice(o: { leader: unknown; start: number; price: number }, inc: BidIncrement): number {
   return (o.leader === null ? o.start : o.price) + inc;
@@ -59,7 +61,7 @@ export default function AuctionDialog(props: DecisionProps<'AUCTION_BID'>): Reac
           <BuildingPreview
             kind={st?.facility ? { t: 'facility', type: st.facility } : { t: 'house' }}
             level={o.level}
-            owner={o.seller}
+            owner={st?.owner ?? null}
             label={text.lot(o.lot)}
             size={88}
           />
@@ -88,10 +90,14 @@ export default function AuctionDialog(props: DecisionProps<'AUCTION_BID'>): Reac
         </div>
         <KeyValues
           rows={[
+            ...(o.source ? [[t('dlg.auction.sourceLabel'), t(`dlg.auction.source.${o.source}`)] as Row] : []),
             [t('dlg.auction.seller'), o.seller === null ? t('dlg.auction.noSeller') : text.player(o.seller)],
             [t('dlg.auction.start'), <Money key="s" value={o.start} />],
             [t('dlg.buyLot.level'), t('dlg.common.levelN', { n: o.level })],
             [t('dlg.common.cash'), <Money key="c" value={o.cash} testId="auction-cash" />],
+            ...(o.others === undefined
+              ? []
+              : [[t('dlg.auction.others'), t('dlg.auction.othersN', { n: o.others })] as Row]),
           ]}
         />
         <fieldset className={s.incGrid}>

@@ -175,7 +175,10 @@ describe('company：企业格收费（各行业）', () => {
 
 describe('facility：买、首建、加盖与收费', () => {
   it('facility.buy-build-upgrade：买地价 × PI；首建再付地价 × PI 并选类型；加盖 rate0 × PI；加油站上限 1 级', () => {
-    const sc = scenario({ players: ['human', 'human'] }).untilMenu(0);
+    // 1 号一直关着：排除他踩到新闻（税）、魔法屋对 0 号现金的影响
+    const sc = scenario({ players: ['human', 'human'] })
+      .untilMenu(0)
+      .bench(1);
     sc.teleport(0, 16, 15).force('dice', 1).roll(0).expectAsk(0, 'BUY_FACILITY');
     expect(sc.pending(0).options).toMatchObject({ lot: 'F1', price: 4000, level: 0, type: 'park' });
     sc.confirm(0);
@@ -338,6 +341,7 @@ describe('facility：买、首建、加盖与收费', () => {
   it('research：业主停在自己的研究所 → RESEARCH（1..等级）；5 天后交付道具 8+项目；查封时不问', () => {
     const sc = scenario({ players: ['human', 'human'] })
       .untilMenu(0)
+      .bench(1)
       .edit((s) => {
         Object.assign(s.facilities[0]!, { owner: 0, level: 2, type: 'lab' });
       });
@@ -355,6 +359,8 @@ describe('facility：买、首建、加盖与收费', () => {
     expect(() => sc.act(0, { type: 'RESEARCH', project: 3 })).toThrow(/OUT_OF_RANGE/);
     sc.act(0, { type: 'RESEARCH', project: 2 });
     expect(sc.event('RESEARCH_STARTED')).toMatchObject({ seat: 0, lot: 'F1', project: 2, days: 5 });
+    // 之后 0 号随机走动：新闻、命运只抽到不影响研发与行动的
+    sc.stackDeck('fate', [3, 20, 21, 22, 25]).stackDeck('news', [26, 24, 25, 22, 27]);
     sc.until((s) => s.players[0]!.items[10] === 1, 2000);
     const done = sc.log.find((e) => e.type === 'RESEARCH_DONE');
     expect(done).toMatchObject({ seat: 0, lot: 'F1', project: 2, item: 10, delivered: true });

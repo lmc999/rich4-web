@@ -102,6 +102,38 @@ describe('读档后的大厅', () => {
     expect(transport.payloads('room:start')).toHaveLength(1);
   });
 
+  it('读档后电脑座位的预设只读：存档里是电脑的显示原预设，存档里是真人、由电脑代打的标「电脑代打」', async () => {
+    const cunning = (s: SeatView): SeatView =>
+      s.occupant?.kind === 'ai' ? { ...s, occupant: { ...s.occupant, ai: { preset: 'cunning' } } } : s;
+    const room = loadedRoom({
+      seats: [
+        saved(human(0, '房主', { isYou: true, host: true }), '房主', 9),
+        saved(ai(1), '小明', 4),
+        saved(cunning(ai(2)), '电脑', 0, { wasHuman: false }),
+        seat(3),
+      ],
+    });
+    const { transport } = renderWith(<LobbyView room={room} onLeave={() => {}} />);
+    // 没有可改的下拉框
+    expect(screen.queryByTestId('seat-1-ai-preset')).toBeNull();
+    expect(screen.queryByTestId('seat-2-ai-preset')).toBeNull();
+    expect(screen.queryAllByRole('combobox', { name: '电脑个性' })).toEqual([]);
+    expect(screen.getByTestId('seat-2-ai-saved')).toHaveTextContent('存档设定：大老奸 · 困难');
+    expect(screen.getByTestId('seat-1-ai-saved')).toHaveTextContent('电脑代打');
+    expect(screen.getByTestId('seat-2-origin')).toHaveTextContent('原：约翰乔 / 电脑');
+    // 仍可移除电脑（让真人认领）
+    await userEvent.click(screen.getByTestId('seat-2-remove-ai'));
+    expect(transport.payloads('room:setSeatAi')).toEqual([{ seat: 2, ai: null }]);
+  });
+
+  it('没有读档时房主仍可改电脑预设', async () => {
+    const room = roomView({ seats: [human(0, '房主', { isYou: true, host: true }), ai(1), seat(2), seat(3)] });
+    const { transport } = renderWith(<LobbyView room={room} onLeave={() => {}} />);
+    expect(screen.queryByTestId('seat-1-ai-saved')).toBeNull();
+    await userEvent.selectOptions(screen.getByTestId('seat-1-ai-preset'), 'normal');
+    expect(transport.payloads('room:setSeatAi')).toEqual([{ seat: 1, ai: { preset: 'normal' } }]);
+  });
+
   it('观战者：可认领的座位（自己的存档座位）有认领按钮，发 room:claimSeat', async () => {
     const room = loadedRoom({ you: { role: 'spectator', id: 'sp', isHost: false } });
     const { transport } = renderWith(<LobbyView room={room} onLeave={() => {}} />);

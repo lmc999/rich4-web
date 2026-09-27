@@ -3,8 +3,8 @@
  * - MINIGAME_RESULT：小游戏裁判重放后的结算（M8）；
  * - SYS_SET_CONTROLLER：被踢后转为纯电脑（托管不改 controller）→ CONTROLLER_CHANGED；
  * - SYS_SET_AI_TRAITS：托管设置写入 aiTraits（随存档保存）→ AI_TRAITS_CHANGED；
- * - SYS_DEBUG：要求 config.debug（RICH4_TEST_MODE），forceNext / setCash / setPoints / teleport / give / setDate / clearBoard
- *   → DEBUG_APPLIED。
+ * - SYS_DEBUG：要求 config.debug（RICH4_TEST_MODE），forceNext / setCash / setPoints / teleport / give / setDate / clearBoard /
+ *   stackDeck（M7：指定新闻 / 命运牌堆接下来的牌）→ DEBUG_APPLIED。
  * 除 MINIGAME_RESULT（回答 MINIGAME 决策，随后照常推进帧栈）外，这些 action 不改变帧栈；
  * 唯一例外：SYS_DEBUG 改了手牌道具、钱、点券或清空了路面时，待答的回合菜单按新状态重发（新 decisionId），
  * 否则调试发的卡要等到下一回合才出现在菜单里（只在测试模式发生，不影响正式对局）。
@@ -153,6 +153,19 @@ function applyDebug(ctx: Ctx, op: DebugOp): void {
       if (!isValidDate(op.date)) throw new EngineRuleError('OUT_OF_RANGE', `bad date ${op.date}`);
       s.clock.date = op.date;
       applyCalendar(s, ctx.map.def.holidays);
+      return;
+    }
+    case 'stackDeck': {
+      const order: number[] = op.deck === 'news' ? s.secret.newsOrder : s.secret.fateOrder;
+      const cursor = op.deck === 'news' ? s.secret.newsCursor : s.secret.fateCursor;
+      op.ids.forEach((id, k) => {
+        const from = order.indexOf(id);
+        if (from < 0) throw new EngineRuleError('OUT_OF_RANGE', `${op.deck} ${id} is not in the deck`);
+        const at = (cursor + k) % order.length;
+        const t = order[at]!;
+        order[at] = id;
+        order[from] = t;
+      });
       return;
     }
     case 'clearBoard': {

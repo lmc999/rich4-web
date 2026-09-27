@@ -1,6 +1,7 @@
 // 存档与读档（design/client.md §5.7，按 architecture §5.12 只做服务器存档）：
 // - 对局中房主命名存档（game:save）；列出本人参与过的服务器存档（saves:list），显示地图、游戏日期、天数、玩家、存档时间；
 // - 大厅中房主读档（room:loadSave），之后座位显示「原：角色 / 昵称，待认领」；
+// - 首页（mode='home'）：列出本人拥有的存档，读取时新建私密房间并 room:loadSave，成功后回调房间号进房；
 // - 任何 owner 都能删除（saves:delete，二次确认）、导出 .r4save（GET /api/saves/:id/export）、
 //   导入文件（POST /api/saves/import）；签名无效标「非官方存档」，兼容性提示逐条显示。
 import { CHARACTER_KEYS } from '@rich4/shared/engine';
@@ -25,15 +26,15 @@ import c from '../common/common.module.css';
 import sy from './system.module.css';
 
 export interface SaveLoadMenuProps {
-  /** 对局中（可存档）或大厅（可读档） */
-  mode: 'game' | 'lobby';
+  /** 对局中（可存档）、大厅（房主可读档）或首页（新建私密房间读档） */
+  mode: 'game' | 'lobby' | 'home';
   isHost: boolean;
   /** 默认存档名（例如「1998年3月12日」） */
   defaultName?: string;
   /** 测试注入 fetch 等 */
   http?: SaveHttpOptions;
-  /** 读档成功回调（大厅收起存档面板） */
-  onLoaded?(saveId: string): void;
+  /** 读档成功回调（大厅收起存档面板；首页带新房间号） */
+  onLoaded?(saveId: string, roomCode?: string): void;
 }
 
 /** 兼容性提示的文案键 */
@@ -259,10 +260,27 @@ export function SaveLoadMenu({ mode, isHost, defaultName = '', http, onLoaded }:
   };
 
   const loadOne = async (sv: SaveSummary): Promise<void> => {
+    if (mode === 'home') return loadIntoNewRoom(sv);
     const r = await client.loadSave(sv.saveId);
     if (!r.ok) return fail(r.error);
     toast(t('hud:saves.loaded'));
     onLoaded?.(sv.saveId);
+  };
+
+  /** 首页读档：新建私密房间 → room:loadSave；读档失败（例如对局还在进行）时离开这个临时房间 */
+  const loadIntoNewRoom = async (sv: SaveSummary): Promise<void> => {
+    const created = await client.createRoom({ visibility: 'private' });
+    if (!created.ok) return fail(created.error);
+    const r = await client.loadSave(sv.saveId);
+    if (!r.ok) {
+      await client.leaveRoom();
+      return fail(r.error);
+    }
+    // 读档时房间设置整体取存档（含公开性）：从首页读档的房间保持私密，邀请链接发给原来的玩家
+    const v = await client.updateSettings({ visibility: 'private' });
+    if (!v.ok) toast(client.errorText(v.error), 'warn');
+    toast(t('ui:saveMenu.loadedNewRoom', { code: created.data.code }));
+    onLoaded?.(sv.saveId, created.data.code);
   };
 
   const deleteOne = async (sv: SaveSummary): Promise<void> => {
@@ -324,7 +342,7 @@ export function SaveLoadMenu({ mode, isHost, defaultName = '', http, onLoaded }:
           <SaveItem
             key={sv.saveId}
             sv={sv}
-            canLoad={mode === 'lobby' && isHost}
+            canLoad={mode === 'home' || (mode === 'lobby' && isHost)}
             highlight={fresh === sv.saveId}
             onLoad={() => loadOne(sv)}
             onExport={() => exportOne(sv)}

@@ -8,7 +8,8 @@ import { scenario } from '../testing/scenario';
 describe('bank', () => {
   it('bank.pass-atm-resume-move：路过银行开 ATM，办完继续走完剩余步数', () => {
     const sc = scenario({ players: ['human', 'human'] }).untilMenu(0);
-    sc.teleport(0, 18, 17).force('dice', 3).roll(0);
+    // 3 号是命运格：让它抽到不动钱的命运 3（拒绝往来）
+    sc.stackDeck('fate', [3]).teleport(0, 18, 17).force('dice', 3).roll(0);
     expect(sc.event('MOVE_SEGMENT')).toMatchObject({ path: [1], remaining: 2 });
     sc.expectAsk(0, 'BANK_ATM');
     expect(sc.pending(0).options).toMatchObject({ mode: 'pass', cash: 100000, deposit: 100000, canWithdraw: true });
@@ -74,8 +75,11 @@ describe('bank', () => {
     sc.teleport(0, 18, 17).force('dice', 1).roll(0).act(0, { type: 'SKIP' });
     sc.act(0, { type: 'LOAN', amount: 30000 });
     const due = sc.player(0).loanDue;
+    // 其余两人先关两天：到期前不走动（避免新闻的税改变 0 号的钱）
+    sc.bench(1, 2).bench(2, 2);
     sc.setCash(0, 1000, 2000).apply({ type: 'SYS_DEBUG', op: { op: 'setDate', date: due - 1 } });
-    sc.until((s) => !s.players[0]!.alive);
+    // 0 号这一步走到 4 号卡片格（不是新闻 / 命运格）
+    sc.force('dice', 3).until((s) => !s.players[0]!.alive);
     const forced = sc.log.find((e) => e.type === 'LOAN_FORCED');
     expect(forced).toMatchObject({ seat: 0, amount: 30000, paid: 3000 });
     expect(sc.log.find((e) => e.type === 'BANKRUPT')).toMatchObject({ seat: 0, cause: { k: 'loan' } });
@@ -95,7 +99,7 @@ describe('bank', () => {
     sc.edit((s) => {
       s.players[0]!.bankReject = 10;
     });
-    sc.teleport(0, 18, 17).force('dice', 3).roll(0);
+    sc.stackDeck('fate', [3]).teleport(0, 18, 17).force('dice', 3).roll(0);
     expect(sc.event('BANK_REJECTED')).toMatchObject({ seat: 0, days: 11, reason: 'rejected' });
     expect(sc.player(0).node).toBe(3);
 

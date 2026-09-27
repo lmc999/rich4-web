@@ -14,6 +14,7 @@
  * 9 进行中时 pending 非空、每个 pending 的 frameId 都在栈中、每座位至多 1 个；ROOT 在栈底且只有一个
  * 10 经济（M4，进行中时）：董事长与持股一致（严格最多、平手保留现任）；乐透号码只属于在场座位；
  *    贷款 ≥ 0 且有贷款 ⇔ 有到期日；融资 ≥ 0；研发只挂在已建成、等级 ≥ 项目的研究所上
+ * 11 四大恶人（M7）：在棋盘上 ⇔ 有雇主（进行中时雇主在场）；关着的恶人位于 home 对应的关押格
  */
 import { CARDS } from '../../data/tables/cards';
 import { CMB } from '../../data/tables/combat';
@@ -79,7 +80,15 @@ const GOD_PAIRS: readonly (readonly [number, number])[] = [
   [GOD.DOG, GOD.EARTH_GOD],
 ];
 
-export function checkInvariants(s: GameState, em: EngineMap): string[] {
+export interface InvariantOptions {
+  /**
+   * 时光机锚点世界（validate/index.ts 拼成的 GameState）：锚点在 TURN_MENU 提交 ROLL 时记下、不含待决策，
+   * 所以不要求「进行中时 pending 非空」
+   */
+  anchor?: boolean;
+}
+
+export function checkInvariants(s: GameState, em: EngineMap, opts: InvariantOptions = {}): string[] {
   const out: string[] = [];
   const idx = em.index;
 
@@ -217,6 +226,21 @@ export function checkInvariants(s: GameState, em: EngineMap): string[] {
     }
   }
 
+  // 11 四大恶人：在棋盘上 ⇔ 有雇主（雇主在场，对局进行中时）；在棋盘上的站在地图格上；关着的在对应关押格
+  for (const v of s.villains) {
+    if (v.onBoard) {
+      if (v.employer === null) out.push(`villain ${v.kind} on board without employer`);
+      else if (s.status === 'playing' && !aliveSeats.has(v.employer)) {
+        out.push(`villain ${v.kind} employed by ${v.employer} who is out`);
+      }
+      if (!em.hasTile(v.node)) out.push(`villain ${v.kind} on unknown tile ${v.node}`);
+    } else {
+      if (v.employer !== null) out.push(`villain ${v.kind} is confined but has employer ${v.employer}`);
+      const hold = v.home === 'jail' ? idx.jailHold : idx.hospitalHold;
+      if (v.node !== hold) out.push(`villain ${v.kind} is confined but not at ${hold}`);
+    }
+  }
+
   // 10 经济
   if (s.status === 'playing') {
     s.stocks.forEach((st, i) => {
@@ -250,7 +274,7 @@ export function checkInvariants(s: GameState, em: EngineMap): string[] {
     if (f.fid > s.counters.frame) out.push(`frame id ${f.fid} > counters.frame`);
   }
   if (s.status === 'playing') {
-    if (s.pending.length === 0) out.push('playing but no pending decision');
+    if (s.pending.length === 0 && !opts.anchor) out.push('playing but no pending decision');
     if (s.result !== null) out.push('playing but result is set');
   } else {
     if (s.pending.length > 0) out.push('game over but pending decisions remain');

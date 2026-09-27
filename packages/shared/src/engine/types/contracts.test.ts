@@ -287,8 +287,10 @@ type UndefinedPaths<T, P extends string> = undefined extends T
       : never;
 
 describe('GameState 形状', () => {
-  it('state 里没有 undefined（唯一例外：defaultIntent 的 ROLL.dice 按 architecture §5.5 为可选字段）', () => {
-    expectTypeOf<UndefinedPaths<GameState, 's'>>().toEqualTypeOf<'s.pending[].defaultIntent.dice'>();
+  it('state 里没有 undefined（例外：defaultIntent 的 ROLL.dice 按 architecture §5.5 为可选字段；AUCTION_BID 的 M7 附加字段为兼容旧桩可选，引擎总会给出）', () => {
+    expectTypeOf<UndefinedPaths<GameState, 's'>>().toEqualTypeOf<
+      's.pending[].defaultIntent.dice' | 's.pending[].options.others' | 's.pending[].options.source'
+    >();
   });
 
   it('PublicWorld 不含 secret / flow / pending / counters', () => {

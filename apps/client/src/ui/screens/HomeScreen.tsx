@@ -1,8 +1,10 @@
-// 首页 / 大厅（design/client.md §5.5）：昵称、创建房间、输入房间号加入（或观战）、单机、公开房间、设置。
+// 首页 / 大厅（design/client.md §5.5）：昵称、创建房间、输入房间号加入（或观战）、读取存档、单机、公开房间、设置。
+// 读取存档：列出本人拥有的服务器存档（也可导入 .r4save），选中后新建私密房间并 room:loadSave，随即进入该房间大厅。
 import { ROOM_CODE_RE } from '@rich4/shared/net';
-import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
+import { type FormEvent, lazy, type ReactNode, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'wouter';
+import { useTx } from '../../i18n/tx';
 import { useRoomStore } from '../../store/roomStore';
 import { normalizeNickname, useSettingsStore } from '../../store/settingsStore';
 import c from '../common/common.module.css';
@@ -12,10 +14,14 @@ import { ReconnectOverlay } from '../system/ReconnectOverlay';
 import { SettingsDialog } from '../system/SettingsDialog';
 import { ScreenShell, shellStyles as s } from './ScreenShell';
 
-type Mode = 'none' | 'create' | 'join';
+type Mode = 'none' | 'create' | 'join' | 'load';
+
+// 存档面板按需加载（首屏不含存档、导入导出与 HUD toast 的代码）
+const HomeSaves = lazy(() => import('./HomeSaves'));
 
 export function HomeScreen(): ReactNode {
   const { t } = useTranslation('lobby');
+  const tx = useTx();
   const nickname = useSettingsStore((st) => st.nickname);
   const setNickname = useSettingsStore((st) => st.setNickname);
   const closed = useRoomStore((st) => st.closed);
@@ -106,6 +112,18 @@ export function HomeScreen(): ReactNode {
         >
           {t('home.joinRoom')}
         </button>
+        <button
+          type="button"
+          className="btn btn--cream"
+          onClick={() => {
+            setError(null);
+            if (commitNick()) setMode(mode === 'load' ? 'none' : 'load');
+          }}
+          aria-expanded={mode === 'load'}
+          data-testid="home-load-open"
+        >
+          {t('home.loadSave')}
+        </button>
         <Link href="/solo" className="btn btn--green" data-testid="home-solo" onClick={() => commitNick()}>
           {t('home.solo')}
         </Link>
@@ -143,6 +161,12 @@ export function HomeScreen(): ReactNode {
       )}
 
       {mode === 'create' && <CreateRoomForm onCreated={(c6) => navigate(`/r/${c6}`)} />}
+
+      {mode === 'load' && (
+        <Suspense fallback={<p className={c.muted}>{tx('ui:common.loading')}</p>}>
+          <HomeSaves onEnter={(c6) => navigate(`/r/${c6}`)} />
+        </Suspense>
+      )}
 
       {error && (
         <p className={c.error} role="alert" data-testid="home-error">

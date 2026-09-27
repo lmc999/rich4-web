@@ -1,15 +1,16 @@
 /**
  * M6 的 ASK 决策（flow/ask.ts 的 ASK_HANDLERS 引用这里）：
- * - BAIL：停在监狱 / 医院保释格（squares/jail.ts）；HIRE 雇恶人属于 M7，本期拒绝。
+ * - BAIL：停在监狱 / 医院保释格（squares/jail.ts）：保释玩家（30 点券）或雇用恶人（300 点券，effects/villains）。
  * - DISCARD_CARD：rules.handFull='choose' 时满手又得卡（effects/common.gainCard 先入手再压本帧），选一张弃掉（回牌堆）。
- * - USE_FREE_CARD / SCAPEGOAT：由持有付款或关押流程的帧（TOLL、FEE、PAYX、CONFINE、CARD）直接发出并在各自的 resume
- *   里处理，不经过 ASK 帧；这里的处理器只是为了让 ASK_HANDLERS 对 SimpleAskKind 穷举，被调用即为内部缺陷。
+ * - USE_FREE_CARD / SCAPEGOAT：由持有付款或关押流程的帧（TOLL、FEE、PAYX、CONFINE、CARD、FATE）直接发出并在各自的
+ *   resume 里处理，不经过 ASK 帧；MAGIC_CAST（MAGIC 帧）、BIRTHDAY_PICK（FATE 帧）、DEATH_GOD_TARGET（SURRENDER 帧）同理。
+ *   这里的处理器只是为了让 ASK_HANDLERS 对 SimpleAskKind 穷举，被调用即为内部缺陷。
  */
 import { cardDef } from '../../data/tables/cards';
 import type { Ctx } from '../core/ctx';
 import { EngineInvariantError, EngineRuleError } from '../errors';
 import { HAND_MAX, returnCardToDeck } from '../rules/inventory';
-import { bailOut, buildBail } from '../squares/jail';
+import { bailOut, buildBail, hireOut } from '../squares/jail';
 import type { DiscardCardOptions } from '../types/decision';
 import type { FrameOf } from '../types/frames';
 import type { CardId } from '../types/ids';
@@ -29,7 +30,7 @@ export const BAIL_ASK: AskHandler<'BAIL'> = {
   },
   resolve(ctx: Ctx, f: AskFrame, a: PlayerAction): void {
     if (a.type === 'BAIL') bailOut(ctx, f.seat, whereOf(f), a.target);
-    else if (a.type === 'HIRE') throw new EngineRuleError('NOT_ALLOWED', 'hiring villains is not available yet (M7)');
+    else if (a.type === 'HIRE') hireOut(ctx, f.seat, whereOf(f), a.villain);
   },
 };
 
@@ -59,7 +60,9 @@ export const DISCARD_ASK: AskHandler<'DISCARD_CARD'> = {
   },
 };
 
-function ownedByFrame<K extends 'USE_FREE_CARD' | 'SCAPEGOAT'>(kind: K): AskHandler<K> {
+function ownedByFrame<K extends 'USE_FREE_CARD' | 'SCAPEGOAT' | 'MAGIC_CAST' | 'BIRTHDAY_PICK' | 'DEATH_GOD_TARGET'>(
+  kind: K,
+): AskHandler<K> {
   const fail = (): never => {
     throw new EngineInvariantError('ASK_KIND', `${kind} is asked by its owning frame, not by ASK`);
   };
@@ -68,3 +71,6 @@ function ownedByFrame<K extends 'USE_FREE_CARD' | 'SCAPEGOAT'>(kind: K): AskHand
 
 export const USE_FREE_CARD_ASK = ownedByFrame('USE_FREE_CARD');
 export const SCAPEGOAT_ASK = ownedByFrame('SCAPEGOAT');
+export const MAGIC_CAST_ASK = ownedByFrame('MAGIC_CAST');
+export const BIRTHDAY_PICK_ASK = ownedByFrame('BIRTHDAY_PICK');
+export const DEATH_GOD_TARGET_ASK = ownedByFrame('DEATH_GOD_TARGET');

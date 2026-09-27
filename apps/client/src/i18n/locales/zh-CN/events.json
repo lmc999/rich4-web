@@ -85,10 +85,10 @@
     "ALLIANCE_EXPIRED": "{{a}} 与 {{b}} 的同盟到期",
     "BANK_REJECTED": "银行拒绝与 {{who}} 往来 {{n}} 天",
     "BANK_REJECTED_sunday": "星期日银行休息，{{who}} 只能下次再来",
-    "NEWS": "新闻 {{id}}：{{text}}",
-    "FATE": "{{who}} 抽到命运 {{id}}",
-    "MAGIC_CONDITION": "{{who}} 在魔法屋施展魔法",
-    "MAGIC_CAST": "{{who}} 的魔法生效",
+    "NEWS": "新闻「{{text}}」：{{body}}",
+    "FATE": "命运「{{title}}」：{{text}}",
+    "MAGIC_CONDITION": "{{who}} 走进魔法屋，女巫点名「{{cond}}」：{{targets}}",
+    "MAGIC_CAST": "{{who}} 选择魔法「{{effect}}」，作用于 {{targets}}",
     "LOTTERY_TICKET": "{{who}} 买了乐透 {{n}} 号",
     "LOTTERY_DRAW": "乐透开奖：{{n}} 号，{{who}} 中奖 {{amount}} 元",
     "LOTTERY_DRAW_noWinner": "乐透开奖：{{n}} 号，无人中奖",
@@ -97,7 +97,6 @@
     "MINIGAME_ENDED": "{{who}} 在小游戏中获得 {{n}} 点券",
     "BAIL": "{{who}} 保释了 {{target}}",
     "VILLAIN_HIRED": "{{who}} 雇用了{{villain}}",
-    "VILLAIN_ACTION": "{{villain}} 找上了 {{target}}",
     "VILLAIN_HOME": "{{villain}} 回家了",
     "BEGGAR_ALMS": "{{who}} 施舍乞丐 {{amount}} 元",
     "STOCK_TRADED_buy": "{{who}} 买入 {{stock}} {{n}} 股（{{amount}} 元）",
@@ -131,7 +130,8 @@
     "GAME_OVER_none": "游戏结束",
     "CONTROLLER_CHANGED_ai": "{{who}} 改由电脑控制",
     "CONTROLLER_CHANGED_human": "{{who}} 改由玩家控制",
-    "DEBUG_APPLIED": "［调试］{{op}}"
+    "DEBUG_APPLIED": "［调试］{{op}}",
+    "MAGIC_CONDITION_none": "{{who}} 走进魔法屋，女巫点名「{{cond}}」，可是没有人符合"
   },
   "listSep": "、",
   "show": {
@@ -182,6 +182,7 @@
     "auction": "公开拍卖",
     "auctionLeader": "领先：{{who}}",
     "auctionNoBid": "等待出价",
+    "auctionLive": "竞价中",
     "auctionSold": "{{who}} 以 {{amount}} 元拍得 {{lot}}",
     "auctionUnsold": "{{lot}} 无人出价，流拍",
     "bidderQuit": "退出竞拍",
@@ -211,9 +212,10 @@
     "company": "某家公司",
     "stock": "某支股票",
     "who": "某位玩家",
-    "days": "数",
+    "days": "几",
     "amount": "一笔钱",
-    "pct": "若干"
+    "pct": "若干",
+    "tile": "某处"
   },
   "passive": {
     "18": "复仇卡发动：以牙还牙！",
@@ -253,11 +255,11 @@
   "villainAction": {
     "stealPoints": "{{villain}}偷走了 {{who}} 一半的点券",
     "stealObject": "{{villain}}顺手牵走了路上的东西",
-    "robDeposit": "{{villain}}抢走 {{who}} {{amount}} 元存款",
+    "robDeposit": "{{villain}}洗劫银行，从其他玩家的存款里抢走共 {{amount}} 元",
     "stealCard": "{{villain}}从 {{who}} 身上偷走一张卡",
     "extort": "{{villain}}向 {{who}} 勒索 {{amount}} 元",
-    "spySurplus": "{{villain}}窃走公司盈余 {{amount}} 元",
-    "spyToll": "{{villain}}截走一笔过路费 {{amount}} 元"
+    "spySurplus": "{{villain}}窃走 {{who}} 公司的本月盈余 {{amount}} 元",
+    "spyToll": "{{villain}}向 {{who}} 截走一笔过路费 {{amount}} 元"
   },
   "strike": {
     "missile": "飞弹来袭！",
@@ -392,5 +394,14 @@
       "h22": "中元节",
       "h23": "中秋节"
     }
+  },
+  "fateAmount": {
+    "gain": "+{{amount}}",
+    "loss": "-{{amount}}",
+    "loan": "贷款 +{{amount}}",
+    "deposit": "存款 +{{amount}}",
+    "points": "+{{amount}} 点券",
+    "waived": "免付（{{amount}}）",
+    "voided": "奖金作废（{{amount}}）"
   }
 }

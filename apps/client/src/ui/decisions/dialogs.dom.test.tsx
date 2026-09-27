@@ -2,6 +2,7 @@
 import { CARD, ITEM } from '@rich4/shared/engine';
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { seatColor } from '../components/Avatar';
 import AuctionDialog, { bidPrice } from './AuctionDialog';
 import BailDialog from './BailDialog';
 import BirthdayPickDialog from './BirthdayPickDialog';
@@ -334,6 +335,19 @@ describe('AuctionDialog', () => {
     expectSingleIntent(r.submit, { type: 'QUIT' });
     expect(bidPrice({ leader: null, start: 1800, price: 0 }, 0)).toBe(1800);
     expect(bidPrice({ leader: 1, start: 1800, price: 2300 }, 500)).toBe(2800);
+  });
+
+  it('建筑预览按地块的真实地主上色（拍卖卡拍别人的地、无主地时卖方不是地主）', () => {
+    // 0 号出拍卖卡拍 1 号的 L2：预览用 1 号的座位色，卖方一行仍是 0 号
+    const other = renderDialog(AuctionDialog, 'AUCTION_BID', {
+      options: { lot: 'L2', level: 3, seller: 0, source: 'card' },
+    });
+    const preview = () => screen.getByTestId('building-preview').style.getPropertyValue('--seat');
+    expect(preview()).toBe(seatColor(1));
+    other.unmount();
+    // 无主的 L3：没有座位色
+    renderDialog(AuctionDialog, 'AUCTION_BID', { options: { lot: 'L3', level: 0, seller: 0, source: 'card' } });
+    expect(preview()).toBe(seatColor(null));
   });
 });
 

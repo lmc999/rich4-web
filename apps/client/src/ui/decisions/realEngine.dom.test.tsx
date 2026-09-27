@@ -69,6 +69,8 @@ function commit(sc: Scenario, seat: SeatIndex, m: Mounted): PlayerIntent {
 describe('真实引擎 options → 对话框 → intent → 引擎', () => {
   it('BANK_ATM（路过）：存 30000 → ATM{deposit}，引擎继续走完剩余步数', async () => {
     const sc = scenario({ players: ['human', 'human'] }).untilMenu(0);
+    // 终点 3 号格是命运格（M7 起生效）：预置一张不动现金、存款的命运（3 跳票：银行拒绝往来）
+    sc.stackDeck('fate', [3]);
     sc.teleport(0, 18, 17).force('dice', 3).roll(0);
     const m = await mount(sc, 0, 'BANK_ATM');
     expect(within(m.root).getByTestId('bank-cash')).toHaveTextContent('100,000');

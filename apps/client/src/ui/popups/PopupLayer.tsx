@@ -1,6 +1,7 @@
 // 演出弹窗层（design/client.md §2 ui/popups）：渲染当前演出弹窗（新闻、命运、出卡、神明、乐透、魔法屋、终局）
 // 与公开竞价横幅。由对局页挂载一次（GameScreen，叠在棋盘与 HUD 之上、决策层之下）。
 // 最短展示时间过后出现「跳过」按钮，可以提前结束演出（只缩短演出，不影响规则与计时）。
+import type { MapIndex } from '@rich4/shared/data';
 import { type ReactNode, useEffect, useState } from 'react';
 import { useTx } from '../../i18n/tx';
 import { AuctionBanner } from './AuctionBanner';
@@ -42,7 +43,7 @@ function Current({ p }: { p: OpenPopup }): ReactNode {
     return () => clearTimeout(id);
   }, [p.minMs]);
   const skip = (): void => {
-    if (skippable) usePopupStore.getState().skip(p.id);
+    if (skippable) usePopupStore.getState().skip(p.popupId);
   };
   return (
     <div className={s.backdrop} data-testid="popup" data-kind={p.kind} data-skippable={skippable ? 'true' : 'false'}>
@@ -61,14 +62,14 @@ function Current({ p }: { p: OpenPopup }): ReactNode {
   );
 }
 
-export function PopupLayer(): ReactNode {
+export function PopupLayer({ map = null }: { map?: MapIndex | null }): ReactNode {
   const current = usePopupStore((st) => st.current);
   return (
     <>
-      <AuctionBanner />
+      <AuctionBanner map={map} />
       {current && (
         <div className={s.layer} data-testid="popup-layer">
-          <Current key={current.id} p={current} />
+          <Current key={current.popupId} p={current} />
         </div>
       )}
     </>

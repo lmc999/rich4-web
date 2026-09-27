@@ -399,9 +399,17 @@ export interface AuctionBidOptions {
   start: number;
   price: number;
   leader: SeatIndex | null;
-  /** inc=0 只在 leader==null 时出现（按起拍价出价） */
+  /** inc=0 只在 leader==null 时出现（按起拍价出价）；只列出价后不超过现金的档位 */
   increments: BidIncrement[];
   cash: number;
+  /**
+   * 除自己与领先者以外现在还能出价的竞拍者人数（未放弃、未退出、在场且现金 ≥ 下一口价；AI：只剩自己可出价时
+   * 压成最小档）。
+   * M7 起引擎总会给出；可选只是为了兼容旧存档与测试桩。
+   */
+  others?: number;
+  /** 拍卖来源（拍卖卡、破产、投降、新闻、魔法屋）；同上，引擎总会给出 */
+  source?: 'card' | 'bankrupt' | 'surrender' | 'news' | 'magic';
 }
 
 export interface BirthdayPickOptions {

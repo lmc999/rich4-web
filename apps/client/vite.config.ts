@@ -58,6 +58,20 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // 仓库根是 workspaces 根，Vite 默认允许 /@fs/ 读取其下任意文件；原版文件与派生素材一律禁止经开发服务器外泄
+    fs: {
+      deny: [
+        '.env',
+        '.env.*',
+        '*.{crt,pem,key}',
+        '**/.git/**',
+        '**/original/**',
+        '**/rich4-assets/**',
+        '**/.cache/**',
+        '**/rich4-data/**',
+        '**/*.{mkf,MKF,flc,fli}',
+      ],
+    },
     proxy: {
       '/socket.io': { target: API_TARGET, ws: true, changeOrigin: true },
       '/api': { target: API_TARGET, ws: true, changeOrigin: true },

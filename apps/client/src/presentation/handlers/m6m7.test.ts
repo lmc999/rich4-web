@@ -78,7 +78,7 @@ async function run<T extends GameEventType>(
   const stage: StageCall[] = [];
   const popups: OpenPopup[] = [];
   const off = usePopupStore.subscribe((st) => {
-    if (st.current && popups.at(-1)?.id !== st.current.id) popups.push(st.current);
+    if (st.current && popups.at(-1)?.popupId !== st.current.popupId) popups.push(st.current);
   });
   const clock = new AnimClock();
   clock.instant = true;
@@ -312,7 +312,7 @@ describe('M7 事件', () => {
   it('NEWS：缺参数时模板用中性默认值，不残留占位符', async () => {
     const r = await run({ type: 'NEWS', id: 29, params: {}, affected: [] });
     const p = r.popups[0];
-    expect(p?.kind === 'news' && p.body).toBe('某家公司的董事长涉嫌违法超贷，被送进监狱。');
+    expect(p?.kind === 'news' && p.body).toBe('某家公司的董事长 某位玩家 涉嫌违法超贷，被判入狱 几 天。');
   });
 
   it('FATE：卡片内容、金额、加持结果', async () => {

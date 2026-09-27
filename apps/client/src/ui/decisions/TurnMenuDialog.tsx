@@ -200,6 +200,16 @@ export default function TurnMenuDialog(props: DecisionProps<'TURN_MENU'>): React
             map={map}
             me={d.seat}
             source={targeting.source}
+            note={
+              targeting.source.kind === 'item' && targeting.source.item === 10 && o.timeMachine.anchorTurn !== null
+                ? t(
+                    view.config.rules.timeMachine === 'perSeat'
+                      ? 'dlg.target.timeMachinePerSeat'
+                      : 'dlg.target.timeMachine',
+                    { turn: o.timeMachine.anchorTurn },
+                  )
+                : undefined
+            }
             disabled={!ctl.interactive}
             onCancel={() => setTargeting(null)}
             onConfirm={confirmTarget}

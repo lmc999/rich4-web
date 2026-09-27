@@ -7,7 +7,7 @@
  * 5  换屋  同上：交换等级与连锁店（设施为等级与类型），不检查等级上限
  * 7  改建  脚下 ≥1 级（不论谁的）：住宅在普通与连锁店之间切换（变连锁店时等级取 min(等级,1)）；
  *          设施改为指定类型（公园、加油站取 min(等级,1)），研究所改掉时研发作废
- * 8  拍卖  脚下任何地产 → AUCTION 帧（M7 实现并发拍卖；本期不可用）
+ * 8  拍卖  脚下任何地产（住宅或设施）→ AUCTION 帧（卖方 = 出卡者，成交款进他的存款；流拍变无主，flow/auction.ts）
  * 9  天使  范围内地产：住宅同名路段每块 +1 级（不论地主；满级跳过；连锁店只能 0→1）；设施 +1 级（0 级需附带类型）
  * 10 恶魔  范围内地产：住宅同名路段全部夷平（地主保留）；设施只夷平这一处；每块有主地：地主敌意 等级 × 30 × PI
  * 11 怪兽  范围内别人已有建筑的地产 → 夷平（地主、地契保留）；敌意 等级 × 30 × PI
@@ -33,6 +33,7 @@ import {
   underfootLot,
 } from '../../decisions/targets';
 import { EngineInvariantError } from '../../errors';
+import { pushAuction } from '../../flow/auction';
 import { addTenure } from '../../rules/calendar';
 import type { GameEventPayloads } from '../../types/events';
 import type { LotId, LotLevel, SeatIndex } from '../../types/ids';
@@ -40,9 +41,6 @@ import type { FacilityState, GameState, LandState } from '../../types/state';
 import { addHostility, mutateLot, raiseLot, removeObject, timesPI } from '../common';
 import type { CardEffect } from '../types';
 import { unusable, usable, usableIf } from '../types';
-
-/** 拍卖卡要压的 AUCTION 帧属于 M7；实现前拍卖卡在菜单里不可用 */
-export const AUCTION_CARD_ENABLED = false;
 
 function land(s: GameState, em: EngineMap, lot: LotId): LandState | null {
   return isLandLot(lot) ? (s.lands[em.landIdx(lot)] ?? null) : null;
@@ -243,15 +241,19 @@ export const rebuild: CardEffect = {
 
 // ───────────────────────── 8 拍卖 ─────────────────────────
 
+/**
+ * 8 拍卖：不选目标，只拍自己脚下的住宅或设施（企业不行；自己的、别人的、无主的都行）→ AUCTION 帧：
+ * 卖方 = 出卡者（本人不能出价，成交款全部进他的存款，原地主拿不到钱）；流拍则该地变为无主、建筑保留（g_arbitration §2.j）
+ */
 export const auction: CardEffect = {
   menu(s, em, seat) {
-    if (!AUCTION_CARD_ENABLED) return unusable('noTarget');
     const lot = underfootLot(s, em, seat);
     return lot === null ? unusable('noTarget') : usable({ t: 'underfoot', lot, types: null });
   },
-  apply() {
-    // TODO(M7)：压 AUCTION{lot, seller: 出卡者, source:'card', unsold:'ownerless'}（成交款进出卡者存款，流拍变无主）
-    throw new EngineInvariantError('NOT_IMPLEMENTED', 'auction card needs the AUCTION frame (M7)');
+  apply(ctx, seat) {
+    const lot = underfootLot(ctx.s, ctx.map, seat);
+    if (lot === null) return;
+    pushAuction(ctx, lot, seat, 'card', 'ownerless');
   },
 };
 

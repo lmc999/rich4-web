@@ -12,6 +12,8 @@
  * 每个动作后可选跑 validateState（默认开启），不变量不成立立即抛错。
  */
 
+import type { DataRegistry } from '../../data/maps/registry';
+import { fixtureRegistry } from '../../data/maps/registry';
 import { GODS } from '../../data/tables/gods';
 import type { EngineInternalApi } from '../api';
 import type { DecisionKind, PendingDecision } from '../types/decision';
@@ -42,8 +44,11 @@ export class Scenario {
   readonly log: GameEvent[] = [];
   private readonly check: boolean;
 
+  private readonly registry: DataRegistry;
+
   constructor(o: ScenarioOptions = {}) {
     const g = newGame({ board: 'clear', ...o });
+    this.registry = o.registry ?? fixtureRegistry;
     this.engine = g.engine;
     this.state = g.state;
     this.events = g.events;
@@ -149,6 +154,36 @@ export class Scenario {
 
   /** 最近一次 placeObject 的物件 id */
   lastObjectId = 0;
+
+  // ───────────────────────── M7：牌堆、闲置座位 ─────────────────────────
+
+  /**
+   * 让新闻 / 命运牌堆接下来依次抽到 ids（把它们换到游标处，牌序仍是 36 / 37 张的排列）。
+   * 命运抽到后还会按座驾替换、不可行就跳过，与正式抽牌相同。
+   */
+  stackDeck(kind: 'news' | 'fate', ids: readonly number[]): this {
+    return this.debug({ op: 'stackDeck', deck: kind, ids: ids.slice() });
+  }
+
+  /**
+   * 把座位关进监狱 days 天（放在关押格），让它在后续回合里一直受阻、不走动也不触发格子事件：
+   * 旧的经济场景用它排除其他座位的新闻、命运、魔法屋对断言的干扰。
+   */
+  bench(seat: SeatIndex, days = 100): this {
+    const hold = this.engineMapHold();
+    return this.edit((s) => {
+      const p = s.players.find((x) => x.seat === seat)!;
+      if (p.st.jail === 0) p.savedPrevNode = p.prevNode;
+      p.st.jail = days;
+      p.placed = true;
+      p.node = hold;
+      p.prevNode = hold;
+    });
+  }
+
+  private engineMapHold(): TileId {
+    return this.registry.getMap(this.state.dataRef.mapId).jailHold;
+  }
 
   /** 以 seat 在 TURN_MENU 用手里的第一张 card */
   useCard(seat: SeatIndex, card: CardId, target: UseTarget = { t: 'none' }): this {

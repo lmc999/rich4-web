@@ -213,6 +213,7 @@ describe('passive（被动卡）', () => {
             selfDays: null,
             revenge: false,
             scapegoated: false,
+            wreck: false,
             stage: 'hostility',
           });
         });

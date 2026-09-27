@@ -1,31 +1,16 @@
 // 玩家面板（design/client.md §5.1）：大头像、名字与玩家色、现金 / 存款 / 点券、神明徽章、交通工具、状态计数。
-// 默认显示当前行动者；点击玩家条可切换查看对象。
-import { CHARACTER_KEYS, GOD_KEYS, type SeatIndex } from '@rich4/shared/engine';
+// 默认显示当前行动者；点击玩家条可切换查看对象。神明与状态徽章用 GodBadge / StatusBadges（与玩家条同一套判定）。
+import { CHARACTER_KEYS, type SeatIndex } from '@rich4/shared/engine';
 import type { RoomView } from '@rich4/shared/net';
-import type { GameView, PlayerView } from '@rich4/shared/view';
+import type { GameView } from '@rich4/shared/view';
 import type { ReactNode } from 'react';
 import { useTx } from '../../i18n/tx';
 import { currentSeat } from '../../store/gameStore';
 import { useUiStore } from '../../store/uiStore';
 import { Avatar, SeatMark } from '../common/Avatar';
-import { counterDays, formatDateShort, formatInt } from '../components/format';
 import h from './hud.module.css';
 import { Stat, seatName } from './PlayerChips';
-
-const STATUS_KEYS = ['jail', 'hospital', 'hotel', 'away', 'hibernate', 'sleepwalk', 'stay', 'tortoise'] as const;
-
-export function playerStatuses(p: PlayerView): { key: string; n: number | string; due?: string }[] {
-  const out: { key: string; n: number | string; due?: string }[] = [];
-  for (const k of STATUS_KEYS) {
-    const n = counterDays(p.st[k]);
-    if (n > 0) out.push({ key: k, n });
-  }
-  if (p.bankReject > 0) out.push({ key: 'bankReject', n: counterDays(p.bankReject) });
-  if (p.insuranceDays > 0) out.push({ key: 'insurance', n: counterDays(p.insuranceDays) });
-  if (p.bomb) out.push({ key: 'bomb', n: p.bomb.fuse });
-  if (p.loan > 0) out.push({ key: 'loan', n: formatInt(p.loan), due: formatDateShort(p.loanDue) });
-  return out;
-}
+import { StatusBadges } from './StatusBadges';
 
 export function PlayerPanel({ view, room }: { view: GameView; room: RoomView }): ReactNode {
   const t = useTx();
@@ -35,7 +20,10 @@ export function PlayerPanel({ view, room }: { view: GameView; room: RoomView }):
     inspect ?? (currentSeat(view) as SeatIndex | null) ?? me ?? view.players[0]?.seat ?? null;
   const p = view.players.find((x) => x.seat === seat);
   if (!p) return null;
-  const statuses = playerStatuses(p);
+  const charName = (s: SeatIndex): string => {
+    const q = view.players.find((x) => x.seat === s);
+    return q ? t(`characters:${CHARACTER_KEYS[q.character]}.name`) : seatName(room, s);
+  };
   return (
     <section
       className={h.playerPanel}
@@ -59,16 +47,7 @@ export function PlayerPanel({ view, room }: { view: GameView; room: RoomView }):
         <Stat seat={p.seat} field="points" value={p.points} label={t('hud:stat.points')} />
       </div>
       <div className={h.ppBadges}>
-        {p.god && (
-          <span className={h.godBadge} data-testid="god-badge">
-            {t(`gods:${GOD_KEYS[p.god.kind]}.name`)} {t('hud:days', { n: p.god.days })}
-          </span>
-        )}
-        {statuses.map((s) => (
-          <span key={s.key} className={h.statusBadge}>
-            {t(`hud:status.${s.key}`, { n: s.n, due: s.due })}
-          </span>
-        ))}
+        <StatusBadges player={p} nameOf={charName} />
         {!p.alive && <span className={h.badgeOut}>{t(`hud:out.${p.out ?? 'bankrupt'}`)}</span>}
       </div>
     </section>

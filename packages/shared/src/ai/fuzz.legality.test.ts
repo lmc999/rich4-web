@@ -56,7 +56,7 @@ function percentile(xs: number[], p: number): number {
 }
 
 describe('fuzz.legality（OriginalAiPolicy）', () => {
-  it('四个座位（含 controller=human 由 AI 代打）自对弈：合法率 100%，p99 < 5ms，覆盖 M6 决策', {
+  it('四个座位（含 controller=human 由 AI 代打）自对弈：合法率 100%，p99 < 5ms，覆盖 M6 / M7 决策', {
     timeout: 240_000,
   }, () => {
     const times: number[] = [];
@@ -99,7 +99,17 @@ describe('fuzz.legality（OriginalAiPolicy）', () => {
     expect(decisions).toBeGreaterThan(5000);
     expect(used.cards).toBeGreaterThan(20);
     expect(used.items).toBeGreaterThan(20);
-    for (const k of ['TURN_MENU', 'BUY_LAND', 'USE_FREE_CARD', 'SCAPEGOAT'] as DecisionKind[])
+    // M7：拍卖出价、魔法屋、保释 / 雇恶人、生日挑卡（真人座位由 AI 代打）也在自对弈里出现
+    for (const k of [
+      'TURN_MENU',
+      'BUY_LAND',
+      'USE_FREE_CARD',
+      'SCAPEGOAT',
+      'AUCTION_BID',
+      'MAGIC_CAST',
+      'BAIL',
+      'BIRTHDAY_PICK',
+    ] as DecisionKind[])
       expect(kinds).toContain(k);
     expect(percentile(times, 99)).toBeLessThan(5);
   });

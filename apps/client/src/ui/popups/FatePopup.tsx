@@ -28,8 +28,13 @@ export function FatePopup({ spec }: { spec: FatePopupSpec }): ReactNode {
           </p>
           {spec.amountText && (
             <span
-              className={clsx(s.amount, spec.amountText.startsWith('-') ? s.loss : s.gain)}
+              className={clsx(
+                s.amount,
+                (spec.amountTone ?? (spec.amountText.startsWith('-') ? 'loss' : 'gain')) === 'loss' && s.loss,
+                (spec.amountTone ?? (spec.amountText.startsWith('-') ? 'loss' : 'gain')) === 'gain' && s.gain,
+              )}
               data-testid="fate-amount"
+              data-tone={spec.amountTone ?? null}
             >
               {spec.amountText}
             </span>

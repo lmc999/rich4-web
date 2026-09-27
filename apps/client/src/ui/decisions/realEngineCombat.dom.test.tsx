@@ -1,6 +1,7 @@
 // 对话框 × 真实引擎联调（M6 对抗系统）：引擎算出的卡片 / 道具目标候选 → 回合菜单的卡片 / 道具页 → TargetPicker 的 DOM 候选列表
 // → 点第一个候选并确认 → 得到的 USE_CARD / USE_ITEM 交给引擎执行，必须被接受并发出 CARD_USED / ITEM_USED（或 CARD_NO_EFFECT）。
-// 覆盖 25 张可主动使用的卡与 12 种道具（拍卖卡等 M7、时光机没有时间点，按引擎给的不可用原因显示为禁用）；
+// 覆盖 26 张可主动使用的卡（M7 起含拍卖卡）与 12 种道具（时光机没有时间点时按引擎给的不可用原因显示为禁用；
+// 有时间点时走完 TIME_REWOUND），拍卖卡另走一遍多人出价的 AUCTION_BID 对话框；
 // 另覆盖被动卡询问（USE_FREE_CARD、SCAPEGOAT）、保释（BAIL）与满手弃牌（DISCARD_CARD）四种对抗决策。
 // fixture 'test'：1 银行 → … 5 L1 → 6 L2 → 7 L3 → … 11 L4 → 12 L5 → 13 岔路 → 14 监狱 → 15 医院 → … 17/18 F1（整张图在视窗内）。
 import { fixtureRegistry, type MapIndex } from '@rich4/shared/data';
@@ -160,7 +161,8 @@ async function useFromMenu(sc: Scenario, sheet: 'turn-cards' | 'turn-items', til
   return { used: true, events: sc.events };
 }
 
-const ACTIVE_CARDS = (Object.keys(CARD_KEYS).map(Number) as CardId[]).filter((c) => ![8, 18, 19, 20, 21].includes(c));
+/** 可主动使用的卡（18–21 为被动卡）；拍卖卡（8）M7 起可用 */
+const ACTIVE_CARDS = (Object.keys(CARD_KEYS).map(Number) as CardId[]).filter((c) => ![18, 19, 20, 21].includes(c));
 
 describe('M6 卡片：引擎候选 → DOM 目标选择 → 引擎接受', { timeout: 30_000 }, () => {
   it.each(ACTIVE_CARDS.map((c) => [c, CARD_KEYS[c]] as const))('卡 %i %s', async (card) => {
@@ -175,16 +177,47 @@ describe('M6 卡片：引擎候选 → DOM 目标选择 → 引擎接受', { tim
     expect(types.includes('CARD_USED') || types.includes('CARD_NO_EFFECT'), types.join(',')).toBe(true);
   });
 
-  it('拍卖卡（M7）与被动卡在菜单里是禁用的，并显示原因', async () => {
+  it('被动卡在菜单里是禁用的并显示原因；拍卖卡（M7）可用', async () => {
     const sc = arena();
     sc.give(0, { cards: [8, 21] });
     const m = await mount(sc, 0, 'TURN_MENU');
     await m.user.click(within(m.root).getByTestId('turn-cards'));
-    for (const slot of [0, 1]) {
-      const b = await screen.findByTestId(`inv-card-${slot}`);
-      expect(b).toBeDisabled();
-    }
-    expect(screen.getByTestId('inv-card-1')).toHaveTextContent('被动卡');
+    expect(await screen.findByTestId('inv-card-0')).toBeEnabled();
+    const passive = await screen.findByTestId('inv-card-1');
+    expect(passive).toBeDisabled();
+    expect(passive).toHaveTextContent('被动卡');
+  });
+
+  it('拍卖卡：脚下 L1 开拍 → 两名竞拍者在 AUCTION_BID 对话框里出价 / 加价 / 放弃 → 成交', async () => {
+    const sc = arena();
+    sc.give(0, { cards: [8] });
+    const r = await useFromMenu(sc, 'turn-cards', `inv-card-${sc.player(0).cards.indexOf(8)}`);
+    if (!r.used) throw new Error(r.reason);
+    const started = sc.log.find((e) => e.type === 'AUCTION_STARTED');
+    expect(started).toMatchObject({ lot: 'L1', seller: 0, source: 'card', bidders: [1, 2] });
+    cleanup();
+    // 1 号按起拍价出价（两人并发各有一个决策；出价后另一人的旧决策作废、按新价重问）
+    const b1 = await mount(sc, 1, 'AUCTION_BID');
+    const start = (sc.pending(1).options as { start: number }).start;
+    expect(within(b1.root).getByTestId('auction-price')).toHaveTextContent(start.toLocaleString('en-US'));
+    await b1.user.click(within(b1.root).getByTestId('auction-bid-0'));
+    sc.act(1, lastIntent(b1));
+    cleanup();
+    // 2 号看到领先者 1 号，加价 500
+    const b2 = await mount(sc, 2, 'AUCTION_BID');
+    expect(within(b2.root).getByTestId('auction-leader')).not.toHaveTextContent('还没有人出价');
+    await b2.user.click(within(b2.root).getByTestId('auction-bid-500'));
+    sc.act(2, lastIntent(b2));
+    cleanup();
+    // 1 号放弃这一轮 → 没有人可以再出价 → 2 号以起拍价 + 500 成交
+    const b3 = await mount(sc, 1, 'AUCTION_BID');
+    await b3.user.click(within(b3.root).getByTestId('auction-pass'));
+    expect(lastIntent(b3)).toEqual({ type: 'PASS' });
+    sc.act(1, lastIntent(b3));
+    const ended = sc.log.find((e) => e.type === 'AUCTION_ENDED');
+    expect(ended).toMatchObject({ lot: 'L1', winner: 2, price: start + 500 });
+    expect(sc.state.lands.find((l) => l.id === 'L1')?.owner).toBe(2);
+    sc.expectAsk(0, 'TURN_MENU');
   });
 });
 
@@ -208,6 +241,43 @@ describe('M6 道具：引擎候选 → DOM 目标选择 → 引擎接受', { tim
     const b = await screen.findByTestId('inv-item-10');
     expect(b).toBeDisabled();
     expect(b).toHaveTextContent('还没有可以回去的时间点');
+  });
+
+  it('时光机（M7，global）：回到最近一次真人掷骰之前（TIME_REWOUND + SYNC）', async () => {
+    const sc = arena();
+    // 0、1、2 号依次掷骰；global 模式下锚点是最后一次真人掷骰（2 号）之前的世界
+    sc.force('dice', 1).roll(0).untilMenu(1).roll(1).untilMenu(2);
+    const turn2 = sc.state.clock.turnNo;
+    const at2 = { node: sc.player(2).node, cash: sc.player(2).cash };
+    sc.roll(2).untilMenu(0);
+    sc.give(0, { items: [{ item: 10, qty: 2 }] });
+    const r = await useFromMenu(sc, 'turn-items', 'inv-item-10');
+    if (!r.used) throw new Error(r.reason);
+    const types = r.events.map((e) => e.type);
+    expect(types).toContain('TIME_REWOUND');
+    expect(types.at(-1)).toBe('SYNC');
+    expect(sc.state.clock.turnNo).toBe(turn2);
+    expect(sc.player(2)).toMatchObject(at2);
+    // 锚点世界里 0 号还没有时光机（之后才发的）：扣减后最低为 0
+    expect(sc.player(0).items[10] ?? 0).toBe(0);
+    sc.expectAsk(2, 'TURN_MENU');
+  });
+
+  it('时光机目标面板的说明按模式区分：global「最近一次真人掷骰之前」，perSeat「你上一次掷骰之前」', async () => {
+    for (const [mode, text] of [
+      ['global', '最近一次真人掷骰之前'],
+      ['perSeat', '你上一次掷骰之前'],
+    ] as const) {
+      const sc = scenario({ players: ['human', 'human'], map: MAP, rules: { timeMachine: mode } }).untilMenu(0);
+      sc.teleport(0, 3, 2).force('dice', 1).roll(0).untilMenu(1).roll(1).untilMenu(0);
+      sc.give(0, { items: [{ item: 10, qty: 1 }] });
+      const m = await mount(sc, 0, 'TURN_MENU');
+      await m.user.click(within(m.root).getByTestId('turn-items'));
+      await m.user.click(await screen.findByTestId('inv-item-10'));
+      const note = await screen.findByTestId('target-note');
+      expect(note).toHaveTextContent(text);
+      cleanup();
+    }
   });
 });
 
