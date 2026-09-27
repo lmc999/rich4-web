@@ -67,6 +67,8 @@ export interface AccessControlDeps {
   roomExists?: (code: string) => boolean;
   /** 已启用素材包的 packId（状态接口里告诉已通过门禁的前端）；没有素材包为 null */
   packId?: string | null;
+  /** 每 IP 每小时的房间授权数（缺省 GRANTS_PER_IP_PER_HOUR；RICH4_TEST_MODE 下放宽：E2E 的所有页面都来自回环地址） */
+  grantsPerHour?: number;
 }
 
 /** 失败结果：HTTP 状态、错误码、details（不含口令） */
@@ -104,6 +106,7 @@ export class AccessControl {
   private readonly grantBuckets = new Map<string, TokenBucket>();
   private epochCache: { value: number; at: number } | null = null;
   private readonly epochCacheMs: number;
+  private readonly grantsPerHour: number;
   private lastPrune = 0;
 
   constructor(private readonly d: AccessControlDeps) {
@@ -122,6 +125,7 @@ export class AccessControl {
     this.limiter = d.limiter ?? new AccessLimiter({ now: this.now });
     this.redeemLimiter = d.redeemLimiter ?? new AccessLimiter({ now: this.now, ...REDEEM_LIMITS });
     this.epochCacheMs = d.epochCacheMs ?? 1000;
+    this.grantsPerHour = Math.max(1, Math.trunc(d.grantsPerHour ?? GRANTS_PER_IP_PER_HOUR));
   }
 
   private get store(): AccessStore {
@@ -251,10 +255,10 @@ export class AccessControl {
     const now = this.now();
     let b = this.grantBuckets.get(ip);
     if (!b) {
-      b = new TokenBucket({ count: GRANTS_PER_IP_PER_HOUR, perMs: 3_600_000, burst: GRANTS_PER_IP_PER_HOUR }, now);
+      b = new TokenBucket({ count: this.grantsPerHour, perMs: 3_600_000, burst: this.grantsPerHour }, now);
       this.grantBuckets.set(ip, b);
     }
-    if (!b.take(now)) return this.rateLimited(Math.ceil(3_600_000 / GRANTS_PER_IP_PER_HOUR), 'grant');
+    if (!b.take(now)) return this.rateLimited(Math.ceil(3_600_000 / this.grantsPerHour), 'grant');
     this.maybePrune(now);
     const expiresAt = now + ACCESS_GRANT_TTL_MS;
     const token = this.store.createGrant({ room, uses: ACCESS_GRANT_MAX_USES, expiresAt, epoch: this.epoch(), now });

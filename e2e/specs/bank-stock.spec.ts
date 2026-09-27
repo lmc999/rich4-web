@@ -22,6 +22,7 @@ import {
   waitIdle,
   waitMyTurn,
   waitSeqAtLeast,
+  zh,
 } from '../fixtures/room';
 
 /** 执行一个会产生新批次的操作，并等本页收到这一批 */
@@ -51,7 +52,7 @@ async function bank(page: Page, kind: 'BANK_ATM' | 'BANK_COUNTER', op: string, a
   await waitDecision(page, [kind]);
   const dlg = page.getByTestId(`decision-${kind}`);
   await dlg.getByTestId(`bank-op-${op}`).click();
-  await dlg.getByRole('spinbutton', { name: '金额' }).fill(String(amount));
+  await dlg.getByRole('spinbutton', { name: zh('金额', '金額') }).fill(String(amount));
   await acted(page, () => dlg.getByTestId('bank-confirm').click());
 }
 
@@ -62,7 +63,7 @@ async function trade(page: Page, stock: number, side: 'buy' | 'sell', shares: nu
   await expect(sheet).toBeVisible();
   await sheet.getByTestId(`stock-pick-${stock}`).click();
   await sheet.getByTestId(`stock-side-${side}`).click();
-  await sheet.getByRole('spinbutton', { name: '股数' }).fill(String(shares));
+  await sheet.getByRole('spinbutton', { name: zh('股数', '股數') }).fill(String(shares));
   await acted(page, () => sheet.getByTestId('stock-submit').click());
   await waitMyTurn(page);
 }
@@ -83,7 +84,7 @@ async function tradableStock(page: Page, shares: number): Promise<number> {
 /** 关掉股市子页：经快捷入口打开的回合菜单随之收起 */
 async function closeStock(page: Page): Promise<void> {
   const sheet = page.getByTestId('turn-stock-sheet');
-  await sheet.getByRole('button', { name: '关闭' }).click();
+  await sheet.getByRole('button', { name: zh('关闭', '關閉') }).click();
   await expect(sheet).toHaveCount(0);
   await expect(page.getByTestId('decision-layer')).toHaveCount(0);
 }

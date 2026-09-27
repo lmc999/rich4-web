@@ -106,6 +106,8 @@ describe('CreateRoomForm', () => {
     await userEvent.selectOptions(screen.getByTestId('set-fund'), '100000');
     await userEvent.selectOptions(screen.getByTestId('set-vehicle'), 'car');
     await userEvent.selectOptions(screen.getByTestId('set-timer'), 'fast');
+    expect(screen.getByTestId('set-pacing')).toHaveValue('original');
+    await userEvent.selectOptions(screen.getByTestId('set-pacing'), 'compact');
     await userEvent.selectOptions(screen.getByTestId('set-visibility'), 'public');
     await userEvent.click(screen.getByTestId('set-spectators'));
     await userEvent.selectOptions(screen.getByTestId('set-ai-count'), '2');
@@ -118,6 +120,7 @@ describe('CreateRoomForm', () => {
         visibility: 'public',
         allowSpectators: false,
         timerPreset: 'fast',
+        pacing: 'compact',
         game: {
           mapId: 'test',
           initialFund: 100000,
@@ -134,6 +137,36 @@ describe('CreateRoomForm', () => {
       { seat: 1, ai: { preset: 'gentle' } },
       { seat: 2, ai: { preset: 'gentle' } },
     ]);
+  });
+});
+
+describe('演出节奏（original-skin.md U3）', () => {
+  it('建房默认「原版」；选项为 原版 / 紧凑', async () => {
+    const { transport } = renderWith(<CreateRoomForm onCreated={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId('set-map')).toHaveValue('test'));
+    const sel = screen.getByTestId('set-pacing');
+    expect(sel).toHaveValue('original');
+    expect(
+      within(sel)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['原版', '紧凑']);
+    await userEvent.click(screen.getByTestId('create-submit'));
+    await waitFor(() => expect(transport.payloads('room:create')).toHaveLength(1));
+    expect(transport.payloads('room:create')[0]).toMatchObject({ settings: { pacing: 'original' } });
+  });
+
+  it('房间设置显示当前节奏；房主可改为紧凑并提交 room:updateSettings', async () => {
+    const base = roomView();
+    const room = { ...base, settings: { ...base.settings, pacing: 'original' as const } };
+    const { transport } = renderWith(<LobbyView room={room} onLeave={() => {}} />);
+    const box = screen.getByTestId('room-settings');
+    expect(within(box).getByText('演出节奏').nextSibling).toHaveTextContent('原版');
+    await userEvent.click(screen.getByTestId('settings-edit'));
+    await userEvent.selectOptions(screen.getByTestId('set-pacing'), 'compact');
+    await userEvent.click(screen.getByTestId('settings-save'));
+    await waitFor(() => expect(transport.payloads('room:updateSettings')).toHaveLength(1));
+    expect(transport.payloads('room:updateSettings')[0]).toMatchObject({ patch: { pacing: 'compact' } });
   });
 });
 

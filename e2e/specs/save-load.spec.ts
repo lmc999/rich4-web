@@ -31,6 +31,7 @@ import {
   test,
   waitIdle,
   waitMyTurn,
+  zh,
 } from '../fixtures/room';
 
 const SAVE_NAME = 'E2E 第二轮';
@@ -85,7 +86,12 @@ test('存档 → 全员离开 → 新房间读档认领座位 → 状态一致�
   await openMenu(a);
   await a.getByTestId('save-name').fill(SAVE_NAME);
   await a.getByTestId('save-submit').click();
-  await expect(a.getByTestId('toast').filter({ hasText: '已存档' }).first()).toBeVisible();
+  await expect(
+    a
+      .getByTestId('toast')
+      .filter({ hasText: zh('已存档', '已存檔') })
+      .first(),
+  ).toBeVisible();
   await expect(a.locator(`[data-testid="save-list"] > li[data-name="${SAVE_NAME}"]`)).toHaveCount(1);
   const [savedId] = await saveIds(a, SAVE_NAME);
   expect(savedId).toBeTruthy();

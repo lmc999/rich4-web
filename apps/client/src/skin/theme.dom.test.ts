@@ -2,7 +2,7 @@
 // lang 保持实际语言，之后再次应用会重试（不会因为「已应用」的幂等判断永远停在简体）。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setUiLanguage, setZhTwImporterForTest, uiLanguage } from '../i18n';
-import { appliedSkin, applySkinTheme, resetSkinThemeForTest } from './theme';
+import { appliedSkin, applySkinTheme, DOC_TITLES, resetSkinThemeForTest } from './theme';
 
 afterEach(async () => {
   setZhTwImporterForTest(null);
@@ -29,6 +29,7 @@ describe('applySkinTheme', () => {
     expect(appliedSkin()).toBe('original');
     expect(uiLanguage()).toBe('zh-TW');
     expect(document.documentElement.lang).toBe('zh-TW');
+    expect(document.title).toBe(DOC_TITLES['zh-TW']);
     warn.mockRestore();
   });
 

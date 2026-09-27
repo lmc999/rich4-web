@@ -35,6 +35,8 @@ export interface SaveLoadMenuProps {
   http?: SaveHttpOptions;
   /** 读档成功回调（大厅收起存档面板；首页带新房间号） */
   onLoaded?(saveId: string, roomCode?: string): void;
+  /** 对局中是否显示存档表单（缺省显示；经典外壳的 LOAD 钮只列出存档） */
+  saveForm?: boolean;
 }
 
 /** 兼容性提示的文案键 */
@@ -187,7 +189,14 @@ function SaveItem({
   );
 }
 
-export function SaveLoadMenu({ mode, isHost, defaultName = '', http, onLoaded }: SaveLoadMenuProps): ReactNode {
+export function SaveLoadMenu({
+  mode,
+  isHost,
+  defaultName = '',
+  http,
+  onLoaded,
+  saveForm = true,
+}: SaveLoadMenuProps): ReactNode {
   const t = useTx();
   const client = useClient();
   const [saves, setSaves] = useState<SaveSummary[] | null>(null);
@@ -291,7 +300,7 @@ export function SaveLoadMenu({ mode, isHost, defaultName = '', http, onLoaded }:
 
   return (
     <section className={sy.saves} data-testid="save-load" data-mode={mode}>
-      {mode === 'game' && isHost && (
+      {mode === 'game' && isHost && saveForm && (
         <form className={c.row} onSubmit={(e) => void save(e)}>
           <input
             className="input"
@@ -312,7 +321,7 @@ export function SaveLoadMenu({ mode, isHost, defaultName = '', http, onLoaded }:
           </button>
         </form>
       )}
-      {!isHost && <p className={c.muted}>{t('hud:saves.hostOnly')}</p>}
+      {!isHost && saveForm && <p className={c.muted}>{t('hud:saves.hostOnly')}</p>}
       <div className={sy.saveHead}>
         <h3>{t('hud:saves.list')}</h3>
         <label className={clsx('btn btn--sm btn--cream', busy && sy.disabled)} data-testid="save-import">

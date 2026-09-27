@@ -1,6 +1,8 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { z } from 'zod';
+import { defaultGameConfig } from '../engine/types/index';
 import { C2S_EVENTS, type C2SEventName, type C2SPayload } from './protocol';
+import { defaultRoomSettings } from './room';
 import {
   C2S_SCHEMAS,
   HandshakeAuthSchema,
@@ -10,6 +12,7 @@ import {
   sanitizeNickname,
   TrusteeSettingsSchema,
 } from './schemas';
+import { DEFAULT_PACING } from './timing';
 
 describe('C2S_SCHEMAS', () => {
   it('对全部 C2S 事件穷举', () => {
@@ -108,5 +111,26 @@ describe('握手与文本清洗', () => {
     expect(sanitizeChatText('你好\n世界')).toBe('你好 世界');
     expect(Array.from(sanitizeChatText('字'.repeat(300))).length).toBe(200);
     expect(sanitizeChatText('‮​ ')).toBe('');
+  });
+});
+
+describe('演出节奏 pacing（original-skin.md U3）', () => {
+  it('补丁可以只改 pacing；只接受 original / compact', () => {
+    expect(RoomSettingsPatchSchema.safeParse({ pacing: 'compact' }).success).toBe(true);
+    expect(RoomSettingsPatchSchema.safeParse({ pacing: 'original' }).success).toBe(true);
+    expect(RoomSettingsPatchSchema.safeParse({ pacing: 'standard' }).success).toBe(false);
+    // 不带 pacing 的补丁不会被补上默认值（否则改别的设置会把节奏重置）
+    const p = RoomSettingsPatchSchema.parse({ visibility: 'public' });
+    expect('pacing' in p).toBe(false);
+  });
+
+  it('完整设置：旧存档没有 pacing 时按默认 original 读入；显式值原样保留', () => {
+    const settings = { ...defaultRoomSettings(defaultGameConfig('test', 20260927)) };
+    const { pacing: _omit, ...legacy } = settings;
+    const old = RoomSettingsSchema.parse(legacy);
+    expect(old.pacing).toBe(DEFAULT_PACING);
+    expect(RoomSettingsSchema.parse({ ...settings, pacing: 'compact' }).pacing).toBe('compact');
+    expect(RoomSettingsSchema.safeParse({ ...settings, pacing: 'fast' }).success).toBe(false);
+    expect(settings.pacing).toBe('original');
   });
 });

@@ -1,5 +1,7 @@
 // 小地图（design/client.md §3.9）：Canvas2D 按当前旋转画菱形格——地形、道路、特殊格、地块主人色、玩家彩点、视口框。
 // 调用方负责节流（显示态变化后 250ms 内最多重绘一次）；点击用 miniToWorld 换算后交给 camera.panTo。
+// 原版皮肤 A6：这张地图正由原版棋盘显示时（OrigMiniMap 登记表命中），改画原版俯视缩略图（8 视角的视口四边形），
+// 布局换成「棋盘坐标 ↔ 小地图像素」的自定义换算；调用方（对局页小地图、经典日历区）不用区分皮肤。
 import type { MapDef, TileId } from '@rich4/shared/data';
 import { buildRoadGraph } from '../board/RoadPainter';
 import { TILE_STYLES } from '../board/tileStyles';
@@ -16,6 +18,7 @@ import {
   viewGrid,
 } from '../iso/projection';
 import { PLAYER_COLORS, TERRAIN_COLORS } from '../procedural/building/styles';
+import { type OrigMiniCtx, origMiniLayout, origMiniMapFor, paintOrigMiniMap } from './OrigMiniMap';
 
 export interface MiniMapLayout {
   scale: number;
@@ -24,6 +27,9 @@ export interface MiniMapLayout {
   originY: number;
   padX: number;
   padY: number;
+  /** 自定义换算（原版小地图：俯视缩略图，与棋盘坐标之间隔着视角仿射）；给出时优先 */
+  toMini?(p: Pt): Pt;
+  toWorld?(p: Pt): Pt;
 }
 
 /** 把整个棋盘（world 屏幕包围盒）等比放进 w×h 的画布 */
@@ -36,10 +42,12 @@ export function miniMapLayout(grid: GridSize, rot: Rotation, w: number, h: numbe
 }
 
 export function worldToMini(l: MiniMapLayout, p: Pt): Pt {
+  if (l.toMini) return l.toMini(p);
   return { x: (p.x - l.originX) * l.scale + l.padX, y: (p.y - l.originY) * l.scale + l.padY };
 }
 
 export function miniToWorld(l: MiniMapLayout, p: Pt): Pt {
+  if (l.toWorld) return l.toWorld(p);
   return { x: (p.x - l.padX) / l.scale + l.originX, y: (p.y - l.padY) / l.scale + l.originY };
 }
 
@@ -86,7 +94,8 @@ export class MiniMapPainter {
   }
 
   get layout(): MiniMapLayout {
-    return this.layoutCache;
+    const orig = origMiniMapFor(this.def);
+    return orig ? origMiniLayout(orig, this.size.w, this.size.h) : this.layoutCache;
   }
 
   setRotation(rot: Rotation): void {
@@ -95,6 +104,11 @@ export class MiniMapPainter {
   }
 
   paint(state: MiniMapState = {}): void {
+    const orig = origMiniMapFor(this.def);
+    if (orig) {
+      paintOrigMiniMap(this.ctx as unknown as OrigMiniCtx, this.size, orig, state);
+      return;
+    }
     const { ctx, def, rot } = this;
     const L = this.layoutCache;
     const grid = def.grid;

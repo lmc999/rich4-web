@@ -1353,3 +1353,53 @@ RICH4_ASSETS_ALLOW_UNGATED=0     # 仅本机调试：非 production + PUBLIC_URL
 - guess 置信度的音效 / 语音槽需要人工在 `/dev/audio` 试听核对（A9 清单）；iOS / Android 真机（解锁、切后台、静音键、audioSession）未测，设置里还没有关闭 `audioSession=playback` 的开关。
 - 合成素材包不含音频（features.audio/voice/music 为 false），E2E 只覆盖 ZzFX 回退路径；原版声音的 E2E（开局宣言、进银行切曲续播）需要带音频的合成包。
 - 根 package.json 不在本轮可改范围：`npm run access`、`gen-zh-tw --check` 进 check、`check:bundle` 都还没有。
+
+## 23. 原版皮肤全流程接通与整合实测（A6–A8 / A10 接线，2026-09-27）
+
+本轮把已完成的原版棋盘（A6 OrigRenderer）、角色（A7 OrigActor）、原版舞台（A8 OrigStage + pacing profile）、路线 A 外壳（A10 ClassicLayout）、音频（A9）与繁体语言包接成一条完整流程，并在合成素材包（CI）与本机真实素材包上各跑了整局。程序化皮肤不变（默认 E2E 全量照旧通过）。素材包内容始终不入库：含原版素材的截图与日志只在 `.cache/w3/`。
+
+### 23.1 接通后的流程
+
+- **判定 → 布局 → 棋盘**：对局页 `useGameSkin` 判定为原版且地图已载入 → `GameScreen` 用 `ClassicLayout`（640×480 舞台 + 联机侧栏）；`BoardCanvas` 经 `skin/boards.createBoard('original')` 调 `skin/renderers.ts` 注册的工厂，建 `OrigRenderer` + `OrigBoardController`，嵌在棋盘视窗（0,40）440×440 里（insets 为 0）；创建失败回退程序化（renderer-failed）。
+- **演出**：`GameClient.attachBoard(OrigBoardController)`，EventPlayer 的 handler 经 `BoardPort` / `StagePort` 驱动原版棋盘；`wrapHandler` 在 `syncWorld` 之后调 `stage.beginEvent(e, { audio, budgetMs })`，OrigStage 按当前节奏的预算为 FLIC 计算可用时长（original 原速完整播放，compact 加速 / 跳帧），FLIC 首帧放 flic-map 的同步音效。
+- **节奏**：房间设置 `pacing`（默认 original）→ 服务器 `estimateAnimMs(events, pacing)` 扣截止时间；客户端 `budgetMs()` 跟随房间设置，handler 封顶与 OrigStage 用同一个值。
+- **音频**：皮肤为原版且素材包就绪时 `applyPack` 换成原版音乐 / 语音 / 音效；场景曲随界面状态切换（房间 → 开局设定曲，对局 → 棋盘轮播，本人的银行 / 医院 / 监狱 / 魔法屋等决策 → 场所曲，离开后棋盘曲从断点续播）；原版棋盘在场时 `flicSfx` 打开，flicCovered 的演出由 FLIC 出声。
+- **文字**：对局页原版皮肤下界面、日志、弹窗为繁体（zh-TW），标签页标题同步换成繁体；大厅与首页不受皮肤影响。
+
+### 23.2 本轮修复
+
+- **离开房间后又被拉回房间**（`ui/screens/RoomScreen.tsx`）：进房 effect 的依赖里有 `t`（`useTranslation` 的 t 随语言变化换身份）。原版皮肤下「离开 → room:leave 回包 → 房间状态清空、对局页卸载 → 语言从 zh-TW 切回 zh-CN」的途中 effect 重跑，又发了一次 room:join，玩家回到自己刚离开的座位，房间因此不会「全员离开 → 自动存档并关闭」。改为用 ref 取 t，effect 只随房间号 / 身份变化；`routes.dom.test` 加回归用例（切繁体 → leaveRoom → 切回简体，进房请求仍只有一次）。
+- **房间授权被刷到 429**：`InviteLink` 一挂载就生成房间授权（写库，每 IP 每小时 30 个）。经典布局左栏的「邀请朋友」改为展开时才挂载（`classic/SideRails.tsx` 的 InviteDetails），对局页每次载入 / 重连不再各生成一个没人用的授权；`AccessControl` 增加 `grantsPerHour`，`RICH4_TEST_MODE` 下放宽到 100 倍（E2E 的所有页面都来自 127.0.0.1，大厅里每个玩家的邀请框都会自动生成授权）。
+- **演出弹窗挡住原版 FLIC**：神明附身等事件的弹窗与神明降临 FLIC 并行，弹窗居中叠在整页上，手机横屏时整个挡住 FLIC。`PopupLayer` 增加 `placement: 'board'`：经典布局把弹窗放进棋盘视窗叠层的下部，按视窗缩放（桌面 1、844×390 约 0.69，下限 0.5），终局画面仍居中；公开竞价横幅留在叠层之外（`classic.dom.test` 加用例）。
+- **旋转状态**：`BoardSurface` 增加可选的 `onRotated`，`GameScreen` 在棋盘就绪时接上（渲染器自己处理 `<` `>` 热键时同步小地图与旋转钮）。
+- **繁体用字**：`zhTw.ts` 词汇表加「托管 → 託管」（opencc twp 对「进入托管」保留了「托」，与工具列、座位标签的「託管」不一致），重新生成 zh-TW；`skin/theme.ts` 切语言时同时设 `document.title`（`DOC_TITLES`）。
+- **E2E 断言过时**：`skin-pack-load.spec` 第 1 段改为断言原版棋盘（board / boardInUse 为 original、`data-layout=classic`、设置页没有回退原因）。
+- **server-real 偶发失败**：`integration/minigame.test.ts` 在传送到小游戏格前先 `debug:act clearBoard`（开局随机摆在路上的恶犬是路上神明，偶尔正好在落点附近把人咬进医院，等不到 MINIGAME 决策）；连跑 3 次通过。
+
+### 23.3 原版皮肤 E2E（合成素材包）
+
+- **配置** `e2e/playwright.original.config.ts`：与默认配置同一套用例；服务器 `RICH4_ASSETS_DIR=.cache/synthetic-pack`（启动前 `npm run extract -- assets synth` 现场生成，全为自绘图形）、`ACCESS_MODE=passcode`（测试专用口令，哈希用固定盐确定性生成：配置在 runner 与 worker 各载入一次），并设 `RICH4_E2E_PASSCODE` / `RICH4_E2E_SKIN=original`；端口 3110 / 5184、构建目录 `.cache/e2e-original/dist`，可与默认配置同时跑；视口 1920×1080（1280×800 时经典布局两侧收成抽屉，座位条不可见）。
+  用法：`CI=1 npx playwright test -c e2e/playwright.original.config.ts [lobby turn-cycle cards events minigame reconnect save-load]`。
+- **夹具**（`e2e/fixtures/room.ts`）：`SKIN_ORIGINAL`、`zh(简, 繁)`（对局页文字按皮肤取写法）、`expectOriginalSkin(page)`；原版模式下 `startGame` 对每个页面断言确实用了原版棋盘、经典布局与繁体界面。
+- **用例适配**：events / save-load / bank-stock / timeout-ai / chat-spectate 的界面文字改用 `zh()`；只适用于默认配置的 3 个用例在原版模式下跳过（skin-original-board、skin-procedural-fallback 需要不带素材包的服务器；chat-spectate 断言程序化布局的顶栏与玩家条气泡，经典布局的观战与聊天由 skin-classic-shell 覆盖）。
+- **结果**：原版配置全量 26 个用例 23 过、3 跳过（任务要求的 lobby / turn-cycle ×2 / cards ×2 / events / minigame / reconnect / save-load ×2 共 10 个全部通过）；默认配置全量 26 个全过。
+
+### 23.4 本机实测（真实素材包 rich4-assets + 口令门禁，台湾图 4 人：本人 + 3 电脑，原版节奏）
+
+- **方式**：`test/w2-play-dev.sh` 起服务器（`RICH4_ASSETS_DIR=./rich4-assets ACCESS_MODE=passcode`，口令、哈希与密钥由 `scripts/access.ts` 生成在 `.cache/w3/`）与 vite dev；`test/w2-play.mjs` 用本机 Chrome 开局，本人回合点经典外壳的 GO 钮与对话框 DOM（`--cover` 时按天用 debug:act 发卡 / 传送，走 DOM 出陷害卡、放路障、买股票、踩自己的地升级），记录事件类型、原版舞台播放的 FLIC、决策种类、音频日志与控制台错误，首次出现的 FLIC 与决策各截一张图；浏览器面板用于目视静态画面（面板隐藏时页面被判为后台，演出走 instant，逐帧演出看无头截图）。
+- **场次**：桌面 1920×1080 22 天两场（自然对局 9.4 分钟；带补充动作 8.2 分钟）；手机横屏 844×390 22 天两场（8.6 / 8.2 分钟）；另有两场调试补充动作用的短局。四场 22 天的对局控制台 0 错误（第一场手机局中途改前端代码触发 HMR，只有 React 依赖数组长度变化的开发期告警）、没有看门狗中止、没有 handler 出错。
+- **覆盖**：买地、升级（UPGRADE_LAND）、过路费与免付、银行 ATM / 柜台、股票（认购、买卖、董事长、分红、休市）、卡片（陷害卡 → 入狱 + 警车 FLIC、均富卡、乌龟卡、同盟卡等）、道具（路障、定时炸弹、机器娃娃）、神明（附身 / 发威 / 显灵 / 离开，大小财神、福神、天使、衰神、恶魔、恶犬）、新闻命运（法院拍卖、特赦、强烈地震、台风 STRIKE）、关押（坐牢、住院、获释回到棋盘）、拍卖竞价、乐透开奖、魔法屋；FLIC：开局棋盘伞（角色 0 / 3 / 4 / 5 / 11）、神明降临 10 种（天使、大小财神、大小福神、大小衰神、小穷神、土地公、恶魔）、神明离身烟雾、救护车、警车、小爆炸（地雷 / 路面炸弹）、瓦斯爆炸（身上炸弹）、台风、得卡、得点券。
+- **音频**（桌面带补充动作那场）：引擎 running；棋盘曲 track02 → 03 → 04 轮播；进医院 / 魔法屋 / 监狱 / 银行分别切 track26 / 17 / 25 / 14，离开后棋盘曲从断点续播；语音 33 句、音效 289 次。
+- **目视结论**：棋盘、建筑、景观、主人标记（每个角色自己的标记：约翰乔牛仔帽、阿土伯斗笠、孙小美红鞋）与原版一致；镜头随当前行动者（逐回合测得镜头中心与行动者锚点相距 0–10 源像素）；跳伞 FLIC 从视窗上方落到落点；神明、救护车、警车 FLIC 在棋盘视窗中央 / 角色处播放，弹窗移到视窗下部后不再挡住；手机横屏两侧收成抽屉，决策对话框覆盖工具列以下整个舞台。截图：`.cache/w3/play-desk-final/`、`.cache/w3/play-mobile-final/`（含原版素材，不入库）。
+
+### 23.5 验证
+
+- `npm run check` 全绿：typecheck、lint（1080 个文件）、vitest 267 个文件 2562 通过 1 跳过；check-determinism OK（193）、check-no-original OK（1302）、check-deps OK（1023）、zh-TW 最新（16）。
+- client-browser：10 个文件 41 通过 1 跳过。
+- E2E：默认配置 26 过；原版配置 23 过 3 跳过。
+
+### 23.6 遗留
+
+- 决策对话框、目标选择面板、演出弹窗、回合横幅仍是程序化样式（原版风格对话框与场所屏属 A11 / A12）；手机横屏时回合横幅占视窗比例偏大。
+- 合成素材包不含音频，E2E 仍只覆盖 ZzFX 回退；原版声音只在本机实测里核对。
+- 标题 / 选人 / 开局设定 / Loading / 片头（A14）未做：大厅与首页仍是程序化主题与简体。

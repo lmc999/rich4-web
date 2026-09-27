@@ -1,10 +1,11 @@
 // 棋盘工厂（BoardCanvas 用）：按皮肤判定创建棋盘表面与控制器。程序化棋盘内置（GameRenderer + BoardController）；
-// 原版棋盘由 A6 经 boardRegistry.registerBoardFactory('original', …) 注册——没有注册或创建失败时回退程序化，
-// 并把回退原因报给 skinStore（设置页显示）。本模块引入 Pixi，只由懒加载的对局页使用。
+// 原版棋盘（A6）由 ./renderers 在本模块载入时经 boardRegistry.registerBoardFactory('original', …) 注册——
+// 没有注册或创建失败时回退程序化，并把回退原因报给 skinStore（设置页显示）。本模块引入 Pixi，只由懒加载的对局页使用。
 import { BoardController } from '../game/BoardController';
 import { GameRenderer } from '../game/GameRenderer';
 import { type BoardFactory, boardAbortError, type CreateBoardOptions, type CreatedBoard } from './BoardSurface';
 import { boardFactory } from './boardRegistry';
+import './renderers';
 import type { SkinKind } from './types';
 
 /** 程序化棋盘：创建渲染器 → 设 insets → 加载地图（fitAll）→ 建控制器 */

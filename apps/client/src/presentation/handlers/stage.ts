@@ -2,6 +2,7 @@
 // 只定义接口与空实现，不 import Pixi（handlers 在首屏 chunk 里）；Pixi 实现是 game/fx/BoardStage，
 // 由棋盘（BoardController）的 fx.stageFor(board) 懒创建。整合后 BoardController 可直接暴露 `stage` 属性。
 import type {
+  GameEvent,
   GodKind,
   GodManifestEffect,
   PostPatch,
@@ -13,10 +14,18 @@ import type {
   VillainKind,
 } from '@rich4/shared/engine';
 import { applyPostPatch, type GameView } from '@rich4/shared/view';
-import type { Anchor, PresentationContext } from '../types';
+import type { Anchor, AudioPort, PresentationContext } from '../types';
 
 export type ConfineKind = 'jail' | 'hospital';
 export type ObjectRemoval = 'burst' | 'fade' | 'boom' | 'pickup';
+
+/** 事件开始时交给舞台的上下文（原版皮肤 A8：FLIC 的可用时长与同步音效） */
+export interface StageEventContext {
+  /** 当前事件的音频端口（FLIC 同步音效经它播放） */
+  audio: AudioPort;
+  /** 当前演出节奏下该事件的预算（1x ms；与 handler 包装的封顶是同一个值） */
+  budgetMs: number;
+}
 
 export interface StagePort {
   readonly ready: boolean;
@@ -76,6 +85,18 @@ export interface StagePort {
   // 恶人
   walkVillain(kind: VillainKind, path: readonly TileId[], signal: AbortSignal): Promise<void>;
   villainAnchor(kind: VillainKind): Anchor | null;
+
+  // 原版皮肤（A8，可选；程序化舞台不实现）
+  /**
+   * 事件 handler 开始前由包装调用（在 syncWorld 之后）：舞台据此为本事件选原版 FLIC、按「当前节奏的预算 − handler 内
+   * 其他等待」安排 FLIC 的播放时长，并经 ctx.audio 放 FLIC 的同步音效。
+   */
+  beginEvent?(e: GameEvent, ctx: StageEventContext): void;
+  /**
+   * 事件自己的原版 FLIC（卡片格得卡、点券格得点券、节日烟火 / 圣诞、破产），与 handler 其余演出并行；
+   * 没有对应 FLIC 时立即 resolve。handler 以 `stage.eventFlic?.(…)` 调用。
+   */
+  eventFlic?(e: GameEvent, signal: AbortSignal): Promise<void>;
 }
 
 const resolved = (): Promise<void> => Promise.resolve();

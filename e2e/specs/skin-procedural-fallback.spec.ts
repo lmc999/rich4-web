@@ -4,7 +4,17 @@
 // 3) manifest 401（ACCESS_REQUIRED）→ 对局页弹出门禁页，输入口令后收起并重新发现素材包。
 // 每种情况刷新页面（重新进入同一局）让前端重新发现；刷新前后 BoardSurface 测试钩子与 HUD 照常工作。
 import type { Page, Route } from '@playwright/test';
-import { createRoom, expect, newPlayer, Q, startGame, test, waitIdle, waitMyTurn } from '../fixtures/room';
+import {
+  createRoom,
+  expect,
+  newPlayer,
+  Q,
+  SKIN_ORIGINAL,
+  startGame,
+  test,
+  waitIdle,
+  waitMyTurn,
+} from '../fixtures/room';
 
 const ACCESS_ON = {
   ok: true,
@@ -53,6 +63,9 @@ async function reenter(page: Page, code: string): Promise<void> {
   await expect(page.getByTestId('screen-game')).toBeVisible();
   await waitIdle(page);
 }
+
+// 断言「服务器没有素材包」时的回退，原版皮肤配置（服务器挂合成包）下不适用
+test.skip(SKIN_ORIGINAL, '需要不带素材包的服务器（默认配置）');
 
 test('没有素材包：程序化棋盘与简体；门禁开启但 manifest 不可用时同样回退；manifest 401 弹门禁页', async ({
   browser,

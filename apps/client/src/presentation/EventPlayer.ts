@@ -8,7 +8,9 @@
 // - 中止（reset / skipAll / dispose / 切到 instant）：当前 handler 与最近几个 handler 留下的不阻塞尾巴一并中止，
 //   abortEpoch +1（GameClient 据此让旧上下文失效，被中止的收尾不会再写棋盘）；
 // - instant（?anim=instant 或后台标签页）：不调 handler，只提交（并通知 onSkipEvent）；TIME_REWOUND（resetsView）直接用批尾 view；
-// - 每次调 handler 的上下文都带 at = {epoch, seq, eventIndex}（原版皮肤的语音确定性选择用）。
+// - 每次调 handler 的上下文都带 at = {epoch, seq, eventIndex}（原版皮肤的语音确定性选择用）；
+// - 演出预算按房间的演出节奏（RoomSettings.pacing：original / compact）取值：批次的 animMs 由服务器按同一节奏算好，
+//   单个 handler 的超预算告警与 handler 包装的封顶经 handlers/budget 取当前房间的 EVENT_BUDGET_MS[pacing]。
 
 import { EVENT_META, type GameEvent } from '@rich4/shared/engine';
 import {
@@ -18,7 +20,8 @@ import {
   type PendingChangedMsg,
   type YourDecision,
 } from '@rich4/shared/net';
-import { applyPostPatch, eventBudgetMs, type GameView, type PendingView } from '@rich4/shared/view';
+import { applyPostPatch, type GameView, type PendingView } from '@rich4/shared/view';
+import { budgetMs } from './handlers/budget';
 import type { AnyHandler, EventStamp, HandlerMap, PresentationContext } from './types';
 
 export const AUTO_FAST_BACKLOG_MS = 6_000;
@@ -127,6 +130,11 @@ export interface EventPlayerOptions {
   timers?: Timers;
   /** 用户选择的基础倍速 1/2/3 */
   baseSpeed?: number;
+  /**
+   * 单个事件的演出预算（开发模式超预算告警用）；缺省按当前房间的演出节奏取 EVENT_BUDGET_MS[pacing]
+   * （handlers/budget，与 handler 包装的封顶同一口径）
+   */
+  budgetMs?(e: GameEvent): number;
 }
 
 const defaultTimers: Timers = {
@@ -536,7 +544,7 @@ export class EventPlayer {
       if (this.abortCtl === ac) this.abortCtl = null;
     }
     if (this.o.dev && !ac.signal.aborted && !this.skipping && !this.instant) {
-      const budget = eventBudgetMs(e);
+      const budget = (this.o.budgetMs ?? budgetMs)(e);
       const used = this.o.clock.now() - t0;
       if (used > budget * BUDGET_TOLERANCE + 50) {
         this.o.warn?.(`[EventPlayer] ${e.type} 用时 ${Math.round(used)}ms，超过预算 ${budget}ms`);

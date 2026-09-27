@@ -115,6 +115,8 @@ export interface BoardSurface {
   viewportSize(): { w: number; h: number };
   onTap: SurfaceTapHandler | null;
   onDoubleTap: SurfaceDoubleTapHandler | null;
+  /** 渲染器自己处理了旋转（例如原版棋盘的 < > 热键）后回调新的统一口径值；对局页据此同步小地图与旋转钮 */
+  onRotated?: ((r: SurfaceRotation) => void) | null;
   /** 测试钩子 */
   readonly board: BoardSurfaceHooks;
   destroy(): void;

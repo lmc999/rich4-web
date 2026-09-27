@@ -22,7 +22,7 @@ import {
   TOKEN_RE,
 } from './limits';
 import { type C2SEventName, type C2SPayload, type ChatMessage, type HandshakeAuth, SYSTEM_MSG_KEYS } from './protocol';
-import { RECONNECT_GRACE_MAX_S, RECONNECT_GRACE_MIN_S } from './timing';
+import { DEFAULT_PACING, PACING_PROFILES, RECONNECT_GRACE_MAX_S, RECONNECT_GRACE_MIN_S } from './timing';
 
 // ───────────────────────── 文本清洗 ─────────────────────────
 
@@ -204,6 +204,8 @@ const roomSettingsShape = {
 export const RoomSettingsSchema = z.strictObject({
   ...roomSettingsShape,
   reconnectGraceSec: z.number().min(0).max(600),
+  // 演出节奏晚于存档格式加入：旧存档没有这一项时按默认节奏读入
+  pacing: z.enum(PACING_PROFILES).default(DEFAULT_PACING),
   game: GameConfigSchema,
 });
 
@@ -212,6 +214,7 @@ export const RoomSettingsPatchSchema = z
   .strictObject({
     ...roomSettingsShape,
     reconnectGraceSec: int(RECONNECT_GRACE_MIN_S, RECONNECT_GRACE_MAX_S),
+    pacing: z.enum(PACING_PROFILES),
     game: GameConfigPatchSchema,
   })
   .partial();

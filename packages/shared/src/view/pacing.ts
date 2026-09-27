@@ -1,20 +1,34 @@
 /**
- * 动画时长预算（architecture §5.9；design/net.md §5.4）。服务器用它计算截止时间（动画不占用思考时间），
- * 客户端开发模式下实测 handler 时长，超预算 10% 告警。两端引用同一份常量。
+ * 动画时长预算（architecture §5.9；design/net.md §5.4；original-skin.md U3、§3 修正 1）。服务器用它计算截止时间
+ * （动画不占用思考时间），客户端把 handler 封顶在预算内、开发模式下超预算 10% 告警。两端引用同一份常量。
  *
- * 初版预算（M2）：数值按原版演出节奏粗估，M3/M10 实测后调整；调整只影响倒计时公平性，不影响规则。
+ * 演出节奏 profile（房间设置 RoomSettings.pacing，默认 original）：
+ * - compact：紧凑预算（M2 起的初版，按原版节奏粗估、M3/M10 实测调整）；原版皮肤的 FLIC 在里面加速或截取（playFit）。
+ * - original：以原版 FLIC 原长为准——有 FLIC 的事件预算 = max(compact, FLIC 原长 + handler 里 FLIC 之外的等待 + 余量)，
+ *   保证原版皮肤能按原速完整播完（playFit 的可用时长 = 预算 − 其他等待 ≥ FLIC 原长）；
+ *   没有 FLIC 对应的事件与 compact 完全相同。original 的每一项都 ≥ compact。
+ *
+ * 调整预算只影响倒计时公平性与演出节奏，不影响规则。
  */
-import type { GameEvent, GameEventOf, GameEventType } from '../engine/types/events';
-import type { EstimateAnimMsFn } from './types';
+import type { DiceCount, GameEvent, GameEventOf, GameEventType, GodKind, StrikeKind } from '../engine/types/index';
 
-/** 棋子每走一格的时长 */
+/** 演出节奏（与 net/timing 的 PacingProfile 相同：view 不能依赖 net，两处字面量由测试对齐） */
+export type PacingProfile = 'original' | 'compact';
+export const PACING_PROFILES: readonly PacingProfile[] = Object.freeze(['original', 'compact'] as const);
+/** 新房间的默认节奏（U3：完整播放原版 FLIC 与动画） */
+export const DEFAULT_PACING: PacingProfile = 'original';
+
+/** 棋子每走一格的时长（两种节奏相同：原版行走 tick 时长未在 v2.06 核实，见 render.md §2.7） */
 export const STEP_MS = 180;
 
 /** 单个事件的预算：常数，或按载荷计算 */
 export type EventBudget<T extends GameEventType> = number | ((e: GameEventOf<T>) => number);
 
-/** 以 GameEvent['type'] 为键，对全部事件穷举 */
-export const EVENT_BUDGET_MS = Object.freeze({
+/** 一种节奏的完整预算表：以 GameEvent['type'] 为键穷举 */
+export type EventBudgetTable = { readonly [T in GameEventType]: EventBudget<T> };
+
+/** compact 节奏（即原先唯一的一张表） */
+export const COMPACT_BUDGET_MS = Object.freeze({
   // turn
   GAME_STARTED: 1500,
   TURN_STARTED: 600,
@@ -150,18 +164,221 @@ export const EVENT_BUDGET_MS = Object.freeze({
   AI_TRAITS_CHANGED: 0,
   DEBUG_APPLIED: 0,
   SYNC: 0,
-} as const satisfies { readonly [T in GameEventType]: EventBudget<T> });
+} as const satisfies EventBudgetTable);
 
-/** 单个事件的预算（ms，非负整数） */
-export function eventBudgetMs(e: GameEvent): number {
-  const b = EVENT_BUDGET_MS[e.type] as number | ((x: GameEvent) => number);
+// ───────────────────────── 原版 FLIC 时长（事实数据） ─────────────────────────
+
+/**
+ * 原版 FLIC 的时长参数：原长 = frames × frameMs（帧间隔取 FLC 头部 +16）。mkf/res 为 v2.06 资源号，
+ * use 与素材包 flic-map 的用途键一致（神明降临、按角色的动画在其后另带 GodKind 名 / 角色号）。
+ * @source tools/extract/src/assets/data/flic.ts（A3 flic-map 源数据，build 时按源文件头核对）
+ * @source docs/research/original-assets/audio_video.md §2.3、§4.2
+ */
+export interface FlicTiming {
+  readonly mkf: 'Data' | 'Panel';
+  readonly res: number;
+  readonly use: string;
+  readonly frames: number;
+  readonly frameMs: number;
+}
+
+/** 原长（ms） */
+export function flicMs(f: FlicTiming): number {
+  return f.frames * f.frameMs;
+}
+
+const flic = (mkf: FlicTiming['mkf'], res: number, use: string, frames: number, frameMs: number): FlicTiming =>
+  Object.freeze({ mkf, res, use, frames, frameMs });
+
+/** 事件演出用到的原版 FLIC（按 design-draft §3.5 的事件 → FLIC 对应；飞弹 / 核弹 / 外星人 / 台风按 A3 exe 核实结果） */
+export const ORIGINAL_FLICS = Object.freeze({
+  /** 烟火：节日 1/1、台湾图 10/10（节日表 0x47d6ab）；音效 90 */
+  fireworks: flic('Data', 482, 'fx.fireworks', 66, 42),
+  /** 救护车送医院（fcn.0043d6c0）：62 × 100 = 6.2 s，与音效 92 等长 */
+  ambulance: flic('Data', 483, 'fx.ambulance', 62, 100),
+  /** 小爆炸：踩到地雷 / 路面炸弹（0x41afc3、0x41b714）；音效 82 */
+  explosionSmall: flic('Data', 484, 'fx.explosion.small', 8, 114),
+  /** 烟雾 110×110：神明离身（推断，visual）；音效 95 */
+  godLeave: flic('Data', 485, 'fx.godLeave', 8, 114),
+  /** 碎屑爆炸：大爆炸（身上的定时炸弹）；音效 87 */
+  explosionBig: flic('Data', 486, 'fx.gasExplosion', 41, 71),
+  /** 飞弹命中（0x445c2d）；音效 81 */
+  missile: flic('Data', 487, 'fx.missile', 19, 114),
+  /** 核子飞弹蘑菇云（0x446751）；音效 83 */
+  nuke: flic('Data', 489, 'fx.nuke', 26, 114),
+  /** 天降光束与穹顶爆炸：新闻 4 外星人攻打地球（0x447df6）；音效 86 */
+  alienAttack: flic('Data', 490, 'fx.alienAttack', 36, 114),
+  /** 超级台风：新闻 20（0x4496cc）；音效 89 */
+  typhoon: flic('Data', 493, 'fx.typhoon', 15, 71),
+  /** 卡片翻出问号：卡片格得卡（0x41abb2）；音效 99 */
+  cardGain: flic('Data', 495, 'fx.cardGain', 14, 71),
+  /** 旋转的点券：点券格（0x41aa34、0x41aace、0x41ab52）；音效 98 */
+  pointsGain: flic('Data', 496, 'fx.pointsGain', 14, 71),
+  /** 警车押送坐牢（fcn.0043c03f）：35 × 71 ≈ 2.49 s；音效 94 */
+  policeCar: flic('Data', 497, 'fx.policeCar', 35, 71),
+  /** 圣诞（节日表 12/25）；音效 114 */
+  christmas: flic('Data', 513, 'holiday.christmas', 90, 85),
+  /** 房屋倒塌：破产（fcn.0040c84d）；音效 100 */
+  bankrupt: flic('Data', 514, 'fx.bankrupt', 10, 71),
+  /** 骰子 1 / 2 / 3 颗（帧间隔 14 ms 标 visual） */
+  dice1: flic('Panel', 4, 'dice.roll1', 36, 14),
+  dice2: flic('Panel', 5, 'dice.roll2', 36, 14),
+  dice3: flic('Panel', 6, 'dice.roll3', 36, 14),
+  /** 乐透摇奖机（不透明） */
+  lotteryMachine: flic('Panel', 16, 'lottery.machine', 42, 71),
+  /** 魔法屋施法（640×480 不透明） */
+  magicCast: flic('Panel', 20, 'magic.cast', 25, 71),
+} as const);
+
+/** 神明降临：GodKind → FLIC（exe 神明降临 switch 0x40e6b2 逐项解出）；恶犬（11）不附身，没有降临动画 */
+export const GOD_ARRIVAL_FLICS: Readonly<Partial<Record<GodKind, FlicTiming>>> = Object.freeze({
+  1: flic('Data', 499, 'god.arrive', 21, 100),
+  2: flic('Data', 500, 'god.arrive', 21, 100),
+  3: flic('Data', 501, 'god.arrive', 21, 128),
+  4: flic('Data', 502, 'god.arrive', 35, 100),
+  5: flic('Data', 503, 'god.arrive', 28, 100),
+  6: flic('Data', 504, 'god.arrive', 30, 100),
+  7: flic('Data', 505, 'god.arrive', 14, 100),
+  8: flic('Data', 506, 'god.arrive', 19, 100),
+  9: flic('Data', 507, 'god.arrive', 16, 100),
+  10: flic('Data', 508, 'god.arrive', 12, 100),
+  12: flic('Data', 509, 'god.arrive', 23, 71),
+  15: flic('Data', 510, 'god.arrive', 15, 100),
+});
+
+/** 棋盘上的开局跳伞：角色号 0..11 → Data 518..529（帧间隔 42 ms） */
+export const PARACHUTE_FLICS: readonly FlicTiming[] = Object.freeze(
+  [34, 35, 34, 39, 30, 40, 33, 39, 30, 39, 33, 35].map((frames, c) =>
+    flic('Data', 518 + c, 'char.parachuteBoard', frames, 42),
+  ),
+);
+
+const LONGEST_PARACHUTE = PARACHUTE_FLICS.reduce((a, b) => (flicMs(b) > flicMs(a) ? b : a));
+
+const DICE_FLICS: Readonly<Record<DiceCount, FlicTiming>> = {
+  1: ORIGINAL_FLICS.dice1,
+  2: ORIGINAL_FLICS.dice2,
+  3: ORIGINAL_FLICS.dice3,
+};
+
+const STRIKE_FLICS: Readonly<Record<StrikeKind, FlicTiming | null>> = {
+  missile: ORIGINAL_FLICS.missile,
+  nuke: ORIGINAL_FLICS.nuke,
+  alien: ORIGINAL_FLICS.alienAttack,
+  typhoon: ORIGINAL_FLICS.typhoon,
+  // 手动引爆的 3×3 炸弹没有独立的原版动画（随后的 BOMB_EXPLODED 另有预算）
+  bomb3x3: null,
+};
+
+// ───────────────────────── 事件 → FLIC（original 节奏） ─────────────────────────
+
+/** original 节奏为事件预留的 FLIC：选哪段，以及 handler 里 FLIC 之外的等待（镜头、弹窗、收尾） */
+interface FlicReserve<T extends GameEventType> {
+  /** handler 里 FLIC 之外的等待（1x，ms），按现有 handlers 的非特效等待计 */
+  readonly extraMs: number;
+  readonly flic: (e: GameEventOf<T>) => FlicTiming | null;
+}
+
+/** FLIC 首帧对齐与收尾的余量（约一帧） */
+export const FLIC_SLACK_MS = 100;
+
+/**
+ * 有原版 FLIC 的事件（design-draft §3.5 的对应表）。表里没有的事件 original = compact。
+ * - HOLIDAY：送卡的节日即圣诞（513）；其余按烟火（482）预留——事件不带地图的节日 flags，没有 FLIC 的节日会多等不到 1 秒。
+ * - PARACHUTE：事件不带角色号，按 12 个角色里最长的一段预留。
+ * - CARD_GAINED / POINTS_GAINED：原版只在落到卡片格 / 点券格时播放（exe 调用点都在落点处理里）。
+ * - OBJECT_REMOVED：被踩中的地雷 / 路面炸弹（与 handlers/items.ts 的 removalOf → 'boom' 同一口径）。
+ * - DICE_ROLLED、LOTTERY_DRAW、BANKRUPT：原长本来就在 compact 预算内，列出只为给原版皮肤同一份对应表。
+ */
+const FLIC_RESERVES = {
+  PARACHUTE: { extraMs: 600, flic: () => LONGEST_PARACHUTE },
+  DICE_ROLLED: { extraMs: 0, flic: (e) => DICE_FLICS[e.diceCount] },
+  POINTS_GAINED: { extraMs: 0, flic: (e) => (e.source === 'square' ? ORIGINAL_FLICS.pointsGain : null) },
+  CARD_GAINED: { extraMs: 0, flic: (e) => (e.source === 'square' ? ORIGINAL_FLICS.cardGain : null) },
+  OBJECT_REMOVED: {
+    extraMs: 0,
+    flic: (e) =>
+      e.cause.k === 'object' && (e.obj.kind === 'mine' || e.obj.kind === 'bomb') ? ORIGINAL_FLICS.explosionSmall : null,
+  },
+  BOMB_EXPLODED: { extraMs: 700, flic: () => ORIGINAL_FLICS.explosionBig },
+  STRIKE: { extraMs: 550, flic: (e) => STRIKE_FLICS[e.kind] },
+  GOD_ATTACHED: { extraMs: 100, flic: (e) => GOD_ARRIVAL_FLICS[e.kind] ?? null },
+  GOD_LEFT: { extraMs: 100, flic: () => ORIGINAL_FLICS.godLeave },
+  CONFINED: {
+    extraMs: 350,
+    flic: (e) =>
+      e.actor.t !== 'seat'
+        ? null
+        : e.where === 'hospital'
+          ? ORIGINAL_FLICS.ambulance
+          : e.where === 'jail'
+            ? ORIGINAL_FLICS.policeCar
+            : null,
+  },
+  MAGIC_CAST: { extraMs: 200, flic: () => ORIGINAL_FLICS.magicCast },
+  LOTTERY_DRAW: { extraMs: 300, flic: () => ORIGINAL_FLICS.lotteryMachine },
+  HOLIDAY: { extraMs: 0, flic: (e) => (e.giveCard ? ORIGINAL_FLICS.christmas : ORIGINAL_FLICS.fireworks) },
+  BANKRUPT: { extraMs: 0, flic: () => ORIGINAL_FLICS.bankrupt },
+} as const satisfies { readonly [T in GameEventType]?: FlicReserve<T> };
+
+type FlicEventType = keyof typeof FLIC_RESERVES;
+
+/** original 节奏里有 FLIC 预留的事件类型 */
+export const FLIC_EVENT_TYPES: readonly FlicEventType[] = Object.freeze(Object.keys(FLIC_RESERVES) as FlicEventType[]);
+
+/**
+ * original 节奏为这个事件预留的 FLIC 与 FLIC 之外的等待；没有预留时为 null。
+ * 原版皮肤按它安排 playFit：可用时长 = eventBudgetMs(e, 'original') − extraMs ≥ FLIC 原长。
+ */
+export function flicReserveOf(e: GameEvent): { flic: FlicTiming; extraMs: number } | null {
+  const r = (FLIC_RESERVES as Partial<Record<GameEventType, FlicReserve<GameEventType>>>)[e.type];
+  if (!r) return null;
+  const f = r.flic(e as never);
+  return f ? { flic: f, extraMs: r.extraMs } : null;
+}
+
+function budgetFrom(table: EventBudgetTable, e: GameEvent): number {
+  const b = table[e.type] as number | ((x: GameEvent) => number);
   const ms = typeof b === 'number' ? b : b(e);
   return Number.isFinite(ms) && ms > 0 ? Math.trunc(ms) : 0;
 }
 
-/** 一批事件的动画总时长（顺序播放，直接求和） */
-export const estimateAnimMs: EstimateAnimMsFn = (events) => {
+/** original 预算 = max(compact, FLIC 原长 + FLIC 之外的等待 + 余量)；没有预留时等于 compact */
+function originalBudget(e: GameEvent): number {
+  const compact = budgetFrom(COMPACT_BUDGET_MS, e);
+  const r = flicReserveOf(e);
+  return r === null ? compact : Math.max(compact, flicMs(r.flic) + r.extraMs + FLIC_SLACK_MS);
+}
+
+function originalOverrides(): { readonly [T in FlicEventType]: (e: GameEventOf<T>) => number } {
+  const out: Record<string, (e: GameEvent) => number> = {};
+  for (const t of FLIC_EVENT_TYPES) out[t] = originalBudget;
+  return out as unknown as { readonly [T in FlicEventType]: (e: GameEventOf<T>) => number };
+}
+
+/** original 节奏：有 FLIC 预留的事件按原长放宽，其余沿用 compact */
+export const ORIGINAL_BUDGET_MS: EventBudgetTable = Object.freeze({
+  ...COMPACT_BUDGET_MS,
+  ...originalOverrides(),
+} satisfies EventBudgetTable);
+
+/** 按节奏取预算表：EVENT_BUDGET_MS[profile][type] */
+export const EVENT_BUDGET_MS: Readonly<Record<PacingProfile, EventBudgetTable>> = Object.freeze({
+  original: ORIGINAL_BUDGET_MS,
+  compact: COMPACT_BUDGET_MS,
+});
+
+/**
+ * 单个事件的预算（ms，非负整数）。profile 缺省为 compact（最紧的口径，与旧调用方一致）；
+ * 服务器按房间节奏显式传入，客户端经 presentation/handlers/budget 取当前房间的节奏。
+ */
+export function eventBudgetMs(e: GameEvent, profile: PacingProfile = 'compact'): number {
+  return budgetFrom(EVENT_BUDGET_MS[profile] ?? COMPACT_BUDGET_MS, e);
+}
+
+/** 一批事件的动画总时长（顺序播放，直接求和）；profile 缺省同 eventBudgetMs */
+export function estimateAnimMs(events: readonly GameEvent[], profile: PacingProfile = 'compact'): number {
   let total = 0;
-  for (const e of events) total += eventBudgetMs(e);
+  for (const e of events) total += eventBudgetMs(e, profile);
   return total;
-};
+}

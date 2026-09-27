@@ -1,13 +1,15 @@
 // client-browser：程序化棋盘经 BoardSurface 接口工作（工厂创建、旋转口径、锚点、视口、测试钩子、轻点回调替换），
 // 以及 FLIC 播放器画到真实画布（CanvasFrameSink，索引 0 透明）
 import { buildTestMap } from '@rich4/shared/data';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { AnimClock } from '../game/anim/AnimClock';
 import { selfPlay } from '../test/selfPlay';
 import type { BoardSurface } from './BoardSurface';
+import { registerBoardFactory } from './boardRegistry';
 import { createBoard, createProceduralBoard } from './boards';
 import { CanvasFrameSink, FlicPlayer } from './flic/FlicPlayer';
 import { buildFlc, randomPalette } from './flic/testing/flcBuilder';
+import { installBoardRenderers } from './renderers';
 
 let host: HTMLDivElement;
 let surface: BoardSurface | null = null;
@@ -96,6 +98,9 @@ describe('BoardSurface（程序化，Chromium + WebGL）', () => {
   });
 
   it('createBoard：想要原版但没有注册原版渲染器 → 回退程序化并说明原因；中止时销毁并抛 AbortError', async () => {
+    // skin/boards 载入时已安装原版棋盘（A6）：本用例先注销，结束后重新安装
+    registerBoardFactory('original', null);
+    onTestFinished(() => installBoardRenderers());
     const clock = new AnimClock();
     const b = await createBoard('original', {
       host,

@@ -1,8 +1,9 @@
 import type { SaveSummary } from '@rich4/shared/net';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { memoryLocation } from 'wouter/memory-location';
+import { setUiLanguage } from '../i18n';
 import { useRoomStore } from '../store/roomStore';
 import { useUiStore } from '../store/uiStore';
 import { makeTestClient } from '../test/fakeTransport';
@@ -128,6 +129,25 @@ describe('路由', () => {
     transport.push('room:state', roomView({ code: '654321' }));
     expect(await screen.findByTestId('screen-room')).toHaveAttribute('data-phase', 'lobby');
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('房间 654321');
+  });
+
+  it('/r/:code 界面语言切换（原版皮肤进出对局页）不会重新进房：离开途中不把玩家拉回房间', async () => {
+    const { transport, client } = renderAt('/r/765432');
+    const entered = (): number => transport.payloads('room:join').length + transport.payloads('room:resume').length;
+    await waitFor(() => expect(entered()).toBe(1));
+    transport.push('room:state', roomView({ code: '765432' }));
+    await screen.findByTestId('screen-room');
+    // 原版皮肤的对局页：界面是繁体；离开房间（room:leave 已回包、还没导航回首页）时对局页卸载，语言切回简体
+    await act(async () => {
+      await setUiLanguage('zh-TW');
+    });
+    await act(async () => {
+      await client.leaveRoom();
+    });
+    await act(async () => {
+      await setUiLanguage('zh-CN');
+    });
+    expect(entered()).toBe(1);
   });
 
   it('/r/:code 房间不存在：显示错误并可回首页', async () => {

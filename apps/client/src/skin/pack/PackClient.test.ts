@@ -123,6 +123,46 @@ describe('PackClient + 合成素材包', () => {
     expect([...bytes.slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
   });
 
+  it('位图按引用计数常驻：每个使用者归还后关闭并移出缓存（离开对局不再常驻）；还有使用者时不关', async () => {
+    const closed: string[] = [];
+    const decodeImage = vi.fn(
+      async (_blob: Blob, lp: string) =>
+        ({ width: 1, height: 1, close: () => closed.push(lp) }) as unknown as ImageBitmap,
+    );
+    const f = diskFetch();
+    const c = new PackClient({ fetch: f, decodeImage });
+    await c.loadManifest();
+    const pngs = Object.keys(c.manifest!.files).filter((lp) => lp.endsWith('.png'));
+    const [a, b] = [pngs[0]!, pngs[1]!];
+    // 两个使用者共用一份（只下载、解码一次）
+    const [x, y] = await Promise.all([c.loadImage(a), c.loadImage(a)]);
+    expect(x).toBe(y);
+    await c.loadImage(b);
+    expect(decodeImage).toHaveBeenCalledTimes(2);
+    expect(c.cachedImageCount).toBe(2);
+    c.releaseImage(a);
+    await Promise.resolve();
+    expect(closed).toEqual([]);
+    expect(c.cachedImageCount).toBe(2);
+    c.releaseImage(a);
+    c.releaseImage(b);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(closed.sort()).toEqual([a, b].sort());
+    expect(c.cachedImageCount).toBe(0);
+    // 多还一次无害；再借会重新解码
+    c.releaseImage(a);
+    await c.loadImage(a);
+    expect(decodeImage).toHaveBeenCalledTimes(3);
+    // 加载失败：计数自动退回，不影响之后的成功加载
+    const bad = new PackClient({
+      fetch: diskFetch({ [c.fileUrl(b)!]: () => json({ ok: false }, 500) }),
+      decodeImage,
+    });
+    await bad.loadManifest();
+    await expect(bad.loadImage(b)).rejects.toThrow();
+    expect(bad.cachedImageCount).toBe(0);
+  });
+
   it('二进制缓存按字节预算 LRU：超预算淘汰最久未用的（再取时重新下载），命中的刷新次序', async () => {
     const f = diskFetch();
     const c = new PackClient({ fetch: f, binaryCacheBytes: 1 });

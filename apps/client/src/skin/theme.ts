@@ -41,8 +41,16 @@ export function appliedSkin(): SkinKind | null {
   return applied;
 }
 
+/** 标签页标题（index.html 里是简体；原版皮肤的对局页换成繁体） */
+export const DOC_TITLES: Readonly<Record<UiLang, string>> = {
+  'zh-CN': 'rich4 · 大富翁4 网页联机复刻',
+  'zh-TW': 'rich4 · 大富翁4 網頁連線復刻',
+};
+
 function setDocLang(lang: UiLang): void {
-  if (typeof document !== 'undefined') document.documentElement.lang = lang;
+  if (typeof document === 'undefined') return;
+  document.documentElement.lang = lang;
+  document.title = DOC_TITLES[lang];
 }
 
 /**

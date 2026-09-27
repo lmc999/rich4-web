@@ -77,3 +77,13 @@ export function decisionTimeoutMs(
   if (scale === null) return null;
   return DECISION_TIMEOUT_S[timing] * scale * 1000;
 }
+
+/**
+ * 演出节奏（original-skin.md U3；RoomSettings.pacing）：original 以原版 FLIC 原长为准、完整播放原版演出；
+ * compact 用紧凑预算（原版 FLIC 加速或截取）。服务器按所选节奏的动画预算（shared/view/pacing 的 EVENT_BUDGET_MS）
+ * 计算截止时间与 AI 等待。与 view/pacing 的同名类型相同（net 不能依赖 view/pacing，两处字面量由测试对齐）。
+ */
+export type PacingProfile = 'original' | 'compact';
+export const PACING_PROFILES = Object.freeze(['original', 'compact'] as const) satisfies readonly PacingProfile[];
+/** 新房间的默认节奏 */
+export const DEFAULT_PACING: PacingProfile = 'original';

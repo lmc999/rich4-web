@@ -62,6 +62,11 @@ function bombRun(t: MinigameTicket): { log: InputEvent[]; score: number; endTick
 /** 让座位 0 停在小游戏格（stub：6 → 7；真实引擎：15 → 16 企鹅挖宝） */
 async function landOnMinigame(host: BotClient): Promise<MinigameTicket> {
   const node = srv!.engineKind === 'stub' ? { node: 6 } : { node: 15, prev: 14 };
+  // 真实引擎开局会在路上随机摆神明、恶犬等：先清场，免得落点附近的恶犬把人咬进医院、等不到 MINIGAME 决策
+  if (srv!.engineKind !== 'stub') {
+    expect((await host.req('debug:act', { op: { op: 'clearBoard' } })).ok).toBe(true);
+    await host.until(() => host.yourDecision?.kind === 'TURN_MENU', 3000, 'menu after clearBoard');
+  }
   expect((await host.req('debug:act', { op: { op: 'teleport', seat: 0, ...node } })).ok).toBe(true);
   expect((await host.req('debug:act', { op: { op: 'forceNext', purpose: 'dice', values: [1] } })).ok).toBe(true);
   await host.until(() => host.yourDecision?.kind === 'TURN_MENU', 3000, 'menu');

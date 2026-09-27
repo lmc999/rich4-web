@@ -6,7 +6,9 @@
  * - 地面：按 MapDef.terrain / roadCells 合成 GND 棋盘格底图，再走与原版相同的 GND → 切块 → 索引色 PNG 管线；
  * - 精灵：资源目录里全部「棋盘」类精灵条目（角色 21 套姿态、恶人、路面物件与神明、装饰、占地标志、高亮、连锁店与设施），
  *   逻辑键、分组、帧数结构与原版包相同，客户端代码无需区分；
- * - 每张 fixture 地图：住宅 5 级、景观、企业精灵与 MapSkinV1（投影用我们自己的参数化，绑定 fixture 身份 resourceSha256=null）。
+ * - 每张 fixture 地图：住宅 5 级、景观、企业精灵与 MapSkinV1（投影用我们自己的参数化，绑定 fixture 身份 resourceSha256=null）；
+ * - 经典外壳 UI（./syntheticUi）：工具列、资料栏、日历、GO 钮与命中掩膜、骰子面、共享 UI、头像、滚骰 FLC，
+ *   E2E 用它走原版 UI 精灵路径（帧号、锚点、掩膜区号语义与原版包一致）。
  *
  * 合成包的 JSON 带素材包 schema，会被 check-no-original 按 schema 拦截，所以**不入库**：
  * 由 `rich4-extract assets synth [--out .cache/synthetic-pack]` 在 CI / 测试时现场生成（输出目录同样必须已被忽略或在仓库外）。
@@ -22,6 +24,7 @@ import { buildAtlasPages, type FrameSet, groundChunks } from './images';
 import { PackWriter, pruneStalePack, resolvePackOutputDir } from './manifest';
 import { claimOutputDir } from './outputDir';
 import { buildSyntheticSkin } from './skin';
+import { addSyntheticUi } from './syntheticUi';
 
 export const SYNTH_GENERATOR = 'rich4-extract/synthetic@1';
 export const DEFAULT_SYNTH_DIR = path.join('.cache', 'synthetic-pack');
@@ -283,6 +286,9 @@ export async function buildSyntheticPack(opts: SyntheticOptions): Promise<Synthe
   );
   for (const it of shared) await addSprite(it, 'sprites/synthetic', it.key);
 
+  // 经典外壳 UI（与原版包同键同组）
+  await addSyntheticUi(writer, cat, PNG);
+
   // 每张 fixture 地图
   const building = (mapId: string, key: string, ownerMask: boolean): SpriteItem => ({
     type: 'sprite',
@@ -345,7 +351,7 @@ export async function buildSyntheticPack(opts: SyntheticOptions): Promise<Synthe
     tools: { ffmpeg: null },
     features: {
       board: true,
-      ui: false,
+      ui: true,
       fx: false,
       minigames: false,
       audio: false,

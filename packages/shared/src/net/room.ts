@@ -6,7 +6,7 @@ import type { CharacterId, DateNum, SeatAiConfig, SeatIndex } from '../engine/ty
 import type { SeatControl } from '../view/types';
 import { DEFAULT_MAX_SPECTATORS } from './limits';
 import type { SaveWarning } from './protocol';
-import { type AiPace, DEFAULT_RECONNECT_GRACE_S, type TimerPreset } from './timing';
+import { type AiPace, DEFAULT_PACING, DEFAULT_RECONNECT_GRACE_S, type PacingProfile, type TimerPreset } from './timing';
 
 export type RoomPhase = 'lobby' | 'playing' | 'paused' | 'ended';
 
@@ -36,6 +36,8 @@ export interface RoomSettings {
   minigameSpectate: MinigameSpectate;
   /** 真人可在小游戏倒计时阶段主动跳过（DEV-06），默认 true */
   allowMinigameDecline: boolean;
+  /** 演出节奏（original-skin.md U3），默认 original；开局后不可改（截止时间按它计算） */
+  pacing: PacingProfile;
   game: GameConfig;
 }
 
@@ -61,6 +63,7 @@ export const DEFAULT_ROOM_SETTINGS: Readonly<Omit<RoomSettings, 'game'>> = Objec
   aiPace: 'normal',
   minigameSpectate: 'live',
   allowMinigameDecline: true,
+  pacing: DEFAULT_PACING,
 });
 
 /** /solo：私密房、不许观战、不限时（随后 3 次 room:setSeatAi 再 room:start） */

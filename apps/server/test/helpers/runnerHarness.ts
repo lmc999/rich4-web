@@ -11,7 +11,7 @@ import {
   type PlayerSetup,
   type SeatIndex,
 } from '@rich4/shared/engine';
-import type { GameOverMsg } from '@rich4/shared/net';
+import { DEFAULT_PACING, type GameOverMsg } from '@rich4/shared/net';
 import type { SeatControl } from '@rich4/shared/view';
 import { AiDriver } from '../../src/game/AiDriver';
 import { DEFAULT_TIMING, type TimingOptions } from '../../src/game/Deadlines';
@@ -65,6 +65,7 @@ export function makeRunner(o: HarnessOptions = {}) {
     aiPace: 'normal',
     allowMinigameDecline: true,
     reconnectGraceSec: 15,
+    pacing: DEFAULT_PACING,
     ...o.settings,
   };
   const rec: HarnessRecord = {

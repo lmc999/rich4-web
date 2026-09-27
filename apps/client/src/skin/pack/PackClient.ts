@@ -5,7 +5,9 @@
 // - 按组（group）懒加载：图集 JSON、地图皮肤、映射表逐个校验；位图按需解码；FLC、音频按条目取用；
 // - 组内文件缺失或加载失败 → 记为失败组（skinStore 据此回退程序化）；
 // - 二进制（FLC 字节）按字节预算做 LRU（BINARY_CACHE_BYTES）：原版 105 段 FLC 共约 38 MB，不能在页面里全部常驻，
-//   淘汰后再取走 HTTP 缓存（private, max-age=30 天）。
+//   淘汰后再取走 HTTP 缓存（private, max-age=30 天）；
+// - 位图按引用计数常驻：loadImage 成功一次就要 releaseImage 一次（失败的不用），最后一个使用者归还时关闭位图并移出缓存
+//   （离开对局后地面、建筑、角色图集页解码出的几十 MB 不再留到标签页关闭；再进对局从 HTTP 缓存重新解码）。
 // 本模块引入 shared/assets 的 zod 契约（体积较大），由 skinStore 动态 import，不进首屏。
 import {
   type AssetEntry,
@@ -106,6 +108,11 @@ export class PackClient {
   private readonly binSizes = new Map<string, number>();
   private binBytes = 0;
   private readonly imageCache = new Map<string, Promise<PackImage>>();
+  /**
+   * 位图的使用者计数（按缓存里的那一次加载计：loadImage 时 +1，这次加载失败或 releaseImage 时 −1；
+   * 归零时关闭位图并移出缓存）
+   */
+  private readonly imageRefs = new Map<string, { p: Promise<PackImage>; n: number }>();
   private readonly groupCache = new Map<string, Promise<PackGroupBundle>>();
   private readonly failed = new Set<string>();
   private readonly base: string;
@@ -163,6 +170,7 @@ export class PackClient {
     this.binSizes.clear();
     this.binBytes = 0;
     this.imageCache.clear();
+    this.imageRefs.clear();
     this.groupCache.clear();
     this.failed.clear();
   }
@@ -346,12 +354,46 @@ export class PackClient {
     }
   }
 
+  /**
+   * 位图（按逻辑路径缓存，并发请求合并为一次）。每次成功的调用都要配一次 releaseImage（失败的不用）；
+   * 还有使用者时位图常驻，最后一个归还后关闭。
+   */
   loadImage(logicalPath: string, signal?: AbortSignal): Promise<PackImage> {
-    return this.cached(this.imageCache, logicalPath, async () => {
+    const p = this.cached(this.imageCache, logicalPath, async () => {
       const res = await this.fetchFile(logicalPath, signal);
       const blob = await res.blob();
       return (this.o.decodeImage ?? defaultDecodeImage)(blob, logicalPath);
     });
+    let r = this.imageRefs.get(logicalPath);
+    if (r?.p !== p) {
+      r = { p, n: 0 };
+      this.imageRefs.set(logicalPath, r);
+    }
+    r.n++;
+    p.catch(() => {
+      // 这次加载失败：调用方拿不到位图，也不会归还
+      const cur = this.imageRefs.get(logicalPath);
+      if (cur?.p !== p) return;
+      cur.n--;
+      if (cur.n <= 0) this.imageRefs.delete(logicalPath);
+    });
+    return p;
+  }
+
+  /** 归还 loadImage 成功取得的位图：没有别的使用者时关闭（ImageBitmap.close）并移出缓存 */
+  releaseImage(logicalPath: string): void {
+    const r = this.imageRefs.get(logicalPath);
+    if (!r) return;
+    r.n--;
+    if (r.n > 0) return;
+    this.imageRefs.delete(logicalPath);
+    if (this.imageCache.get(logicalPath) === r.p) this.imageCache.delete(logicalPath);
+    r.p.then(closeImage, () => {});
+  }
+
+  /** 缓存中的位图数（测试与调试） */
+  get cachedImageCount(): number {
+    return this.imageCache.size;
   }
 
   loadAtlas(logicalPath: string, signal?: AbortSignal): Promise<AtlasV1> {
@@ -477,6 +519,10 @@ function parseData(e: DataEntry, json: unknown): unknown {
           : safeParseFlicMap(json);
   if (!r.ok) throw new PackAssetError(`${e.file} 校验失败：${r.issues.slice(0, 3).join('; ')}`);
   return r.value;
+}
+
+function closeImage(img: PackImage): void {
+  if (typeof (img as ImageBitmap).close === 'function') (img as ImageBitmap).close();
 }
 
 function defaultCanPlay(mime: string): string {

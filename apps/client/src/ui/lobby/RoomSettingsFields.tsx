@@ -1,5 +1,5 @@
 // 房间设置表单字段（建房与房主改设置共用）：地图、总资金、行进方式、地契、游戏时间、胜利条件、规则预设、
-// 小游戏、计时档位、观战、公开/私密；建房时额外有「电脑补位」。
+// 小游戏、计时档位、演出节奏（原版 / 紧凑）、观战、公开/私密；建房时额外有「电脑补位」。
 import {
   AI_PRESETS,
   type AiPreset,
@@ -14,12 +14,12 @@ import {
   WIN_MULTIPLE_OPTIONS,
   type WinMultiple,
 } from '@rich4/shared/engine';
-import type { TimerPreset } from '@rich4/shared/net';
+import type { PacingProfile, TimerPreset } from '@rich4/shared/net';
 import type { ReactNode } from 'react';
 import { useTx } from '../../i18n/tx';
 import c from '../common/common.module.css';
 import l from './lobby.module.css';
-import { type MapListingLite, type SettingsDraft, TIMER_PRESETS } from './settingsDraft';
+import { type MapListingLite, PACING_OPTIONS, type SettingsDraft, TIMER_PRESETS } from './settingsDraft';
 
 export interface RoomSettingsFieldsProps {
   draft: SettingsDraft;
@@ -157,6 +157,15 @@ export function RoomSettingsFields({ draft, onChange, maps, withAi, disabled }: 
         render={(v) => t(`lobby:timer.${v}`)}
         onChange={(v) => set('timerPreset', v)}
         testId="set-timer"
+        disabled={disabled}
+      />
+      <Select<PacingProfile>
+        label={t('lobby:settings.pacing')}
+        value={draft.pacing}
+        options={PACING_OPTIONS}
+        render={(v) => t(`lobby:pacing.${v}`)}
+        onChange={(v) => set('pacing', v)}
+        testId="set-pacing"
         disabled={disabled}
       />
       <Select<'private' | 'public'>

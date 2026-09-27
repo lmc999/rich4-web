@@ -18,6 +18,7 @@ import {
   waitIdle,
   waitMyTurn,
   waitSeqAtLeast,
+  zh,
 } from '../fixtures/room';
 
 /** 传送到 4 号格（来路 3）、强制 1 点：落在住宅 L1，拒绝购买（与随机开局位置无关） */
@@ -60,7 +61,7 @@ test('P2 不操作：超时后电脑代为决定，游戏继续', async ({ fourP
   await expect(b.getByTestId('waiting-banner')).toHaveCount(0);
   await expect(a.getByTestId('waiting-banner')).toHaveAttribute('data-seat', '1');
   // 15 秒截止 + 0.8 秒宽限后服务器代决
-  const toast = '2P 超时，已由电脑代为决定';
+  const toast = zh('2P 超时，已由电脑代为决定', '2P 超時，已由電腦代為決定');
   await expect(b.getByTestId('toast').filter({ hasText: toast })).toBeVisible({ timeout: 30_000 });
   await expect(a.getByTestId('toast').filter({ hasText: toast })).toBeVisible({ timeout: 5_000 });
   // 游戏继续：两个电脑走完后又轮到 P1

@@ -69,3 +69,39 @@ export const FX_BEGGAR_MOVE_MS = 420;
 
 /** 画质档的粒子上限（design/client.md §8） */
 export const PARTICLE_LIMITS = { high: 400, mid: 150, low: 0 } as const;
+
+// ───────── 原版皮肤 A8：OrigStage 的原版 FLIC 可用时长（original-skin.md §3 修正 1） ─────────
+
+/** FLIC 首帧对齐与收尾的余量（与 shared/view/pacing 的 FLIC_SLACK_MS 一致：original 预算 = FLIC 原长 + 其他等待 + 余量） */
+export const ORIG_FLIC_SLACK_MS = 100;
+
+/**
+ * 播原版 FLIC 的 handler 里 FLIC 之外的等待（1x，ms；逐 handler 按 presentation/handlers 的编排推算）：
+ * before 为 FLIC 开始前串行的等待，after 为 FLIC 结束后的等待；与 FLIC 并行的弹窗 / 横幅 / 等待不计（取两者较长）。
+ * FLIC 的可用时长 = 当前节奏的事件预算 − before − after − ORIG_FLIC_SLACK_MS（game/orig/stage/flicPlan.ts）：
+ * original 节奏下 ≥ FLIC 原长（原速完整播放），compact 节奏下 playFit 加速或截取。
+ */
+export const ORIG_FLIC_WAITS = {
+  /** placeActor → focus 400 → hop（棋盘伞 FLIC）→ wait 200 */
+  PARACHUTE: { before: 400, after: 200 },
+  /** GodArrivePopup ∥ godArrive（神明降临 FLIC）→ wait 100 */
+  GOD_ATTACHED: { before: 0, after: 100 },
+  /** godLeave（烟雾 FLIC）→ wait 100 */
+  GOD_LEFT: { before: 0, after: 100 },
+  /** focus 250 → escort（警车 / 救护车 FLIC）→ wait 100 */
+  CONFINED: { before: 250, after: 100 },
+  /** focus 300 → explode big（碎屑爆炸 FLIC）→ wait 400 */
+  BOMB_EXPLODED: { before: 300, after: 400 },
+  /** focus 400 → strike（飞弹 / 核弹 / 外星人 / 台风 FLIC）→ wait 150 */
+  STRIKE: { before: 400, after: 150 },
+  /** removeObject boom（小爆炸 FLIC） */
+  OBJECT_REMOVED: { before: 0, after: 0 },
+  /** 得卡 FLIC ∥ wait 400 */
+  CARD_GAINED: { before: 0, after: 0 },
+  /** 得点券 FLIC ∥ 飘字 + wait 500 */
+  POINTS_GAINED: { before: 0, after: 0 },
+  /** 烟火 / 圣诞 FLIC ∥ 节日横幅 1500 */
+  HOLIDAY: { before: 0, after: 0 },
+  /** 房屋倒塌 FLIC ∥ 破产横幅 1800 */
+  BANKRUPT: { before: 0, after: 0 },
+} as const satisfies Readonly<Record<string, { readonly before: number; readonly after: number }>>;

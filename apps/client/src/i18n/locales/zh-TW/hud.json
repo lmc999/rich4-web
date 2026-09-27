@@ -158,7 +158,7 @@
     "spectatorJoined": "{{nickname}} 進來觀戰",
     "spectatorLeft": "{{nickname}} 離開了觀戰",
     "hostChanged": "{{nickname}} 成為房主",
-    "autopilotOn": "{{nickname}} 進入托管（{{reason}}）",
+    "autopilotOn": "{{nickname}} 進入託管（{{reason}}）",
     "autopilotOff": "{{nickname}} 解除託管",
     "disconnected": "{{nickname}} 斷線了",
     "reconnected": "{{nickname}} 重新連上了",

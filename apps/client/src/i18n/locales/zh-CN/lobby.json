@@ -42,6 +42,7 @@
     "rules": "规则",
     "minigames": "小游戏",
     "timer": "决策计时",
+    "pacing": "演出节奏",
     "visibility": "房间",
     "spectators": "允许观战",
     "aiCount": "电脑补位",
@@ -92,6 +93,10 @@
     "normal": "普通",
     "slow": "慢（加倍）",
     "off": "不限时"
+  },
+  "pacing": {
+    "original": "原版",
+    "compact": "紧凑"
   },
   "visibility": {
     "private": "私密（凭房间号）",

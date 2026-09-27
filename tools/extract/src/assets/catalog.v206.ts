@@ -712,7 +712,15 @@ function panelItems(): CatalogItem[] {
       'rgb0',
       'GO 钮 72×67：图0 常态/1 悬停/2 禁止/3 禁止悬停/4–5 乌龟；图6–11 骰子数小图 15×15',
     ),
-    mask('Panel', 8, 'ui.goButton.mask', 'ui.hud', [72, 67], 4, 'GO 钮命中掩膜（4 区，各区含义未核实）'),
+    mask(
+      'Panel',
+      8,
+      'ui.goButton.mask',
+      'ui.hud',
+      [72, 67],
+      4,
+      'GO 钮命中掩膜（逐像素统计：区 1 左侧骰子数竖槽 x7..22/y9..56、区 2 紫色边框、区 3 GO 钮面、区 4 钮外透明四角；没有 0）',
+    ),
     smp(
       'Panel',
       9,

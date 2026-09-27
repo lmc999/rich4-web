@@ -11,12 +11,19 @@ import {
   joinRoom,
   openChat,
   pickReadyStart,
+  SKIN_ORIGINAL,
   sendChat,
   test,
+  zh,
 } from '../fixtures/room';
 
 const msg = (p: Page, text: string): Locator => p.getByTestId('chat-msg').filter({ hasText: text });
 const emote = (p: Page, id: string): Locator => p.locator(`[data-testid="chat-emote"][data-emote="${id}"]`);
+
+// 断言程序化布局的顶栏「观战中」与玩家条上的 DOM 气泡。经典布局（原版皮肤）的观战者由 skin-classic-shell 的
+// 「观战者（经典布局）」用例覆盖：没有掷骰 / 回合菜单 / 决策层 / 本人倒计时，工具列的托管、道具、卡片、股市、公佈欄、
+// 存读档钮禁用（经典布局保留这些钮的位置，只是不可用），聊天双向、座位条 DOM 气泡与托管标记同步
+test.skip(SKIN_ORIGINAL, '程序化布局专用（顶栏「观战中」、操作按钮不渲染）；经典布局见 skin-classic-shell');
 
 test('聊天与表情传播到 5 个上下文，观战频道隔离，观战者无操作按钮', async ({ fourPlayers, spectator }) => {
   test.setTimeout(180_000);
@@ -80,7 +87,7 @@ test('聊天与表情传播到 5 个上下文，观战频道隔离，观战者�
   for (const p of all) await expect(msg(p, '快点啦～')).toBeVisible();
 
   // 4) 观战者发言（默认 spectatorChat=all）：所有人可见，玩家的「观战」页签里也能看到
-  await expect(w.getByTestId('chat-audience')).toHaveText('你的消息所有人可见');
+  await expect(w.getByTestId('chat-audience')).toHaveText(zh('你的消息所有人可见', '你的訊息所有人可見'));
   await sendChat(w, '观众路过');
   for (const p of all) await expect(msg(p, '观众路过')).toBeVisible();
   await a.getByTestId('chat-tab-spectators').click();
@@ -91,7 +98,7 @@ test('聊天与表情传播到 5 个上下文，观战频道隔离，观战者�
   // 5) 房主改为「仅观战者可见」：观战者的消息与表情只到观战者
   await a.getByTestId('spectator-host-opts').locator('summary').click();
   await a.getByTestId('spectator-chat-mode').selectOption('spectators');
-  await expect(w.getByTestId('chat-audience')).toHaveText('你的消息只有观战者可见');
+  await expect(w.getByTestId('chat-audience')).toHaveText(zh('你的消息只有观战者可见', '你的訊息只有觀戰者可見'));
   await sendChat(w, '只有观众能看到');
   await expect(msg(w, '只有观众能看到')).toBeVisible();
   await expect(msg(w, '只有观众能看到')).toHaveAttribute('data-audience', 'spectators');
@@ -110,7 +117,7 @@ test('聊天与表情传播到 5 个上下文，观战频道隔离，观战者�
   const fromB = c.locator('[data-testid="chat-emote"][data-kind="seat"]').first();
   await fromB.hover();
   await fromB.getByTestId('chat-mute').click();
-  await expect(c.getByTestId('chat-muted')).toContainText('已屏蔽 1 人');
+  await expect(c.getByTestId('chat-muted')).toContainText(zh('已屏蔽 1 人', '已遮蔽 1 人'));
   await expect(emote(c, 'laugh')).toHaveCount(0);
   await sendChat(b, '被屏蔽的一句话');
   await expect(msg(d, '被屏蔽的一句话')).toBeVisible();

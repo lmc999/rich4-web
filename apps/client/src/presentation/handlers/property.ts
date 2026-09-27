@@ -3,6 +3,7 @@ import type { GameEvent, SeatIndex } from '@rich4/shared/engine';
 import { formatEvent } from '../logFormat';
 import type { EventHandler, PresentationContext } from '../types';
 import { brief, cashDelta, lotLook, showAllDeltas, showDelta, syncFromPost } from './common';
+import { stageOf } from './stage';
 
 export const MONEY: EventHandler<'MONEY'> = async (e, ctx) => {
   showAllDeltas(ctx, e);
@@ -27,7 +28,8 @@ export const INSURANCE_PAYOUT = moneyBrief(800);
 
 export const POINTS_GAINED: EventHandler<'POINTS_GAINED'> = async (e, ctx) => {
   showDelta(ctx, e.seat, cashDelta(ctx, e, e.seat, 'points') || e.amount, 'points');
-  await ctx.wait(500);
+  // 原版皮肤：点券格的旋转点券 FLIC 与等待并行
+  await Promise.all([ctx.wait(500), stageOf(ctx).eventFlic?.(e, ctx.signal)]);
 };
 
 export const LAND_BOUGHT: EventHandler<'LAND_BOUGHT'> = async (e, ctx) => {

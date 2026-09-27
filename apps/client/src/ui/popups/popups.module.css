@@ -32,6 +32,32 @@
   text-align: center;
 }
 
+/* 原版皮肤经典布局：放在棋盘视窗叠层的下部、按视窗缩放（棋盘中央留给原版 FLIC 演出）；终局画面居中 */
+.layerInline {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  display: grid;
+  place-items: end center;
+  padding-bottom: 2%;
+  overflow: hidden;
+}
+
+.layerInline[data-center="true"] {
+  place-items: center;
+  padding-bottom: 0;
+}
+
+.layerInline > .backdrop {
+  scale: var(--popup-scale, 1);
+  transform-origin: bottom center;
+}
+
+.layerInline[data-center="true"] > .backdrop {
+  transform-origin: center;
+}
+
 .card {
   position: relative;
   background: var(--c-cream);

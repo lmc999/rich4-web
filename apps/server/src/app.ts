@@ -13,7 +13,7 @@ import { type AiPolicy, BasicAiPolicy, OriginalAiPolicy } from '@rich4/shared/ai
 import { createEngine, type EngineApi } from '@rich4/shared/engine';
 import { type RoomSettings, SAVE_IMPORT_MAX_BYTES } from '@rich4/shared/net';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance, LogController } from 'fastify';
-import { AccessControl, type AccessControlDeps } from './access/AccessControl';
+import { AccessControl, type AccessControlDeps, GRANTS_PER_IP_PER_HOUR } from './access/AccessControl';
 import { type AccessStore, accessDbPath, openAccessStore, SqliteAccessStore } from './access/AccessStore';
 import { AccessLimiter } from './access/limiter';
 import { belowRecommendedScrypt, RECOMMENDED_SCRYPT } from './access/passcode';
@@ -278,6 +278,8 @@ export async function createApp(deps: AppDeps): Promise<App> {
     log: log.child({ mod: 'access' }),
     roomExists: (code) => roomsRef?.get(code) !== undefined,
     packId: pack.enabled ? pack.packId : null,
+    // 测试模式（E2E 全部页面来自 127.0.0.1，每个进房的页面都会自动生成授权）放宽每 IP 的授权数
+    ...(config.testMode ? { grantsPerHour: GRANTS_PER_IP_PER_HOUR * 100 } : {}),
     ...deps.accessOptions,
   });
   try {

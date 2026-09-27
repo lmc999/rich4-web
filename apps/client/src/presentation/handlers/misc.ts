@@ -3,13 +3,15 @@
 import { formatEvent } from '../logFormat';
 import type { EventHandler } from '../types';
 import { brief, silent } from './common';
+import { stageOf } from './stage';
 
 // card
 export const CARD_GAINED: EventHandler<'CARD_GAINED'> = async (e, ctx) => {
   const line = formatEvent(e, ctx.names);
   if (line && (e.seat === ctx.me || e.card !== null)) ctx.ui.toast(line);
   ctx.board.floatText({ seat: e.seat }, '🃏', 'info');
-  await ctx.wait(400);
+  // 原版皮肤：卡片格得卡的 FLIC（问号卡片翻出）与等待并行
+  await Promise.all([ctx.wait(400), stageOf(ctx).eventFlic?.(e, ctx.signal)]);
 };
 export const CARD_LOST = brief<'CARD_LOST'>(300);
 export const SHOP_OPENED = brief<'SHOP_OPENED'>(300, false);

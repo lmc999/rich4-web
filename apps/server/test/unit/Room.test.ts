@@ -4,6 +4,7 @@
  */
 import { defaultGameConfig } from '@rich4/shared/engine';
 import { defaultRoomSettings, EMOTE_COOLDOWN_MS, fail, ok, type RoomSettings } from '@rich4/shared/net';
+import { estimateAnimMs } from '@rich4/shared/view';
 import { describe, expect, it } from 'vitest';
 import { fixtureCatalog } from '../../src/data/DataRegistry';
 import { AiDriver } from '../../src/game/AiDriver';
@@ -13,7 +14,7 @@ import { silentLogger } from '../../src/infra/logger';
 import type { PersistableRoom, RoomPersistence } from '../../src/persistence/RoomPersister';
 import { buildSaveFile, type LoadedSave } from '../../src/persistence/SaveService';
 import type { SaveKind, ServerSaveFile } from '../../src/persistence/types';
-import { DEFAULT_ROOM_TTLS, Room, type RoomSaves, type RoomTtls } from '../../src/rooms/Room';
+import { DEFAULT_ROOM_TTLS, Room, type RoomSaves, type RoomTtls, withSettingsDefaults } from '../../src/rooms/Room';
 import { RoomBroadcaster } from '../../src/rooms/RoomBroadcaster';
 import { localPolicy } from '../helpers/localPolicy';
 import { ManualScheduler } from '../helpers/manualScheduler';
@@ -402,5 +403,35 @@ describe('Room：读档后的大厅', () => {
       error: { details: { reason: 'notInSave' } },
     });
     expect(h.room.loadSave('T0', 'nope')).toMatchObject({ ok: false, error: { code: 'SAVE_NOT_FOUND' } });
+  });
+});
+
+describe('Room：演出节奏 pacing（original-skin.md U3）', () => {
+  it('默认 original；大厅里房主可改；开局后不能改；对局按房间节奏估算 animMs', () => {
+    const h = harness();
+    expect(h.room.settings.pacing).toBe('original');
+    expect(h.room.updateSettings('T0', { pacing: 'compact' })).toEqual({ ok: true, data: undefined });
+    expect(h.room.settings.pacing).toBe('compact');
+    expect(h.room.viewFor('T0').settings.pacing).toBe('compact');
+    h.startTwo();
+    expect(h.room.updateSettings('T0', { pacing: 'original' })).toMatchObject({
+      ok: false,
+      error: { code: 'ROOM_IN_GAME' },
+    });
+    const runner = h.room.runner!;
+    const d = runner.pendingDecisions().find((x) => x.seat === 0)!;
+    expect(h.room.act('T0', d.id, { type: 'ROLL' }, 'c1').ok).toBe(true);
+    const raw = runner.rawBatches().at(-1)!;
+    expect(raw.animMs).toBe(estimateAnimMs(raw.events, 'compact'));
+  });
+
+  it('旧快照 / 旧存档的设置没有 pacing：按默认 original 补上', () => {
+    const h = harness({ settings: { pacing: undefined } as unknown as Partial<RoomSettings> });
+    expect(h.room.settings.pacing).toBe('original');
+    const legacy = { ...h.room.settings } as Partial<RoomSettings>;
+    delete legacy.pacing;
+    expect(withSettingsDefaults(legacy as RoomSettings).pacing).toBe('original');
+    const compact = { ...h.room.settings, pacing: 'compact' } as const;
+    expect(withSettingsDefaults(compact)).toBe(compact);
   });
 });

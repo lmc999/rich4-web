@@ -12,6 +12,17 @@ export const Q = 'anim=instant&audio=off&test=1';
 /** 播放演出的测试页参数（不带 anim=instant） */
 export const Q_ANIM = 'audio=off&test=1';
 
+/**
+ * 原版皮肤模式（e2e/playwright.original.config.ts：服务器挂合成素材包，fixture 地图 test 判定为原版皮肤）：
+ * 对局页是经典布局 + 原版棋盘，界面文字为繁体；大厅、首页不受皮肤影响（仍是简体）。
+ */
+export const SKIN_ORIGINAL = process.env.RICH4_E2E_SKIN === 'original';
+
+/** 对局页上的一段文字：原版皮肤模式下用繁体写法 */
+export function zh(cn: string, tw: string): string {
+  return SKIN_ORIGINAL ? tw : cn;
+}
+
 export interface Player {
   context: BrowserContext;
   page: Page;
@@ -66,6 +77,8 @@ export interface RoomOptions {
   timer?: 'fast' | 'normal' | 'slow' | 'off';
   aiCount?: 0 | 1 | 2 | 3;
   spectators?: boolean;
+  /** 演出节奏（缺省不动表单，即默认 original） */
+  pacing?: 'original' | 'compact';
 }
 
 /** 首页建房，返回房间号（停在房间大厅） */
@@ -75,6 +88,7 @@ export async function createRoom(page: Page, o: RoomOptions = {}): Promise<strin
   await expect(map.locator(`option[value="${o.map ?? 'test'}"]`)).toHaveCount(1);
   await map.selectOption(o.map ?? 'test');
   await page.getByTestId('set-timer').selectOption(o.timer ?? 'off');
+  if (o.pacing) await page.getByTestId('set-pacing').selectOption(o.pacing);
   if (o.spectators === false) await page.getByTestId('set-spectators').uncheck();
   if (o.aiCount) await page.getByTestId('set-ai-count').selectOption(String(o.aiCount));
   await page.getByTestId('create-submit').click();
@@ -121,12 +135,27 @@ export async function startGame(host: Page, pages: Page[], o: { clearBoard?: boo
   for (const p of pages) {
     await expect(p.getByTestId('screen-game')).toBeVisible();
     await waitIdle(p);
+    if (SKIN_ORIGINAL) await expectOriginalSkin(p);
   }
   if (o.clearBoard ?? true) {
     const s0 = await currentSeq(host);
     await debugAct(host, { op: 'clearBoard' });
     for (const p of pages) await waitSeqAtLeast(p, s0 + 1);
   }
+}
+
+/** 原版皮肤模式：对局页确实用了原版棋盘与经典布局（繁体界面） */
+export async function expectOriginalSkin(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      // biome-ignore lint/suspicious/noExplicitAny: 测试钩子
+      const s = (window as any).__rich4?.skin;
+      return s?.boardInUse === 'original' && s?.applied === 'original' && s?.lang === 'zh-TW';
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
+  await expect(page.getByTestId('screen-game')).toHaveAttribute('data-layout', 'classic');
 }
 
 /** 本人当前决策的 kind（没有则 null） */

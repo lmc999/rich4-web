@@ -30,6 +30,7 @@ import {
 import {
   type ChatMessage,
   type ChatSender,
+  DEFAULT_PACING,
   EMOTE_COOLDOWN_MS,
   fail,
   IN_GAME_MUTABLE_SETTINGS,
@@ -219,7 +220,7 @@ export class Room implements PersistableRoom {
     createdAt?: number,
   ) {
     this.createdAt = createdAt ?? deps.clock.now();
-    this.settings = settings;
+    this.settings = withSettingsDefaults(settings);
     this.chat = new ChatLog(() => deps.clock.now());
     this.hostToken = null;
     if (host) {
@@ -975,6 +976,7 @@ export class Room implements PersistableRoom {
       aiPace: s.aiPace,
       allowMinigameDecline: s.allowMinigameDecline,
       reconnectGraceSec: s.reconnectGraceSec,
+      pacing: s.pacing,
     };
   }
 
@@ -1359,7 +1361,7 @@ export class Room implements PersistableRoom {
   private applyLoadedSave(ls: LoadedSave): void {
     const file = ls.file;
     this.loaded = ls;
-    const rs = file.roomSettings;
+    const rs = withSettingsDefaults(file.roomSettings);
     this.settings = { ...rs, game: { ...rs.game, rules: { ...rs.game.rules } } };
     // 存档里的设置按完整 schema 校验（允许测试用的 0..600 小数秒）；客户端补丁只允许 5..120 整数秒，
     // 读档不能绕过这个限制（测试模式除外）
@@ -1661,6 +1663,15 @@ export function clampGraceSec(v: number): number {
 /** 快照元数据里的来源可信度；旧快照没有该字段时：新开的对局可信，读档来的按不可信处理 */
 export function sourceVerifiedOf(m: Pick<RoomMetaV1, 'sourceSaveId' | 'sourceVerified'>): boolean {
   return m.sourceVerified ?? m.sourceSaveId === null;
+}
+
+/**
+ * 补齐后来加入的房间设置项：演出节奏（original-skin.md U3）之前的房间快照与存档没有 pacing，按默认节奏补上
+ * （存档经 RoomSettingsSchema 解析时已有默认值；房间快照的 meta 不经 schema，这里兜底）。
+ */
+export function withSettingsDefaults(s: RoomSettings): RoomSettings {
+  const pacing = (s as Partial<RoomSettings>).pacing;
+  return pacing === 'original' || pacing === 'compact' ? s : { ...s, pacing: DEFAULT_PACING };
 }
 
 /** 合并房间设置补丁（已通过 zod 校验）；地图必须存在 */

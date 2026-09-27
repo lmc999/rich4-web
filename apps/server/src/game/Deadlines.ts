@@ -3,6 +3,8 @@
  *
  * - deadlineAt = visibleAt + timeout × presetScale × timerScale，visibleAt = now + min(animMs, maxAnimMs) × animScale
  *   （动画不占用思考时间）。服务器定时器在 deadlineAt + NET_GRACE_MS 才触发。
+ * - animMs 由 GameRunner 按房间演出节奏（RoomSettings.pacing：original 以原版 FLIC 原长为准，compact 为紧凑预算）
+ *   用 estimateAnimMs(events, pacing) 算出；AI / 托管行动前等待的也是这批 animMs（AiDriver.delayMs）。
  * - TURN_MENU 链（budgetKey 相同）：deadline = max(上一个 deadline, visibleAt + MENU_CHAIN_MIN_S)，
  *   但不超过本回合首次可见时间 + MENU_TURN_CAP_S（上限随档位缩放）。
  * - MINIGAME：startsAt = visibleAt + 3s 倒计时；deadlineAt = startsAt + maxTicks × tickMs + 5s（票据公式）。

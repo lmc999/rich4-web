@@ -1,0 +1,125 @@
+{
+  "stage": {
+    "label": "大富翁 4 经典画面",
+    "board": "棋盘视窗",
+    "loading": "正在载入原版画面…"
+  },
+  "tool": {
+    "bar": "工具列",
+    "help": "说明",
+    "settings": "系统设定",
+    "autopilot": "托管",
+    "autopilotOn": "托管中",
+    "autopilotHint": "点按切换托管；右键或长按打开托管设置",
+    "load": "读取进度",
+    "loadHint": "对局中只能查看存档；读档请回到大厅，由房主载入",
+    "loadNote": "对局中不能读档：读档要回到大厅，由房主在存档列表里载入。这里只列出存档（可导出）。",
+    "save": "储存进度",
+    "bigMap": "大地图",
+    "bigMapOff": "回到原来的视野",
+    "info": "查询",
+    "items": "道具",
+    "cards": "卡片",
+    "board": "交易公布栏",
+    "stock": "股市"
+  },
+  "go": {
+    "go": "前进",
+    "tortoise": "乌龟（走 1 步）",
+    "disabled": "还没轮到你",
+    "diceCount": "骰子数：{{n}} 颗（按 D 切换）"
+  },
+  "profile": {
+    "title": "个人资料",
+    "tabs": {
+      "funds": "资金",
+      "estate": "地产",
+      "stocks": "股票",
+      "other": "其他"
+    },
+    "funds": {
+      "cash": "现金",
+      "deposit": "存款",
+      "netWorth": "总资产"
+    },
+    "estate": {
+      "lots": "土地",
+      "houses": "房屋",
+      "value": "地产价值"
+    },
+    "stocks": {
+      "value": "股票市值",
+      "shares": "持股",
+      "profit": "持股损益"
+    },
+    "other": {
+      "points": "点券",
+      "loan": "贷款",
+      "inventory": "卡片 / 道具"
+    },
+    "priceIndex": "物价指数 {{n}}",
+    "unitLots": "{{n}} 块",
+    "unitHouses": "{{n}} 栋",
+    "unitShares": "{{n}} 股",
+    "out": "已出局",
+    "you": "你"
+  },
+  "calendar": {
+    "title": "日历",
+    "day": "日历",
+    "month": "月历",
+    "map": "缩小地图",
+    "showMap": "地图",
+    "showCalendar": "日历",
+    "yearMonth": "{{y}} 年 {{m}} 月",
+    "monthDay": "{{m}} 月 {{d}} 日",
+    "today": "今天",
+    "weekdays": {
+      "0": "日",
+      "1": "一",
+      "2": "二",
+      "3": "三",
+      "4": "四",
+      "5": "五",
+      "6": "六"
+    }
+  },
+  "rail": {
+    "left": "房间与座位",
+    "right": "聊天与日志",
+    "room": "房间 {{code}}",
+    "invite": "邀请朋友",
+    "seats": "座位",
+    "online": "在线",
+    "offline": "离线",
+    "ai": "电脑",
+    "autopilot": "托管",
+    "empty": "空位",
+    "turn": "第 {{n}} 回合",
+    "current": "行动中",
+    "myTurn": "轮到你了",
+    "myDecision": "等你决定",
+    "secs": "{{n}} 秒",
+    "unlimited": "不限时",
+    "spectating": "观战中",
+    "chat": "聊天",
+    "log": "日志",
+    "close": "关闭",
+    "menu": "回合选单",
+    "focus": "回到当前玩家"
+  },
+  "help": {
+    "title": "说明",
+    "intro": "经典画面按原版 640×480 布局：左上工具列、左边棋盘视窗、右上个人资料、右下日历。联机信息放在两侧侧栏，窄屏时收成抽屉按钮。",
+    "keys": "快捷键",
+    "space": "空格键：前进（掷骰子）",
+    "dice": "D：切换骰子数",
+    "rotate": "< 与 >：旋转视角",
+    "map": "M：大地图（再按一次回到原来的视野）",
+    "tabs": "资料栏右边的页签切换资金、地产、股票、其他四页；日历左上的太阳与月亮切换日历与月历。"
+  },
+  "unit": {
+    "wan": "{{n}}万",
+    "yi": "{{n}}亿"
+  }
+}

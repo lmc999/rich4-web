@@ -1,7 +1,7 @@
 // 房间大厅（design/client.md §5.5）：座位、选角、邀请、设置（房主可改）、准备 / 开始、观战者、聊天。
 // 读档后（net.md §8.4）：顶部显示存档横幅（非官方 / 兼容性提示），角色与对局设置锁定，
 // 所有存档座位都有人（真人认领或补电脑）且真人都准备后才能开始。
-import type { RoomView } from '@rich4/shared/net';
+import { DEFAULT_PACING, type RoomView } from '@rich4/shared/net';
 import { type ReactNode, useEffect, useState } from 'react';
 import { useClient } from '../../app/services';
 import { useTx } from '../../i18n/tx';
@@ -56,6 +56,7 @@ function SettingsBox({ room }: { room: RoomView }): ReactNode {
       t(`lobby:rules.${g.rules.preset === 'manual' ? 'manual' : g.rules.preset === 'custom' ? 'custom' : 'program'}`),
     ],
     [t('lobby:settings.timer'), t(`lobby:timer.${room.settings.timerPreset}`)],
+    [t('lobby:settings.pacing'), t(`lobby:pacing.${room.settings.pacing ?? DEFAULT_PACING}`)],
     [t('lobby:settings.visibility'), t(`lobby:visibility.${room.settings.visibility}`)],
     [t('lobby:settings.spectators'), room.settings.allowSpectators ? t('lobby:yes') : t('lobby:no')],
   ];

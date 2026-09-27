@@ -27,6 +27,7 @@ import {
   waitIdle,
   waitMyTurn,
   waitSeqAtLeast,
+  zh,
 } from '../fixtures/room';
 
 /** 显示态里与本用例相关的部分（HUD 同源） */
@@ -118,7 +119,7 @@ test('新闻、命运、魔法屋、拍卖卡四人竞价：4 个页面结果一
       const before = cashOf(s0, seat).cash;
       expect(cashOf(s1, seat).cash, `seat ${seat}`).toBe(before - Math.trunc(before * 0.05));
     }
-    expect(s1.log.some((l) => l.startsWith('NEWS|') && l.includes('所得税'))).toBe(true);
+    expect(s1.log.some((l) => l.startsWith('NEWS|') && l.includes(zh('所得税', '所得稅')))).toBe(true);
 
     // ── 命运：P2 从 2 号格走到 3 号命运格，预置「继承遗产」（+10000 × 物价指数，无神明加持） ──
     await waitMyTurn(b);
@@ -131,7 +132,7 @@ test('新闻、命运、魔法屋、拍卖卡四人竞价：4 个页面结果一
     await expect(d.getByTestId('fate-popup')).toHaveAttribute('data-fate', '25');
     const s2 = await consistent(pages);
     expect(cashOf(s2, 1).cash).toBe(cashOf(s1, 1).cash + 10000 * pi);
-    expect(s2.log.some((l) => l.startsWith('FATE|') && l.includes('继承遗产'))).toBe(true);
+    expect(s2.log.some((l) => l.startsWith('FATE|') && l.includes(zh('继承遗产', '繼承遺產')))).toBe(true);
 
     // ── 魔法屋：P3 从 8 号格走到 9 号魔法屋，条件预置为 3「现金最多的人」（刚继承遗产的 P2）→ DOM 选「现金全部存入」 ──
     await waitMyTurn(c);
@@ -142,12 +143,16 @@ test('新闻、命运、魔法屋、拍卖卡四人竞价：4 个页面结果一
     await c.getByTestId('magic-effect-4').click();
     await acted(c, () => c.getByTestId('magic-confirm').click());
     // 演出页：女巫施法弹窗（魔法：现金全部存入）
-    await expect(d.locator('[data-testid="popup"][data-kind="magic"]')).toContainText('现金全部存入');
+    await expect(d.locator('[data-testid="popup"][data-kind="magic"]')).toContainText(
+      zh('现金全部存入', '現金全部存入'),
+    );
     await waitIdle(c);
     const s3 = await consistent(pages);
     expect(cashOf(s3, 1).cash).toBe(0);
     expect(cashOf(s3, 1).deposit).toBe(cashOf(s2, 1).deposit + cashOf(s2, 1).cash);
-    expect(s3.log.some((l) => l.startsWith('MAGIC_CAST|') && l.includes('现金全部存入'))).toBe(true);
+    expect(s3.log.some((l) => l.startsWith('MAGIC_CAST|') && l.includes(zh('现金全部存入', '現金全部存入')))).toBe(
+      true,
+    );
 
     // ── 拍卖卡：P2 先取回现金（debug）；P4 站在无主的 L1，出拍卖卡（回合菜单 → 卡片 → 目标面板 → 确认） ──
     await waitMyTurn(d);

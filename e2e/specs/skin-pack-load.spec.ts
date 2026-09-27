@@ -2,7 +2,7 @@
 // 合成包由 `npm run extract -- assets synth` 现场生成到 .cache/synthetic-pack（内容全是自绘图形，不入库），
 // 用 page.route 按 manifest 白名单提供 /pack/*，并把 GET /api/access 模拟成「门禁开启且已通过」（服务器启用素材包时的真实形态）。
 // 1) 皮肤判定为 original：manifest、地图皮肤与图集请求成功；界面切到繁体（zh-TW）与原版主题；
-//    原版棋盘渲染器（A6）尚未实现 → 棋盘回退程序化（renderer-unavailable），不报错，测试钩子同形，设置页显示原因；
+//    原版棋盘（A6 OrigRenderer）载入、经典布局（A10），不报错，测试钩子与程序化同形，设置页没有回退原因；
 // 2) 地图绑定不匹配 → auto 回退程序化（map-mismatch，设置页列出明细）；强制「原版」→ 界面原版、棋盘仍程序化。
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -87,9 +87,7 @@ async function openSettings(page: Page): Promise<void> {
   await expect(page.getByTestId('settings-dialog')).toBeVisible();
 }
 
-test('合成素材包 + fixture 地图：判定为原版，请求成功，棋盘回退程序化且不报错；绑定不匹配时回退', async ({
-  browser,
-}) => {
+test('合成素材包 + fixture 地图：判定为原版，请求成功，原版棋盘载入且不报错；绑定不匹配时回退', async ({ browser }) => {
   test.setTimeout(180_000);
   const responses: { path: string; status: number }[] = [];
   const failed: string[] = [];
@@ -117,8 +115,8 @@ test('合成素材包 + fixture 地图：判定为原版，请求成功，棋盘
     expect(s).toMatchObject({
       pack: 'ready',
       packId: manifest.packId,
-      resolution: { skin: 'original', board: 'procedural', reason: null, boardReason: 'renderer-unavailable' },
-      boardInUse: 'procedural',
+      resolution: { skin: 'original', board: 'original', reason: null, boardReason: null },
+      boardInUse: 'original',
       lang: 'zh-TW',
     });
     await expect(page.locator('html')).toHaveAttribute('data-skin', 'original');
@@ -135,17 +133,17 @@ test('合成素材包 + fixture 地图：判定为原版，请求成功，棋盘
     expect(responses.filter((r) => r.status !== 200)).toEqual([]);
     expect((await skinOf(page))?.failedGroups).toEqual([]);
 
-    // 棋盘：程序化，测试钩子同形
-    await expect.poll(() => boardHooks(page)).toBe('procedural:2:number');
-    await expect(page.getByTestId('board-host')).toHaveAttribute('data-skin', 'procedural');
+    // 棋盘：原版（经典布局的棋盘视窗里），测试钩子与程序化同形
+    await expect.poll(() => boardHooks(page)).toBe('original:2:number');
+    await expect(page.getByTestId('board-host')).toHaveAttribute('data-skin', 'original');
+    await expect(page.getByTestId('screen-game')).toHaveAttribute('data-layout', 'classic');
 
-    // 设置页：当前判定与原因（繁体）
+    // 设置页：当前判定（繁体），没有回退原因
     await openSettings(page);
     const status = page.getByTestId('settings-skin-status');
     await expect(status).toHaveAttribute('data-skin', 'original');
-    await expect(status).toHaveAttribute('data-board', 'procedural');
-    await expect(page.getByTestId('settings-skin-reason')).toHaveAttribute('data-reason', 'renderer-unavailable');
-    await expect(page.getByTestId('settings-skin-reason')).toContainText('原版棋盤尚未完成');
+    await expect(status).toHaveAttribute('data-board', 'original');
+    await expect(page.getByTestId('settings-skin-reason')).toHaveCount(0);
     await expect(status).toContainText(manifest.packId);
     await page.keyboard.press('Escape');
 

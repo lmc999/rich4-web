@@ -49,6 +49,7 @@ import {
   type MinigameSubmitMsg,
   NET_GRACE_MS,
   ok,
+  type PacingProfile,
   type PendingChangedMsg,
   type Result,
   RING_BUFFER_BATCHES,
@@ -94,6 +95,8 @@ export interface RunnerSettings {
   aiPace: AiPace;
   allowMinigameDecline: boolean;
   reconnectGraceSec: number;
+  /** 演出节奏：每批的 animMs（截止时间、AI 等待、补发）按它的预算表计算（original-skin.md U3） */
+  pacing: PacingProfile;
 }
 
 /** 环形缓冲里的原始 batch（事件未脱敏） */
@@ -394,7 +397,8 @@ export class GameRunner {
       seq: this.seqNo,
       cause: { seat, intentType: action.type, by },
       events: next.events,
-      animMs: estimateAnimMs(next.events),
+      // 按房间节奏估算这批动画：计入截止时间（动画不占思考时间）与 AI 行动前的等待
+      animMs: estimateAnimMs(next.events, this.deps.settings().pacing),
     };
     const entry: JournalEntry = { seq: this.seqNo, at: clock.now(), by, action };
     this.journalList.push(entry);

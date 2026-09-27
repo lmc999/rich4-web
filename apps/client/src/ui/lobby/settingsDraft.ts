@@ -1,7 +1,14 @@
 // 建房 / 改房间设置的表单草稿（design/client.md §5.5 CreateRoomForm）与 RoomSettingsPatch 的互转（纯函数，可单测）
 import type { AiPreset, InitialFund, StartVehicle, Tenure, TimeLimitDays, WinMultiple } from '@rich4/shared/engine';
 import { DEFAULT_INITIAL_FUND, QUICK_GAME_PRESET } from '@rich4/shared/engine';
-import type { RoomSettings, RoomSettingsPatch, TimerPreset } from '@rich4/shared/net';
+import {
+  DEFAULT_PACING,
+  PACING_PROFILES,
+  type PacingProfile,
+  type RoomSettings,
+  type RoomSettingsPatch,
+  type TimerPreset,
+} from '@rich4/shared/net';
 import { noteApiStatus } from '../access/accessStore';
 
 export interface SettingsDraft {
@@ -14,6 +21,8 @@ export interface SettingsDraft {
   minigames: 'play' | 'skip';
   rulePreset: 'program' | 'manual';
   timerPreset: TimerPreset;
+  /** 演出节奏（original-skin.md U3）：原版完整播放原版动画，紧凑按紧凑预算；开局后不可改 */
+  pacing: PacingProfile;
   allowSpectators: boolean;
   visibility: 'private' | 'public';
   /** 建房后给 1..aiCount 号座位补电脑（只在建房时生效） */
@@ -22,6 +31,8 @@ export interface SettingsDraft {
 }
 
 export const TIMER_PRESETS: readonly TimerPreset[] = ['fast', 'normal', 'slow', 'off'];
+/** 演出节奏选项（默认原版在前） */
+export const PACING_OPTIONS: readonly PacingProfile[] = PACING_PROFILES;
 
 export function defaultDraft(mapId = 'taiwan'): SettingsDraft {
   return {
@@ -34,6 +45,7 @@ export function defaultDraft(mapId = 'taiwan'): SettingsDraft {
     minigames: 'play',
     rulePreset: 'program',
     timerPreset: 'normal',
+    pacing: DEFAULT_PACING,
     allowSpectators: true,
     visibility: 'private',
     aiCount: 0,
@@ -58,6 +70,7 @@ export function draftFromSettings(s: RoomSettings): SettingsDraft {
     minigames: g.minigames,
     rulePreset: g.rules.preset === 'manual' ? 'manual' : 'program',
     timerPreset: s.timerPreset,
+    pacing: s.pacing ?? DEFAULT_PACING,
     allowSpectators: s.allowSpectators,
     visibility: s.visibility,
     aiCount: 0,
@@ -70,6 +83,7 @@ export function draftToPatch(d: SettingsDraft): RoomSettingsPatch {
     visibility: d.visibility,
     allowSpectators: d.allowSpectators,
     timerPreset: d.timerPreset,
+    pacing: d.pacing,
     game: {
       mapId: d.mapId,
       initialFund: d.initialFund,
