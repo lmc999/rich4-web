@@ -29,3 +29,7 @@ test/**/*.png
 rich4-assets/
 **/*.flc
 **/*.fli
+
+# Python 字节码
+__pycache__/
+*.pyc

@@ -131,8 +131,8 @@ test('银行存取款、贷款与股票买卖：四个页面的 HUD 与服务器
   await bank(a, 'BANK_ATM', 'deposit', 30_000);
   await bank(a, 'BANK_COUNTER', 'loan', 50_000);
   await waitIdle(a);
-  // P2 路过银行：ATM 取 20000，然后走到 2 号格
-  await stepFrom(b, 1, 18, 17, 2);
+  // P2 路过银行：ATM 取 20000，然后走到 4 号卡片格（2 号新闻、3 号命运是随机事件：新闻偶尔触发法院拍卖，不停在那里）
+  await stepFrom(b, 1, 18, 17, 4);
   await bank(b, 'BANK_ATM', 'withdraw', 20_000);
   await waitIdle(b);
   await toPoints(c, 2);

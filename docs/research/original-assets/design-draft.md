@@ -497,7 +497,7 @@ export interface PackManifestV1 {
 | 共用 | 入场 Panel#78「READY GO」FLC，640×480，20 帧 × 114 ms |
 | 企鹅挖宝 | Panel#80–90；命中掩膜 Panel#81；BGM track22；音效集 {11,12,13,14,16,17,18,15} |
 | 七彩气球 | Panel#91；BGM track21；音效集 {19,20,21} |
-| 喜从天降 | 背景 Panel#92（RAW16 640×480）、93–111；BGM track20；音效集 {22,23,24,15} |
+| 喜从天降 | 背景 Panel#92（RAW16 640×480）、93–111；被炸爆炸借用 Data#485（fcn.00414f20 @0x415016 载入、fcn.00412b66 @0x412d2b 播放）；BGM track20；音效集 {22,23,24,15} |
 | 结算 | PLAY AGAIN 与数字 Panel#112；Q 版小人 Panel#27–62；共用音效 {25,26} |
 
 - 手机横屏：4:3 舞台按 390 高缩放，也就是 520×390，与现有宿主一致。
@@ -641,7 +641,7 @@ export interface PackManifestV1 {
 | 月结 | Panel#25 |
 | 监狱 / 恶人 / 医院 | Panel#63 / #64 / #65 |
 | 神明老虎机 | Panel#67 |
-| 轮盘 | Panel#68–71 |
+| 轮盘 | Panel#68–71（航空 / 旅馆 / 购物中心 / 保险，按盘面核对） |
 
 **各屏坐标来源**：从 exe 各界面函数的常量（oama 文档可以当事实参考），并对照 ui 调研的样稿 `mockup-main-640x480.png`。每屏估 1–2 天。
 

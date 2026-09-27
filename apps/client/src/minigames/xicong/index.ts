@@ -11,6 +11,8 @@ const mod: MinigameClientModule<XicongState> = {
   id: 'xicong',
   sim: XICONG_SIM,
   createView: async (ctx) => new XicongView(ctx),
+  // 原版视图按需懒加载（原版皮肤且素材包条目可用时由宿主选用）
+  createOrigView: async (ctx) => (await import('./origView')).createXicongOrigView(ctx),
   createInput: createXicongInput,
   Hud: XicongHud,
   // 被炸时原版不播结算姿势

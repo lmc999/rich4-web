@@ -121,5 +121,12 @@
   "unit": {
     "wan": "{{n}}萬",
     "yi": "{{n}}億"
+  },
+  "calc": {
+    "clear": "清零",
+    "back": "退格"
+  },
+  "shelf": {
+    "page": "翻頁（{{page}}/{{pages}}）"
   }
 }

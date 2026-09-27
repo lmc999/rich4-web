@@ -11,6 +11,8 @@ const mod: MinigameClientModule<PenguinState> = {
   id: 'penguin',
   sim: PENGUIN_SIM,
   createView: async (ctx) => new PenguinView(ctx),
+  // 原版视图按需懒加载（原版皮肤且素材包条目可用时由宿主选用）
+  createOrigView: async (ctx) => (await import('./origView')).createPenguinOrigView(ctx),
   createInput: createPenguinInput,
   Hud: PenguinHud,
   poseKey: (s, score) => (s.endReason === 'bomb' ? 'pose.bomb' : POSE_KEYS[penguinPose(score)]),

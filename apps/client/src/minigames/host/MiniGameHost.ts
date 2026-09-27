@@ -8,6 +8,9 @@
 //   收到 MINIGAME_ENDED 时快进到终局并显示权威分数；
 // - replay：结算后拿到完整日志，2 倍速回顾。
 // 结算画面停留 2 秒后关闭（企鹅可以点击提前关闭），回到棋盘。
+// 原版皮肤（A13）：素材包条目齐全时用原版视图（registry.createMinigameView，失败整局回退程序化）；开局前播入场 FLC
+// 「READY GO」（Panel#78，按服务器时间对齐，恰好在 startsAt 播完——本人的遮罩因此提前 FLC 时长显示，期间可在遮罩上
+// 「不玩了」）；结算在场景中央画大号分数；声音为原版音效集，观战与回放另压入本游戏的场景曲。
 import {
   clampScore,
   InputCode,
@@ -21,9 +24,13 @@ import type { MinigameInputMsg, MinigameSubmitMsg, Result } from '@rich4/shared/
 import type { Application } from 'pixi.js';
 import { createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { loadMinigameModule } from '../registry';
+import { MgAudio } from '../orig/audio';
+import { type MgPackSource, ORIG_OPTIONAL, origPlan, READY_KEY, readyDurationMs } from '../orig/keys';
+import type { FlcSprite, OrigMgKit } from '../orig/kit';
+import { currentOrigPack } from '../orig/select';
+import { createMinigameView, loadMinigameModule, type OrigViewRequest } from '../registry';
 import { mgText } from '../text';
-import type { HostMode, InputSink, MinigameClientModule, MinigameInput, MinigameView, Pt } from '../types';
+import type { HostMode, InputSink, MinigameClientModule, MinigameInput, MinigameView, Pt, ViewLook } from '../types';
 import { STAGE_H, STAGE_W } from '../types';
 import { FixedStepLoop } from './FixedStepLoop';
 import { type HostPhase, HostShell, type HostSnapshot, type HostStore } from './HostShell';
@@ -41,7 +48,7 @@ import { type FeedFrame, SpectatorFeed } from './SpectatorFeed';
 
 /** 结算画面停留 */
 export const RESULT_MS = 2000;
-/** replay 模式：开播前的等待与倍速 */
+/** replay 模式：开播前的等待（原版视图至少等入场 FLC 播完）与倍速 */
 export const REPLAY_LEAD_MS = 1200;
 export const REPLAY_SPEED = 2;
 /** 提交被拒（过早、限流、断线）时的重试 */
@@ -73,6 +80,15 @@ export interface HostOptions {
   resultMs?: number;
   /** 不创建 Pixi（测试） */
   headless?: boolean;
+  /**
+   * 原版视图用的素材包：缺省按当前皮肤判定（原版且素材包就绪时取素材包客户端）；null 强制程序化视图（测试）。
+   */
+  pack?: MgPackSource | null;
+  /**
+   * play：原版入场 FLC 期间（遮罩已提前显示、盖住开局倒计时对话框）的「不玩了」。缺省不提供（房间不允许跳过时也不提供）；
+   * 返回服务器是否接受。
+   */
+  decline?(): Promise<boolean>;
   /**
    * play：房间是否暂停。暂停期间不开局、不推进、不收输入（显示「对局已暂停」）：开局前暂停，恢复后服务器换新会话；
    * 开局后暂停，恢复时服务器按暂停前已上传的输入结算。避免暂停期间本地「空跑」整局。
@@ -146,6 +162,17 @@ export class MiniGameHost implements HostStore {
   private submitting = false;
   private notice: string | null = null;
   private closeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 原版视图的可用条目清单（null = 程序化） */
+  private readonly origKeys: { pack: MgPackSource; keys: string[] } | null;
+  /** 原版入场 FLC 时长（0 = 不播） */
+  private readonly readyMs: number;
+  /** 遮罩显示时刻（play 且原版入场 FLC 可用时提前 readyMs） */
+  private readonly revealAt: number | undefined;
+  private look: ViewLook = 'procedural';
+  private kit: OrigMgKit | null = null;
+  private readyFlc: FlcSprite | null = null;
+  private audio: MgAudio | null = null;
+  private declining = false;
   /** 服务器已接受过本页的输入批（续玩判定用） */
   private accepted = false;
   private revealTimer: ReturnType<typeof setTimeout> | null = null;
@@ -160,9 +187,14 @@ export class MiniGameHost implements HostStore {
     this.clock = o.clock ?? localClock;
     this.sim = MINIGAME_SIMS[o.ticket.minigameId] as MinigameSim<SimBase>;
     const replayMode = o.mode === 'replay';
+    const pack = o.pack === undefined ? currentOrigPack() : o.pack;
+    const plan = o.headless ? null : origPlan(pack, o.ticket.minigameId, o.characterId);
+    this.origKeys = plan && pack ? { pack, keys: plan.keys } : null;
+    this.readyMs = this.origKeys ? readyDurationMs(pack) : 0;
     this.loop = new FixedStepLoop(this.sim, o.ticket.seed, o.ticket.params, {
       tickMs: replayMode ? o.ticket.tickMs / REPLAY_SPEED : o.ticket.tickMs,
-      startsAt: replayMode ? o.now() + REPLAY_LEAD_MS : o.ticket.startsAt,
+      // 回放：开播前至少留够原版入场 FLC 的时长（1 倍速），READY GO 从第 0 帧完整播完再开局
+      startsAt: replayMode ? o.now() + Math.max(REPLAY_LEAD_MS, this.readyMs) : o.ticket.startsAt,
     });
     this.recorder = o.mode === 'play' ? new InputRecorder(this.sim.spec) : null;
     this.feed = o.mode === 'play' ? null : new SpectatorFeed(this.clock());
@@ -174,6 +206,8 @@ export class MiniGameHost implements HostStore {
     this.closed = new Promise((r) => {
       this.resolveClosed = r;
     });
+    this.revealAt =
+      o.revealAt !== undefined && o.mode === 'play' && this.readyMs > 0 ? o.revealAt - this.readyMs : o.revealAt;
     this.snap = this.buildSnapshot();
   }
 
@@ -212,6 +246,7 @@ export class MiniGameHost implements HostStore {
     overlay.dataset.mode = this.mode;
     overlay.dataset.minigame = this.ticket.minigameId;
     overlay.dataset.session = this.ticket.sessionId;
+    overlay.dataset.view = 'procedural';
     const stage = el('div', s.stage!);
     const canvasHost = el('div', s.canvasHost!);
     const inputEl = el('div', s.input!);
@@ -222,7 +257,7 @@ export class MiniGameHost implements HostStore {
     overlay.append(stage);
     (this.o.container ?? document.body).append(overlay);
     this.dom = { overlay, stage, canvasHost, inputEl, hud };
-    const wait = this.o.revealAt === undefined ? 0 : this.o.revealAt - this.o.now();
+    const wait = this.revealAt === undefined ? 0 : this.revealAt - this.o.now();
     if (wait > 0) {
       overlay.hidden = true;
       this.revealTimer = setTimeout(() => this.reveal(), wait);
@@ -277,8 +312,12 @@ export class MiniGameHost implements HostStore {
         state: () => this.loop.curr,
         interactive: this.mode === 'play',
       });
+      // 游玩时隐藏系统指针：喜从天降（原版同）、原版气球（画原版准星）
       this.dom.inputEl.dataset.cursor =
-        this.ticket.minigameId === 'xicong' && this.mode === 'play' ? 'none' : 'crosshair';
+        this.mode === 'play' &&
+        (this.ticket.minigameId === 'xicong' || (this.ticket.minigameId === 'balloon' && this.look === 'original'))
+          ? 'none'
+          : 'crosshair';
       if (this.mode === 'play') this.dom.inputEl.focus({ preventScroll: true });
     }
     this.ready = true;
@@ -309,9 +348,41 @@ export class MiniGameHost implements HostStore {
     app.canvas.style.width = '100%';
     app.canvas.style.height = '100%';
     this.dom!.canvasHost.append(app.canvas);
-    this.view = await this.mod!.createView({ app, characterId: this.o.characterId, mode: this.mode });
-    if (this.destroyed) return;
-    app.stage.addChild(this.view.root);
+    const ctx = { app, characterId: this.o.characterId, mode: this.mode };
+    let orig: OrigViewRequest | null = null;
+    if (this.origKeys) {
+      this.audio = new MgAudio(this.origKeys.pack.manifest, this.ticket.minigameId, { bgm: this.mode !== 'play' });
+      orig = {
+        pack: this.origKeys.pack,
+        keys: this.origKeys.keys,
+        optional: ORIG_OPTIONAL[this.ticket.minigameId],
+        sound: this.audio,
+      };
+    }
+    const { view, kit } = await createMinigameView(this.mod!, ctx, orig);
+    if (this.destroyed) {
+      view.destroy();
+      kit?.destroy();
+      return;
+    }
+    this.view = view;
+    this.kit = kit;
+    if (!kit) {
+      this.audio?.close();
+      this.audio = null;
+    }
+    this.look = view.look ?? 'procedural';
+    if (this.dom) this.dom.overlay.dataset.view = this.look;
+    app.stage.addChild(view.root);
+    if (kit && this.readyMs > 0) {
+      const flc = await kit.flc(READY_KEY);
+      if (this.destroyed) return;
+      if (flc) {
+        this.readyFlc = flc;
+        app.stage.addChild(flc.sprite);
+      }
+    }
+    this.onResize();
   }
 
   private resolution(): number {
@@ -324,7 +395,12 @@ export class MiniGameHost implements HostStore {
     if (!this.dom) return;
     const w = this.dom.stage.getBoundingClientRect().width || STAGE_W;
     this.dom.stage.style.setProperty('--mg-scale', String(w / STAGE_W));
-    if (this.app) this.app.renderer.resize(STAGE_W, STAGE_H, this.resolution());
+    if (this.app) {
+      const res = this.resolution();
+      this.app.renderer.resize(STAGE_W, STAGE_H, res);
+      this.kit?.setZoom(res);
+      this.view?.setScale?.(res);
+    }
   }
 
   /** 视口坐标 → 舞台整数坐标（夹到 640×480 以内） */
@@ -402,7 +478,7 @@ export class MiniGameHost implements HostStore {
     if (this.destroyed || !this.ready) return;
     const now = this.o.now();
     const local = this.clock();
-    if (this.o.revealAt !== undefined && now >= this.o.revealAt && this.dom?.overlay.hidden) this.reveal();
+    if (this.revealAt !== undefined && now >= this.revealAt && this.dom?.overlay.hidden) this.reveal();
     this.lastFrameAt = local;
     try {
       if (this.mode === 'play') this.framePlay(now, local);
@@ -467,7 +543,22 @@ export class MiniGameHost implements HostStore {
     if (!this.view) return;
     const t = this.mode === 'spectate' && this.feed ? this.feed.bufferedNow(now) : now;
     const alpha = this.phase === 'playing' ? this.loop.alpha(t) : 1;
+    this.view.setPhase?.(this.phase);
+    this.view.setResult?.(
+      this.phase === 'result'
+        ? { score: this.finalScore ?? clampScore(this.sim, this.loop.curr), final: this.finalScore !== null }
+        : null,
+    );
     this.view.render(this.loop.prev, this.loop.curr, alpha, this.loop.drainFx(), local);
+    // 入场 FLC：按（观战为缓冲后的）服务器时间选帧，在 startsAt 恰好播完
+    const flc = this.readyFlc;
+    if (flc) flc.showAt(Math.floor((t - (this.loop.startsAt - this.readyMs)) / flc.frameMs));
+  }
+
+  /** 原版入场 FLC 当前帧（没有或不在播放为 −1） */
+  get readyFrame(): number {
+    const f = this.readyFlc;
+    return f?.sprite.visible ? f.current : -1;
   }
 
   private pumpUpload(local: number): void {
@@ -609,6 +700,25 @@ export class MiniGameHost implements HostStore {
     if (this.mode !== 'play' || (this.phase === 'result' && this.snap.skippable)) this.close();
   };
 
+  /** 入场 FLC 期间的「不玩了」：服务器接受后关闭（MINIGAME_ENDED skipped 也会关闭） */
+  decline = (): void => {
+    const d = this.o.decline;
+    if (!d || this.declining || !this.snap.declinable) return;
+    this.declining = true;
+    this.publish(this.o.now());
+    d().then(
+      (ok) => {
+        this.declining = false;
+        if (ok) this.close();
+        else this.publish(this.o.now());
+      },
+      () => {
+        this.declining = false;
+        this.publish(this.o.now());
+      },
+    );
+  };
+
   private buildSnapshot(now = this.o.now()): HostSnapshot {
     const cur = this.loop.curr;
     const local = clampScore(this.sim, cur);
@@ -631,6 +741,15 @@ export class MiniGameHost implements HostStore {
       notice: this.notice,
       paused: this.pausedNow,
       skippable: this.mode === 'play' && this.ticket.minigameId === 'penguin',
+      look: this.look,
+      declinable:
+        this.mode === 'play' &&
+        this.o.decline !== undefined &&
+        !this.declining &&
+        this.phase === 'countdown' &&
+        this.revealed &&
+        this.o.now() < this.loop.startsAt,
+      readyFlc: this.readyFlc !== null,
     };
   }
 
@@ -647,7 +766,10 @@ export class MiniGameHost implements HostStore {
       p.submitting === next.submitting &&
       p.notice === next.notice &&
       p.paused === next.paused &&
-      p.poseKey === next.poseKey;
+      p.poseKey === next.poseKey &&
+      p.look === next.look &&
+      p.declinable === next.declinable &&
+      p.readyFlc === next.readyFlc;
     if (same) return;
     this.snap = next;
     if (this.dom) {
@@ -673,6 +795,8 @@ export class MiniGameHost implements HostStore {
       console.error('[minigame] input destroy failed', err);
     }
     this.destroyPixi();
+    this.audio?.close();
+    this.audio = null;
     const root = this.root;
     this.root = null;
     // React root 在下一轮卸载（close 可能发生在 React 渲染期间，例如 HUD 按钮的点击回调）
@@ -688,9 +812,14 @@ export class MiniGameHost implements HostStore {
     this.app = null;
     try {
       if (app) app.ticker.remove(this.frame);
+      if (this.readyFlc) this.readyFlc.sprite.removeFromParent();
+      this.readyFlc = null;
       this.view?.destroy();
       this.view = null;
       app?.destroy(RENDERER_DESTROY, { children: true });
+      // 原版素材（纹理源、借来的位图、FLC 画布）在画面销毁之后释放
+      this.kit?.destroy();
+      this.kit = null;
     } catch (err) {
       console.error('[minigame] pixi destroy failed', err);
     }
@@ -721,6 +850,9 @@ export class MiniGameHost implements HostStore {
     logLength: number;
     uploaded: number;
     state: unknown;
+    view: ViewLook;
+    readyFrame: number;
+    viewDebug: Record<string, unknown> | null;
   } {
     const cur = this.loop.curr;
     return {
@@ -735,6 +867,9 @@ export class MiniGameHost implements HostStore {
       logLength: this.recorder?.log.length ?? this.feed?.log.length ?? 0,
       uploaded: this.recorder?.uploaded ?? 0,
       state: JSON.parse(JSON.stringify(cur)) as unknown,
+      view: this.look,
+      readyFrame: this.readyFrame,
+      viewDebug: this.view?.debug?.() ?? null,
     };
   }
 }

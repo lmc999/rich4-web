@@ -1,12 +1,12 @@
 import { lazy, type ReactNode, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Route, Switch } from 'wouter';
-import { HomeScreen } from '../ui/screens/HomeScreen';
+import { SkinHome, SkinRoom, SkinSolo } from '../ui/classic/screens/SkinRoutes';
 import { NotFound } from '../ui/screens/NotFound';
 
-// 房间 / 对局 / 单机页（选角 SVG、Pixi 棋盘）与开发页都按路由懒加载，不进首屏 chunk
-const RoomScreen = lazy(() => import('../ui/screens/RoomScreen'));
-const SoloScreen = lazy(() => import('../ui/screens/SoloScreen'));
+// 首页 / 房间 / 单机按皮肤选画面（原版皮肤 A14：素材包可用时换成原版标题、开局设置、选人大厅与 Loading，
+// 见 ui/classic/screens/SkinRoutes）；房间 / 对局 / 单机页（选角 SVG、Pixi 棋盘）、原版画面与开发页都按路由懒加载，
+// 不进首屏 chunk
 const MapPreview = lazy(() => import('../dev/MapPreview'));
 const Gallery = lazy(() => import('../dev/Gallery'));
 const DevDecisions = lazy(() => import('../ui/decisions/DevDecisions'));
@@ -36,9 +36,9 @@ export function AppRoutes(): ReactNode {
   return (
     <Suspense fallback={<RouteFallback />}>
       <Switch>
-        <Route path={ROUTE_PATHS.home} component={HomeScreen} />
-        <Route path={ROUTE_PATHS.room}>{(params) => <RoomScreen code={params.code} />}</Route>
-        <Route path={ROUTE_PATHS.solo} component={SoloScreen} />
+        <Route path={ROUTE_PATHS.home} component={SkinHome} />
+        <Route path={ROUTE_PATHS.room}>{(params) => <SkinRoom code={params.code} />}</Route>
+        <Route path={ROUTE_PATHS.solo} component={SkinSolo} />
         <Route path={ROUTE_PATHS.devMap} component={MapPreview} />
         <Route path={ROUTE_PATHS.devGallery} component={Gallery} />
         <Route path={ROUTE_PATHS.devDecisions} component={DevDecisions} />

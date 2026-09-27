@@ -1,0 +1,227 @@
+/* 第一组场所屏（ui/classic/venues/a）的样式。尺寸一律是场景逻辑像素（场景根随舞台 transform 缩放）。 */
+
+.abs {
+  position: absolute;
+}
+
+.text {
+  position: absolute;
+  margin: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.text p {
+  margin: 0;
+}
+
+/* 文字按钮：原版底板（蓝钮、蓝条、宝石底板）或木框金边回退；文字叠在上面 */
+.plateText {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 0 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.plateBtn[aria-pressed="true"],
+.plateBtn[aria-selected="true"] {
+  outline: 2px solid #ffe060;
+  outline-offset: -2px;
+}
+
+.plateBtn:disabled .plateText {
+  opacity: 0.55;
+}
+
+/* 精灵叠层（表情、选号圈、禁止符号）不接收指针 */
+.deco {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* FLIC 容器：画布按容器尺寸铺满 */
+.flic {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.flic canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.flicFallback {
+  position: absolute;
+  inset: 0;
+  border: 2px solid #f6c64a;
+  border-radius: 6px;
+  background: rgb(10 10 30 / 0.85);
+}
+
+/* 表格行、货架行的高亮（选中 / 悬停 / 不可买） */
+.rowHi {
+  position: absolute;
+  background: rgb(255 224 96 / 0.28);
+  box-shadow: inset 0 0 0 1px rgb(255 224 96 / 0.9);
+  pointer-events: none;
+}
+
+.rowOff {
+  opacity: 0.5;
+}
+
+.cellText {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.num {
+  justify-content: flex-end;
+  padding-right: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 乐透号码格：已售出的格子压暗；本人买的加金边 */
+.soldMask {
+  position: absolute;
+  border-radius: 6px;
+  background: rgb(20 10 30 / 0.45);
+  pointer-events: none;
+}
+
+.soldMask[data-mine="true"] {
+  box-shadow: inset 0 0 0 2px #ffe060;
+}
+
+/* 手机横屏：货架、号码盘等密集控件另给一个原生下拉框（系统选择器足够大）；桌面上只给读屏 */
+.picker {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  border: 0;
+  white-space: nowrap;
+}
+
+[data-hit="wide"] .picker {
+  width: auto;
+  height: var(--hit, 44px);
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  border: 2px solid #f6c64a;
+  border-radius: 4px;
+  background: #3a1a06;
+  color: #fff;
+  font: 400 12px / 1 var(--classic-font, serif);
+}
+
+/* 走势折线 */
+.trend {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.trend polyline {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  filter: drop-shadow(1px 1px 0 #000);
+}
+
+/* 回退：没有底图帧时的纯色底 */
+.solid {
+  position: absolute;
+  inset: 0;
+  background: #1a2a3a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plateBtn {
+    transition: none;
+  }
+}
+
+/* ATM 液晶屏上的透明数字框（role=spinbutton）：数字由 LCD 帧画出，框本身透明；手机上补到 44px 高 */
+.lcdInput {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font: inherit;
+  cursor: text;
+  appearance: textfield;
+  -moz-appearance: textfield;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lcdInput::-webkit-inner-spin-button,
+.lcdInput::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.lcdInput::selection {
+  background: transparent;
+}
+
+.lcdInput:focus-visible {
+  outline: 2px solid #ffe060;
+  outline-offset: 0;
+}
+
+[data-hit="wide"] .lcdInput {
+  min-height: var(--hit, 0px);
+}
+
+.meter {
+  position: absolute;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.meter:focus-visible {
+  outline: 2px solid #ffe060;
+  outline-offset: 1px;
+}
+
+[data-hit="wide"] .meter::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: max(100%, var(--hit, 0px));
+  transform: translateY(-50%);
+}
+
+.clip {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.fill {
+  position: absolute;
+  inset: 0;
+}

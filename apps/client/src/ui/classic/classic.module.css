@@ -221,6 +221,65 @@
   border-color: #c0392b;
 }
 
+/* 紧凑排法（舞台缩小到 40 宽的钮不足 44 CSS 像素）：「更多」钮与弹出菜单（行高 56，≥44 CSS 像素） */
+.toolBtn.toolMoreBtn[aria-expanded="true"] .toolFallback {
+  background: linear-gradient(#fffbe3, #f2d27f);
+  border-color: #c0392b;
+}
+
+.toolMenu {
+  position: absolute;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  padding: 3px;
+  border: 2px solid #c98b2b;
+  border-radius: 4px;
+  background: rgb(22 12 4 / 0.95);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.6);
+  pointer-events: auto;
+}
+
+.toolMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 0 8px 0 4px;
+  border: 0;
+  border-bottom: 1px solid rgb(201 139 43 / 0.4);
+  background: none;
+  color: #ffe9a8;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toolMenuItem:last-child {
+  border-bottom: 0;
+}
+
+.toolMenuItem:hover:not(:disabled),
+.toolMenuItem:focus-visible {
+  background: rgb(160 82 27 / 0.6);
+}
+
+.toolMenuItem:disabled {
+  cursor: default;
+  filter: grayscale(0.8) brightness(0.7);
+}
+
+.toolMenuIcon {
+  position: relative;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+}
+
 .toolBtn[data-tool="autopilot"][aria-pressed="true"]::after {
   content: "";
   position: absolute;
@@ -1359,6 +1418,17 @@
   top: -9px;
   width: 42px;
   height: max(calc(100% + 9px), var(--hit));
+}
+
+/* 太阳钮与月亮左右相接，中心只差 30 逻辑像素，不可能在同一行各占 44 像素宽：太阳的热区再往月亮热区的下方补一块
+ * （x 0..--hit、y --hit..2·--hit），整块热区里有一个 ≥44×44 CSS 像素的方块，与月亮的热区不重叠 */
+.frame[data-hit="wide"] .calBtn[data-cal="sun"]::after {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: calc(var(--hit) - 9px);
+  width: var(--hit);
+  height: var(--hit);
 }
 
 /* 月亮钮 (42,11)：从自己的左缘向右、向下补 */

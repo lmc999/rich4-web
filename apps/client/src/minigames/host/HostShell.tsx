@@ -1,12 +1,15 @@
 // 宿主的 DOM 叠层（React）：标题、各游戏的 HUD（计时与得分）、开局倒计时、观战等待、结算大号分数。
 // 由 MiniGameHost 在自己的 React root 里渲染；状态经 useSyncExternalStore 订阅（每个 tick 至多更新一次）。
+// 原版外观（look = original）：计时、得分、倒计时与结算分数由原版画面画出（HUD 条液晶数字、READY GO、大号彩色数字），
+// 这里的同名 DOM 仍然保留（读屏与 E2E 用 data-testid），只是视觉上隐藏；入场 FLC 期间给本人一个「不玩了」按钮。
 import type { SimBase } from '@rich4/shared/minigames';
+import i18next from 'i18next';
 import { type ComponentType, type ReactNode, useSyncExternalStore } from 'react';
 import { mgName, mgText } from '../text';
-import type { HostMode, HudProps } from '../types';
+import type { HostMode, HudProps, ViewLook, ViewPhase } from '../types';
 import s from './host.module.css';
 
-export type HostPhase = 'loading' | 'countdown' | 'playing' | 'waiting' | 'result' | 'closed';
+export type HostPhase = ViewPhase;
 
 export interface HostSnapshot {
   phase: HostPhase;
@@ -32,6 +35,12 @@ export interface HostSnapshot {
   paused: boolean;
   /** 结算画面可以点击提前关闭（企鹅） */
   skippable: boolean;
+  /** 画面外观（原版视图就绪后为 original） */
+  look: ViewLook;
+  /** play：原版入场 FLC 期间可以「不玩了」 */
+  declinable: boolean;
+  /** 原版入场 FLC 已就绪（开局前由 READY GO 代替倒计时数字） */
+  readyFlc: boolean;
 }
 
 export interface HostStore {
@@ -39,6 +48,8 @@ export interface HostStore {
   getSnapshot(): HostSnapshot;
   /** 观战者主动收起、结算画面点击跳过 */
   dismiss(): void;
+  /** 入场 FLC 期间的「不玩了」 */
+  decline?(): void;
 }
 
 export function HostShell({
@@ -59,16 +70,23 @@ export function HostShell({
   const secs = Math.ceil(snap.countdownMs / 1000);
   const score = snap.finalScore ?? snap.localScore;
   const paused = snap.paused && snap.phase !== 'result';
+  /** 原版外观：画面已经画出的信息只留给读屏 */
+  const orig = snap.look === 'original';
   return (
     <>
-      <div className={s.top}>
+      <div className={orig ? s.srOnly : s.top}>
         <div className={s.title}>
           <span className={s.name}>{mgName(snap.minigameId)}</span>
           {sub && <span className={s.sub}>{sub}</span>}
         </div>
       </div>
+      {orig && sub && (
+        <div className={s.watchTag} data-testid="minigame-watch-tag">
+          {sub}
+        </div>
+      )}
       {Hud && snap.state && (
-        <div className={s.hudLayer} data-testid="minigame-hud">
+        <div className={orig ? s.srOnly : s.hudLayer} data-testid="minigame-hud">
           <Hud state={snap.state} mode={snap.mode} />
         </div>
       )}
@@ -83,10 +101,20 @@ export function HostShell({
         </div>
       )}
       {snap.phase === 'countdown' && !paused && (
-        <div className={`${s.center} ${s.dim}`} data-testid="minigame-countdown">
+        <div className={orig && snap.readyFlc ? s.srOnly : `${s.center} ${s.dim}`} data-testid="minigame-countdown">
           <div className={s.big}>{secs > 0 ? secs : mgText('host.go')}</div>
           <div className={s.panel}>{mgText(`${snap.minigameId}.hint`)}</div>
         </div>
+      )}
+      {snap.declinable && store.decline && (
+        <button
+          type="button"
+          className={`${s.btn} ${s.declineBtn}`}
+          onClick={() => store.decline?.()}
+          data-testid="minigame-preroll-decline"
+        >
+          {i18next.t('ui:dlg.minigame.decline')}
+        </button>
       )}
       {snap.phase === 'waiting' && !snap.notice && !paused && (
         <div className={`${s.center} ${s.dim}`}>
@@ -94,8 +122,8 @@ export function HostShell({
         </div>
       )}
       {snap.phase === 'result' && (
-        <div className={`${s.center} ${s.dim}`} data-testid="minigame-result">
-          <div className={s.panel}>
+        <div className={orig ? s.center : `${s.center} ${s.dim}`} data-testid="minigame-result">
+          <div className={orig ? s.srOnly : s.panel}>
             <div>{mgText('host.final')}</div>
             <div
               className={s.big}
@@ -128,7 +156,12 @@ export function HostShell({
         </div>
       )}
       {snap.mode !== 'play' && snap.phase !== 'closed' && (
-        <button type="button" className={s.btn} onClick={() => store.dismiss()} data-testid="minigame-close">
+        <button
+          type="button"
+          className={orig ? `${s.btn} ${s.btnTop}` : s.btn}
+          onClick={() => store.dismiss()}
+          data-testid="minigame-close"
+        >
           {mgText('host.close')}
         </button>
       )}

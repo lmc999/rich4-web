@@ -13,6 +13,8 @@ export interface AccessState {
   /** GET /api/access 失败（旧服务器没有该接口、网络错误） */
   statusError: boolean;
   required: AccessReason | null;
+  /** 已挂载的门禁页宿主数（页面自带的宿主 + 自挂的全屏浮层） */
+  hosts: number;
   /** 刷新状态（并发调用合并为一次请求） */
   refresh(): Promise<AccessStatus | null>;
   /** 已知状态直接用，否则刷新一次 */
@@ -29,6 +31,7 @@ export const useAccessStore = create<AccessState>()((set, get) => ({
   status: null,
   statusError: false,
   required: null,
+  hosts: 0,
   refresh: () => {
     if (inflight) return inflight;
     const p = fetchAccessStatus().then((r) => {
@@ -60,11 +63,13 @@ export function accessEnabled(s: AccessStatus | null): boolean {
 
 let hosts = 0;
 
-/** AccessGateHost 挂载 / 卸载时登记（有宿主时不再自挂浮层） */
+/** AccessGateHost 挂载 / 卸载时登记（有宿主时不再自挂浮层；自挂的浮层在另有宿主时让位，见 AccessGateHost.standalone） */
 export function registerAccessHost(): () => void {
   hosts++;
+  useAccessStore.setState({ hosts });
   return () => {
     hosts--;
+    useAccessStore.setState({ hosts });
   };
 }
 

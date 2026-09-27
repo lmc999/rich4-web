@@ -200,7 +200,9 @@
   position: absolute;
   right: calc(10px * var(--mg-scale));
   bottom: calc(8px * var(--mg-scale));
-  min-height: max(32px, calc(32px * var(--mg-scale)));
+  /* 手机横屏（舞台 520×390）下命中尺寸也不小于 44px */
+  min-height: max(44px, calc(32px * var(--mg-scale)));
+  min-width: 44px;
   padding: 0 calc(12px * var(--mg-scale));
   border: 3px solid var(--c-ink);
   border-radius: 999px;
@@ -224,4 +226,40 @@
   cursor: pointer;
   background: transparent;
   border: 0;
+}
+
+/* 原版外观（A13）：画面已画出的信息（计时、得分、倒计时、结算分数）只留给读屏与测试 */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 原版外观下观战 / 回放的小标签（左上角，不挡 HUD 条） */
+.watchTag {
+  position: absolute;
+  top: calc(6px * var(--mg-scale));
+  left: calc(8px * var(--mg-scale));
+  padding: calc(2px * var(--mg-scale)) calc(8px * var(--mg-scale));
+  border-radius: 999px;
+  background: rgba(16, 12, 8, 0.6);
+  font-size: max(12px, calc(13px * var(--mg-scale)));
+}
+
+/* 入场 FLC 期间的「不玩了」（右下，HUD 条上方） */
+.declineBtn {
+  bottom: calc(92px * var(--mg-scale));
+  z-index: 2;
+}
+
+/* 原版外观：收起钮放右上角（右下是原版 HUD 条的得分框） */
+.btnTop {
+  top: calc(8px * var(--mg-scale));
+  bottom: auto;
 }

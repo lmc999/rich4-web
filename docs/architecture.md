@@ -937,7 +937,7 @@ RICH4_ASSETS_ALLOW_UNGATED=0     # 仅本机调试：非 production + PUBLIC_URL
 
 ### M9 接入台湾图并对照原版核实
 - 范围: 服务端 DataRegistry 从 RICH4_DATA_DIR 加载台湾图；taiwan 相关的本地测试与 golden 重放；在台湾图上跑 AI 自对弈；前端渲染台湾几何（包括 via），必要时微调 overrides；按 VERIFY.md 的 V-R 清单结合用户实机结果回写 RuleConfig 默认值和数据表；更新 DEVIATIONS.md；把股票和公司名等文案接入 i18n。
-- 交付: packages/shared/src/data/maps/taiwan.local.test.ts、engine/golden/taiwan.test.ts；tools/extract/maps/taiwan.overrides.json 定稿；docs/VERIFY.md 中 V-R 条目的状态；docs/DEVIATIONS.md 定稿；rich4-data/ 本机数据包
+- 交付: tools/extract/test/local/taiwan.local.test.ts（原计划放在 packages/shared/src/data/maps/，实际随提取器的本地测试放在 tools/extract）、engine/golden/taiwan.test.ts；tools/extract/maps/taiwan.overrides.json 定稿；docs/VERIFY.md 中 V-R 条目的状态；docs/DEVIATIONS.md 定稿；rich4-data/ 本机数据包
 - 验证: 1) npm run extract -- all && npm run extract -- pack --out rich4-data/ 返回 0。2) RICH4_DATA_DIR=./rich4-data npx vitest run --project shared -t taiwan 通过：validateMap 无 error、计数正确、三组样本正确、有 2 处封路，golden 事件序列快照稳定；未提供数据时这些测试自动 skip。3) RICH4_DATA_DIR=./rich4-data npm run sim -- --map taiwan --games 1000 --workers 8 --policy original 输出 rejects=0，结束率达标。4) 手动：RICH4_DATA_DIR=./rich4-data npm run dev，选台湾图开局，对照 .cache/extract/preview/taiwan.svg 和原版截图，检查朝向、路网、地块和企业位置。5) VERIFY.md 中每个 V-R 条目都有结论，或已明确标为「按默认 ⚑ 保留」。
 
 ### M10 体验打磨：美术、音频、横屏、完整 E2E 与性能
@@ -1403,3 +1403,74 @@ RICH4_ASSETS_ALLOW_UNGATED=0     # 仅本机调试：非 production + PUBLIC_URL
 - 决策对话框、目标选择面板、演出弹窗、回合横幅仍是程序化样式（原版风格对话框与场所屏属 A11 / A12）；手机横屏时回合横幅占视窗比例偏大。
 - 合成素材包不含音频，E2E 仍只覆盖 ZzFX 回退；原版声音只在本机实测里核对。
 - 标题 / 选人 / 开局设定 / Loading / 片头（A14）未做：大厅与首页仍是程序化主题与简体。
+
+## 24. 原版皮肤第三波接通与 M9 台湾图终验（2026-09-28）
+
+本轮把第三波（地基 ui/classic/common + decisions、A11 通用对话框与弹窗、A12 两组场所屏、A13 小游戏原版视图、A14 标题 / 选人 / 开局设定 / Loading / 片头）接成一条完整流程，修掉接缝上的问题，完成 M9 台湾图终验（golden + 实机核对清单），并在本机真实素材包上从门禁页走到终局。素材包内容与含原版素材的截图始终不入库（`.cache/w3/`）。
+
+### 24.1 接通
+
+- **决策注册表**（`ui/classic/decisions/registry.ts`）：23 种 DecisionKind 全部有原版场景，dialogs 16（TURN_MENU、BUY_LAND、BUY_FACILITY、UPGRADE_LAND/FACILITY、BUILD_FACILITY、FACILITY_TYPE、RESEARCH、USE_FREE_CARD、SCAPEGOAT、DEATH_GOD_TARGET、DISCARD_CARD、BIRTHDAY_PICK、SUBSCRIBE_SHARES、CONSTRUCTION_PICK、MINIGAME）+ venues/a 4（BANK_ATM、BANK_COUNTER、SHOP、LOTTERY）+ venues/b 3（MAGIC_CAST、AUCTION_BID、BAIL），三处合并无冲突（`decisions.dom.test` 新增「23 种全部登记」断言）。**没有常驻回退到 React 对话框的种类**；只在以下情况整体回退程序化对话框：没有素材包或皮肤判定为程序化、所需逻辑键缺失 / 所在组缺失 / 置信度 guess（本机真实素材包里 23 种的必需键全部可用：guess 条目只有角色表情、工程车姿势、部分 FX、命运插图与乐透彩带，都不是必需键）、精灵加载失败、准备超过 4 秒、场景渲染抛错。TURN_MENU 的股市（Panel#75）与公佈欄（Panel#73）是回合菜单的子页（`dialogs/TurnMenuFull.tsx` 套 ClassicStockSheet / ClassicBoardSheet），缺任一套素材时整个回合菜单回退。原版场景里没有原版图的次要按钮（乐透「機選 / 不買」、拍卖「按起拍价出价」、公佈欄的挂牌 / 买下 / 翻页、回合菜单的「股市 / 公佈欄 / 投降」木牌）是同色系 CSS 文字钮，属于场景的一部分，不算回退。
+- **观战版拍卖厅**：新增 `ui/classic/AuctionWatch.tsx`（AuctionWatchMount），经典布局在拍卖进行中（公开竞价横幅或别人有 AUCTION_BID）而本人没有任何决策时，在舞台上叠 venues/b 的只读 ClassicAuctionWatch；本人在横幅里仍是竞拍中时也不显示（两次重问之间不闪）；素材（拍卖厅图集 + 在场玩家的 Q 版小人）不可用就不挂，只剩公开竞价横幅。
+- **弹窗**：PopupLayer 的 board 放置位置懒加载 `ui/classic/popups/ClassicPopupHost`（A11）：新闻板、神明 / 老虎机、出卡、终局排名换原版画面（命运插图与各条命运的对应未核实，命运整体回退程序化弹窗）；轮盘、月结颁奖在事件之后演出；工具列的查询 / 托管 / 存读档换成原版资产表、托管对话框、Data#479 存读档窗。乐透开奖 → venues/a 的 ClassicLotteryDraw，本轮补上 `minMs` 与 `onSkip`（原版演出盖住了弹窗层的「跳过」，改用场景自带的 lottery-draw-skip）。
+- **小游戏**：MINIGAME 的原版场景（dialogs/Minigame.tsx）→ `startPlayerMinigame`；宿主按皮肤选原版视图（A13，入场 READY GO 在开局前播完，DEV-19），观战与回放同样走原版视图；GameScreen 进入对局时 `installMinigames`。
+- **标题 / 选人 / 大厅**：routes 的首页、房间、单机三条路由换成 SkinHome / SkinRoom / SkinSolo（A14），判定只看素材包；进入对局后画面选择固定。
+- **场景音乐**：沿用 app/audioWiring 的 UI 状态 → 场景曲（标题 track10、开局设定、棋盘轮播、各场所曲、结算）。本轮补：片头播放期间（`uiStore.introPlaying`，IntroVideo 挂载时置位）标题画面按 `screen: 'none'` 不放曲，片头结束才放标题曲（A14 遗留）。
+- **门禁浮层**：`mountAccessGate` 自挂的全屏门禁浮层（standalone）在页面另有宿主（房间页、对局页）时让位（accessStore 记 `hosts`），同一时刻只有一份门禁页（A14 遗留）。
+- **文案**：classic 命名空间补 `calc.clear / calc.back`（计算器与 ATM 的 C、← 键读屏名称，原先是字面「C」与借用的「删除」），zh-TW 由 gen-zh-tw 生成。
+
+### 24.2 本轮修复
+
+- **回合菜单退场中又展开，子页请求丢失**（真实素材包巡检发现）：Esc 收起回合菜单后、退场动画还没播完就点工具列的股市 / SALE，退场中的旧层取走了子页请求，新展开的回合菜单只剩默认的卡片欄；而且 motion 的 AnimatePresence 对「同 key 子元素在退场中重新加入」处理不好（退场播完后整层消失，直到下一次重渲染）。ClassicDecisionLayer 改为：回合菜单每次展开用新 key（`seat:TURN_MENU:<展开次数>`，其他种类仍按「座位:种类」保留同一实例，拍卖重问不重建场景），退场中的层不再接子页请求。E2E `skin-classic-dialogs` 新增回归用例（房主页带界面动画）。
+- **开局 Loading 只见黑底文字**：Data#560 整图在对局页挂上 Loading 时才开始下载。选人大厅挂载时先 `ensureClassicImage(title.loading)` 并用 `new Image()` 把整图下载进浏览器缓存。
+- **手机紧凑工具列「更多」里的 LOAD / SAVE**：原版存读档窗原先由 ClassicPopupHost 在 document 捕获阶段截下工具列点击（A11 的重定向），菜单项自己的 onClick 因此不执行，「更多」菜单不收起、Esc 关不掉存读档窗。改为显式的请求通道 `ui/classic/popups/screenRequests.ts`：ClassicLayout 的 onTool('load' | 'save') 先 `requestClassicScreen`，ClassicPopupHost 登记的处理函数在素材就绪时接管并返回 true，否则外壳照旧开程序化存读档窗；去掉 document 级的点击捕获。
+- **大厅座位牌文字溢出到相邻牌**：`.plateSeat` 改 `grid-template-columns: 44px minmax(0, 1fr)` + `overflow: hidden`，长昵称与电脑个性在牌内省略。
+- **过时与偶发的测试**：`decisions.dom.test`「未登记的 kind」改注入空注册表；`skin-classic-shell` 的「查询」接受原版资产表或程序化面板；`bank-stock` 的 P2 改停 4 号卡片格（2 号新闻偶发法院拍卖，同 venues-a）；server 的 `full-game-4p`（房间种子随机，资金 1 万时偶尔以 lastStanding 提前结束，实测 89–96 批）只对打满 30 天的对局要求批次数 > 100。
+- **文档**：design/minigames-ai.md 与 research/r_minigames_chars.md 按 exe 更正「企鹅记忆阶段亮出种类」（0x413f39(1)）与「接物者（不是财神）按分数换表情」（0x414a10）；DEVIATIONS 新增 DEV-19（READY GO 在开局前播完）、DEV-20（程序化皮肤的企鹅记忆阶段仍只画土堆）。
+
+### 24.3 M9 台湾图终验：golden
+
+- `packages/shared/src/engine/golden/taiwan.test.ts`：有 `RICH4_DATA_DIR`（相对路径按当前目录与仓库根解析，要有 manifest 里的 taiwan 条目）时，在台湾图上用固定种子跑 4 局 4 电脑对局（30 / 91 / 182 / 365 天；角色各不相同；最后一局第 268 天以 lastStanding 结束）。四个座位都由 OriginalAiPolicy 代打，rng 派生与服务器 AiDriver 相同（座位视角 projectState + makeAiContext）；每一步 `checkInvariants`、每 50 步 `explainState`，AI intent 被拒 0 次；同一种子重跑一遍结果完全相同。
+- 快照 `golden/__golden__/taiwan.json` 只含哈希、计数与事件类型名（ENGINE_VERSION、mapHash、每局的 actions / days / reason / 事件总数 / 各类型次数 / 前 160 个事件类型 / 每 400 个事件的链式哈希 / 终局状态哈希），不含原版数据；check-no-original 放行。数据包 mapHash 与快照不同时 skip 并提示重新生成；ENGINE_VERSION 与快照不同时失败（规则变更升版本要一起刷新）。缺数据（CI）时整组 skip。
+- 刷新：`RICH4_UPDATE_GOLDEN=1 RICH4_DATA_DIR=./rich4-data npx vitest run --project shared src/engine/golden/taiwan`。
+
+### 24.4 实机核对清单
+
+- 新增 `docs/verify-checklist.md`：VERIFY 里方式含 P 且未 ✅ 的 V-R1–V-R28（外加 V-E4、V-C3）逐项写清在原版 v2.06 里怎么操作（开局设置、怎么弄到卡与道具、存档复现、计数方法）、观察什么、我们当前的默认行为与对应的 RuleConfig 开关；另附原版界面的目视项 V-U1–V-U12（只影响画面）。
+- `docs/VERIFY.md`：开头链接核对手册；V-R18 改 🟡（图标帧号已由 exe 载入点定出，名称与分值待截图）；新增「原版界面（V-U）」一节与「终验记录」（M9 golden）。
+
+### 24.5 本机真实素材包巡检（rich4-assets + 口令门禁 + 台湾图，生产构建）
+
+- **方式**：`test/w3-tour.spec.ts` + `test/w3-tour.config.ts`（服务器 :3519 挂 `RICH4_ASSETS_DIR=./rich4-assets`、`RICH4_DATA_DIR=./rich4-data`、`ACCESS_MODE=passcode`、`RICH4_TEST_MODE=1`；前端先 `vite build` 再 `vite preview` :5519——巡检期间改前端源码不会触发 HMR 整页重载）。房主 + 经邀请链接进房的 P2 + 2 个电脑，原版节奏，带声音；P2 平时由脚本代打，需要它出场时暂停。房主按回合用 debug:act 传送 + 强制骰子触发场景，每步截图，失败只记日志并按默认处理恢复。两种视口各跑一遍：desk（房主 1920×1080、P2 844×390）与 mobile（房主 844×390、P2 1920×1080）。截图与 summary.json 在 `.cache/w3/tour-{desk,mobile}*/`（含原版素材，不入库）。
+- **覆盖**：门禁页 → 片头（Start.avi，可跳过）→ 标题（OPTION 面板）→ 开局设置（台湾、2 电脑、胜利条件 10 倍）→ 选人大厅（邀请链接带 `#g=` 授权，P2 经片段过门禁进房、选角、准备）→ Loading（Data#560）→ 对局；回合菜单卡片欄 / 道具欄、股市（行情表与详情）、公佈欄（板面与类别）、资产表、存读档窗、托管对话框、查税卡目标面板与出卡演出、买地、升级、银行 ATM 与柜台、商店（卡片 / 道具两页）、乐透投注（号码 + YES/NO）与开奖（摇奖机 FLC）、魔法屋（悬停提示、确认、施法 FLC）、监狱（保释 / 雇恶人）、医院、新闻板、命运板、拍卖（P2 的原版拍卖厅竞价 + 房主的观战版拍卖厅）、买设施、兴建设施、轮盘（旅馆盘）、老虎机（小财神）、月结颁奖、三个小游戏（原版视图：READY GO、游玩、结算大号分数）、投降与死神附身对象、终局排名。
+- **结果**：遇到的 17 种决策（TURN_MENU、BUY_LAND、UPGRADE_LAND、UPGRADE_FACILITY、BANK_ATM、BANK_COUNTER、SHOP、LOTTERY、SUBSCRIBE_SHARES、MAGIC_CAST、BAIL、AUCTION_BID、BUY_FACILITY、BUILD_FACILITY、FACILITY_TYPE、MINIGAME、DEATH_GOD_TARGET）在各次巡检里全部是原版场景（多数种类两种视口都出现过；房主与 P2 两页分别记录），0 次回退；三个小游戏都是 `data-view=original`；控制台 0 错误（pageerror / console.error / 看门狗 / 场景回退告警都没有）。音频引擎 running：棋盘曲 track03→04→05 轮播，进银行、商店、乐透、魔法屋、监狱、医院、拍卖、小游戏时切到场所曲，离开后棋盘曲从断点续播；语音与音效正常触发。
+- **巡检发现并已修复**：回合菜单退场中又展开丢子页请求（24.2 第 1 条）；Loading 只见黑底；大厅座位牌文字溢出；手机「更多」菜单里的 LOAD / SAVE（24.2）；观战版拍卖厅的卖方显示为「无（公开拍卖）」（拍卖卡拍无主地时地块没有主人：改用公开竞价横幅的 sellerName）、顶部状态条压住价格牌标题（竞价中领先者已写在价格牌上，状态条只在成交 / 流拍时显示）；价格牌标题「台北市 2 0 級」易读成「20 级」（地名与等级之间加分隔点）。
+- **没有触发到的决策**（巡检里自然对局没遇到，由 DOM 测试与合成包 E2E 覆盖）：RESEARCH、USE_FREE_CARD、SCAPEGOAT、DISCARD_CARD、BIRTHDAY_PICK、CONSTRUCTION_PICK。
+- **巡检脚本自身的失败**（不是产品缺陷）：电脑对房主用了停留卡、偶发地让强制骰子没走到目标格；小财神当时不在路上；只剩一个真人时不能投降（`canSurrender` 要求至少两个真人，按设计），终局改用「资产 10 倍」胜利条件触发；两次巡检共用服务器时先结束的一方会关掉服务器。
+
+### 24.6 验证
+
+- `npm run check` 全绿：typecheck、lint（1223 个文件）、vitest 290 个文件 2850 通过 2 跳过（台湾 golden 在没有 RICH4_DATA_DIR 时整组 skip）；check-determinism OK（193）、check-no-original OK（1499）、check-deps OK（1155）、zh-TW 最新（17）。
+- 台湾 golden：`RICH4_DATA_DIR=./rich4-data npx vitest run --project shared src/engine/golden/taiwan` 通过（4 局，AI intent 被拒 0 次）。
+- client-browser（`RICH4_CHROMIUM_PATH` 指向 chromium-1228）：12 个文件 60 通过 1 跳过。
+- E2E 默认配置（`CI=1 npx playwright test -c e2e/playwright.config.ts`）：38 通过、2 跳过（skin-classic-venues-a 只在原版配置下跑）；原版皮肤配置（`-c e2e/playwright.original.config.ts`，合成素材包 + 口令门禁）：37 通过、3 跳过（chat-spectate、skin-original-board、skin-procedural-fallback 只适用于默认配置）。两套都含新增用例 `skin-classic-dialogs`「回合菜单 Esc 收起后（退场动画中）立即从工具列打开股市、公佈欄」。
+
+### 24.7 遗留
+
+- 只在本人的决策上显示原版场景：别人（含电脑）的场所决策只有拍卖有观战版；原版「所有人同屏看场所屏」的其余场所（银行、商店、乐透、魔法屋、监狱医院）观战者仍只看到棋盘与横幅。
+- 手机横屏（倍率 0.8125）下原版 12px 正文约 9.75 CSS 像素，讲话框与提示框偏小；计算器数字键与 C / ←、货架行、号码格、股市行做不到 44px，靠透明数字框与原生下拉框代替（地基与 A12 遗留；计算器 MAX / ↵ 已补到 44，见 24.8）。
+- toast（「開始拍賣」「進入小遊戲」等）叠在原版场景顶部，偶尔压住场景标题。
+- 原版场景里没有原版图的次要按钮是 CSS 文字钮；MINIGAME 开局对话框只有「不玩了」（倒计时结束自动开局）。
+- 原版界面坐标与语义的目视项见 VERIFY「原版界面（V-U）」与 verify-checklist §4；规则实机项见 verify-checklist §2。
+
+### 24.8 第三波复核修复（2026-09-28）
+
+- **焦点与热键**：Stage4x3 弹出时焦点若在场景外的文字输入元素（聊天框等 INPUT / TEXTAREA / SELECT / contenteditable）上就不抢焦点（`common/focus.ts`）；YesNoBox 的 Y / N 只认焦点在所属场景里的按键（不认落在 body 上的），← → 仍可在 body 上移焦点。回归：聊天框里打 `you` 不再买下地。
+- **手机热区**：回合菜单一排文字钮只往上补（正下方是卡片欄）；场景关闭钮从场景顶边往下补到 --hit（存读档、托管窗）；计算器 MAX / ↵ 的扩展区往上盖过计量条到 56 逻辑像素（手机上计量条只显示，数值用液晶屏输入框或 MAX 设定，C / ← 由输入框的系统键盘代替）；股市 EXIT、「卖出」只往下补；开局设置「快速局」与行高同为 56；大厅抽屉里的「允许观战」行与勾选框 44。E2E（screens、venues-a）量了这些控件。
+- **整体回退**：命运插图对应未核实（guess），命运弹窗整体走程序化（删掉原版紫板上的程序化问号插图）。
+- **场景逻辑**：百货「卖道具」货架分页（持有种类可到 13 种，一页 8 行），原生下拉框列出全部；认购场景计算器、消息框与 YES 提交同一个数（清到 0 时 YES / ↵ 不可按）。
+- **路由**：素材包发现的等待起点全局共用（之后的路由不重新等 6 秒）；`usePinnedScreens` 让首页 / 房间大厅 / 单机页离开 pending 后固定画面（超时判成程序化后素材包才就绪不再中途换画面；单机页连降级也不换），改皮肤设置或门禁状态时重新判定；房间页判定中先进房，已在对局中就不等判定直接挂对局页；对局页地图载入前沿用当前主题（不再 zh-TW → zh-CN → zh-TW 闪一下）。
+- **工具列接管**：资产表、托管对话框的精灵还在加载时先收起程序化面板，等精灵就绪（最多 3 秒）再开原版界面，等不到才照旧开程序化面板。
+- **小游戏**：回放模式开播前至少留够入场 FLC 时长（READY GO 从第 0 帧播）；喜从天降 HUD 时间按 timeLeft / 2 向下取整；被炸爆炸借用 Data#485 的依据补上（fcn.00414f20 @0x415016 载入、fcn.00412b66 @0x412d2b 播放，写进 frames.ts 与 catalog）。
+- **文档与测试**：轮盘资源号顺序更正为航空 / 旅馆 / 购物中心 / 保险（ui.md、original-skin.md §4.2、catalog 描述）；合成包里与原版不同的取值（大号数字、接物者、转盘锚点）不再标「同原版」；skinStore 重置后才完成的旧 PackClient import 作废（修掉 screens 片头 dom 测试随文件组合变红）；skin-classic-venues-a 改为 page.route 供包，默认配置（CI）也跑，并断言股市是原版场景；新增原版存读档窗（真服务器存档）、出卡演出、观战版拍卖厅、15 日乐透开奖与 1 日月结颁奖的 E2E（终局排名仍只有 DOM 测试与巡检覆盖）；外壳 E2E 只认原版资产表；小游戏手机用例改为页面内探针量尺寸并点「不玩了」；cards.spec 在原版配置下偶发（本轮复跑稳定复现）撞上回合菜单的退场层（decision-TURN_MENU-exit 里有同名 inv-card-*），改为先等退场的原版场景卸载再展开。VERIFY V-R4 / V-R12 / V-R17 补上「⚑ 保留」结论，verify-checklist 补齐 V-C3、V-U2 子项与本机原版皮肤的启动命令。
+- **验证**：`npm run check` 全绿（vitest 291 个文件 2863 通过 2 跳过）；client-browser（minigames、ui/classic）通过；E2E 默认配置 42 通过（skin-classic-venues-a 不再跳过）、原版皮肤配置 39 通过 3 跳过（只适用于默认配置的 3 个）。

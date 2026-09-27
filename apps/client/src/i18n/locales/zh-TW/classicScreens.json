@@ -1,0 +1,48 @@
+{
+  "title": {
+    "label": "大富翁4 標題畫面",
+    "start": "開始遊戲（建立房間）",
+    "load": "讀取存檔",
+    "option": "設定",
+    "join": "加入房間",
+    "solo": "單機對戰",
+    "public": "公開房間",
+    "nickname": "暱稱",
+    "close": "關閉",
+    "joinTitle": "輸入房間號"
+  },
+  "intro": {
+    "label": "片頭動畫",
+    "skip": "跳過片頭",
+    "unmute": "開啟聲音",
+    "replay": "重播片頭"
+  },
+  "options": {
+    "title": "設定",
+    "system": "系統設定",
+    "replay": "重播片頭",
+    "back": "返回"
+  },
+  "setup": {
+    "title": "開局設定",
+    "online": "連線設定",
+    "ok": "確定（建立房間）",
+    "exit": "返回標題畫面",
+    "aiCount": "電腦人數",
+    "stage": "關卡：{{name}}",
+    "stageNone": "（本伺服器沒有這張地圖）",
+    "values": "對局設定"
+  },
+  "lobby": {
+    "label": "選擇角色",
+    "walker": "{{name}} 的側面走動動畫",
+    "players": "{{n}} 人",
+    "mine": "（你的角色）",
+    "cursor": "正在檢視",
+    "exit": "離開房間",
+    "readyMark": "已準備"
+  },
+  "loading": {
+    "label": "正在進入遊戲…"
+  }
+}

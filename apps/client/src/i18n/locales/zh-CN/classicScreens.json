@@ -1,0 +1,48 @@
+{
+  "title": {
+    "label": "大富翁4 标题画面",
+    "start": "开始游戏（创建房间）",
+    "load": "读取存档",
+    "option": "设置",
+    "join": "加入房间",
+    "solo": "单机对战",
+    "public": "公开房间",
+    "nickname": "昵称",
+    "close": "关闭",
+    "joinTitle": "输入房间号"
+  },
+  "intro": {
+    "label": "片头动画",
+    "skip": "跳过片头",
+    "unmute": "打开声音",
+    "replay": "重播片头"
+  },
+  "options": {
+    "title": "设置",
+    "system": "系统设置",
+    "replay": "重播片头",
+    "back": "返回"
+  },
+  "setup": {
+    "title": "开局设置",
+    "online": "联机设置",
+    "ok": "确定（创建房间）",
+    "exit": "返回标题画面",
+    "aiCount": "电脑人数",
+    "stage": "关卡：{{name}}",
+    "stageNone": "（本服务器没有这张地图）",
+    "values": "对局设置"
+  },
+  "lobby": {
+    "label": "选择角色",
+    "walker": "{{name}} 的侧面走动动画",
+    "players": "{{n}} 人",
+    "mine": "（你的角色）",
+    "cursor": "正在查看",
+    "exit": "离开房间",
+    "readyMark": "已准备"
+  },
+  "loading": {
+    "label": "正在进入游戏…"
+  }
+}

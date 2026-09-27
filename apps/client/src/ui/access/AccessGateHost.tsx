@@ -20,11 +20,21 @@ export interface AccessGateHostProps {
   reload?(room: string | null): void;
   /** 定期续期（对局页开启） */
   renew?: boolean;
+  /**
+   * 自挂的全屏浮层（mountAccessGate）：挂上后常驻；之后页面自带的宿主（房间页、对局页）挂载时让位给它，
+   * 避免同一时刻出现两份门禁页
+   */
+  standalone?: boolean;
 }
 
-export function AccessGateHost({ reload = reloadInto, renew = false }: AccessGateHostProps): ReactNode {
+export function AccessGateHost({
+  reload = reloadInto,
+  renew = false,
+  standalone = false,
+}: AccessGateHostProps): ReactNode {
   const required = useAccessStore((s) => s.required);
   const status = useAccessStore((s) => s.status);
+  const hosts = useAccessStore((s) => s.hosts);
 
   useEffect(() => registerAccessHost(), []);
 
@@ -49,6 +59,6 @@ export function AccessGateHost({ reload = reloadInto, renew = false }: AccessGat
     [reload],
   );
 
-  if (required === null) return null;
+  if (required === null || (standalone && hosts > 1)) return null;
   return <AccessGate reason={required} onGranted={onGranted} />;
 }

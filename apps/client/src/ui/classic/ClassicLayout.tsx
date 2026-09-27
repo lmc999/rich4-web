@@ -1,8 +1,9 @@
 // 路线 A 外壳（original-skin.md §4.1、§5 A10）：原版皮肤下的对局页布局——640×480 经典舞台（工具列、棋盘视窗、
 // 个人资料栏、日历 / 缩小地图、GO 钮与骰子）+ 两侧联机侧栏（窄屏收成抽屉）。
-// 与程序化布局共用同一套 store、决策层（DecisionLayer 暂时叠在棋盘视窗上方，原版风格对话框在 A11）、演出层
-// （PopupLayer、横幅）与面板（PanelHost）；棋盘由 GameScreen 建好传进来（BoardCanvas），系统菜单与门禁宿主由 GameScreen
-// 挂在两种布局之外（切换布局时不重建）。
+// 与程序化布局共用同一套 store、演出层（PopupLayer、横幅）与面板（PanelHost）；决策层用 ClassicDecisionLayer
+// （decisions/：原版场景优先，经 portal 叠在舞台上；未登记或缺素材时整体回退程序化对话框，叠在棋盘视窗上方）。
+// 棋盘由 GameScreen 建好传进来（BoardCanvas），系统菜单与门禁宿主由 GameScreen 挂在两种布局之外（切换布局时不重建）。
+// 拍卖进行中而本人不在竞拍时，AuctionWatchMount 叠一个只读的原版拍卖厅（素材不可用时只剩公开竞价横幅）。
 import type { MapIndex } from '@rich4/shared/data';
 import type { RoomView } from '@rich4/shared/net';
 import { type GameView, isAutopilot } from '@rich4/shared/view';
@@ -18,7 +19,6 @@ import { useGameStore } from '../../store/gameStore';
 import { mySeat } from '../../store/roomStore';
 import { type PanelId, useUiStore } from '../../store/uiStore';
 import { Modal } from '../components/Modal';
-import { DecisionLayer } from '../hud/DecisionLayer';
 import { GameOverPanel } from '../hud/GameOverPanel';
 import { PausedBanner, TurnBanner } from '../hud/Overlays';
 import { PanelHost } from '../hud/PanelHost';
@@ -27,15 +27,18 @@ import { PopupLayer } from '../popups/PopupLayer';
 import { RotateHint } from '../system/RotateHint';
 import { SaveLoadMenu } from '../system/SaveLoadMenu';
 import { openTrusteeSettings } from '../system/TrusteeSettings';
+import { AuctionWatchMount } from './AuctionWatch';
 import { bindClassicAssets } from './assets';
 import { CalendarPanel } from './CalendarPanel';
 import { ClassicDice } from './ClassicDice';
 import { ClassicStage, useClassicBox } from './ClassicStage';
 import c from './classic.module.css';
+import { ClassicDecisionLayer } from './decisions/ClassicDecisionLayer';
 import { GoButton, useRollControl } from './GoButton';
 import { ensureClassicI18n } from './i18n';
 import { useClassicHotkeys } from './keyboard';
 import { ProfilePanel } from './ProfilePanel';
+import { requestClassicScreen } from './popups/screenRequests';
 import { LeftRail, RailStatus, RightRail, useUnreadChat } from './SideRails';
 import { Toolbar, type ToolId } from './Toolbar';
 
@@ -200,7 +203,8 @@ export function ClassicLayout({
         return;
       case 'load':
       case 'save':
-        setSaveOpen(id);
+        // 原版素材就绪时由原版风格的存读档窗接管（popups/ClassicPopupHost），否则开程序化的存读档窗
+        if (!requestClassicScreen({ k: 'saves', mode: id })) setSaveOpen(id);
         return;
       case 'bigMap':
         toggleBigMap();
@@ -273,7 +277,8 @@ export function ClassicLayout({
             <TurnBanner />
             <PausedBanner room={room} />
             <ClassicPopups map={map} />
-            {map && <DecisionLayer view={view} map={map} room={room} />}
+            {packId !== null && <AuctionWatchMount view={view} map={map} me={me} />}
+            {map && <ClassicDecisionLayer view={view} map={map} room={room} packId={packId} />}
           </>
         }
         left={({ width, mode }) => (

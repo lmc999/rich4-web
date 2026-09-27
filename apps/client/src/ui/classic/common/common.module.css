@@ -1,0 +1,552 @@
+/* 原版场景的公共样式（ui/classic/common）。尺寸一律是场景逻辑像素（场景根随舞台 transform 缩放）。 */
+
+/* ───── 场景层（Stage4x3） ───── */
+.scene {
+  position: absolute;
+  transform-origin: 0 0;
+  overflow: hidden;
+  pointer-events: auto;
+  outline: none;
+  font-family: var(--classic-font, "Rich4 Ming", "MingLiU", "PMingLiU", "Noto Serif TC", "Songti TC", serif);
+  color: #fff;
+  image-rendering: auto;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.scene[data-pixelated="true"] {
+  image-rendering: pixelated;
+}
+
+/* 只读：不挡棋盘与工具列（控件本来就禁用了） */
+.scene[data-readonly="true"] {
+  pointer-events: none;
+}
+
+.sceneAnim {
+  position: absolute;
+  inset: 0;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+}
+
+.backdrop[data-backdrop="dim"] {
+  background: rgb(0 0 0 / 0.45);
+}
+
+.backdrop[data-backdrop="opaque"] {
+  background: #000;
+}
+
+/* 透明背板不接收指针：点到空白处落在背板上（模态时背板仍挡住下面的舞台） */
+.scene[data-readonly="false"] .backdrop {
+  pointer-events: auto;
+}
+
+.layers {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.layer {
+  position: absolute;
+}
+
+.status {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  z-index: 20;
+  max-width: 420px;
+  margin: 0;
+  padding: 2px 10px;
+  transform: translateX(-50%);
+  border: 1px solid #f6c64a;
+  border-radius: 3px;
+  background: rgb(58 26 6 / 0.88);
+  color: #fff;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  text-shadow:
+    -1px -1px 0 #000,
+    0 -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 0 0 #000,
+    1px 0 0 #000,
+    -1px 1px 0 #000,
+    0 1px 0 #000,
+    1px 1px 0 #000;
+  pointer-events: none;
+}
+
+.status[data-tone="expired"] {
+  border-color: #ff8a7a;
+}
+
+.status[data-tone="sent"] {
+  border-color: #9fe39a;
+}
+
+.ring {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.close {
+  position: absolute;
+  top: 6px;
+  right: 42px;
+  z-index: 20;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid #f6c64a;
+  border-radius: 50%;
+  background: #5a2a0a;
+  color: #fff;
+  font: 700 18px / 22px sans-serif;
+  cursor: pointer;
+}
+
+.close:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.close:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+}
+
+/* 手机 / 粗指针：关闭钮补到 --hit。场景顶边之上多半是屏幕外（手机横屏舞台贴顶），所以从场景顶边起往下补
+ * （按钮 top 6 + 边框 2 → 相对内边距盒 −8px），左右居中 */
+[data-hit="wide"] .close::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  width: max(100%, var(--hit, 0px));
+  height: max(calc(100% + 8px), var(--hit, 0px));
+  transform: translateX(-50%);
+}
+
+/* ───── 热区（Hotspots） ───── */
+.hotspots {
+  position: absolute;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.hot {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hot:disabled {
+  cursor: default;
+}
+
+.hot:focus-visible {
+  outline: 2px solid #ffe060;
+  outline-offset: -1px;
+  z-index: 2;
+}
+
+/* 手机 / 粗指针：透明扩展热区（--hit = 44px 折成的逻辑像素，由场景根或经典舞台容器提供） */
+[data-hit="wide"] .hot[data-hitpad="grow"]::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--hit, 0px));
+  height: max(100%, var(--hit, 0px));
+  transform: translate(-50%, -50%);
+}
+
+[data-hit="wide"]
+  :is(.hot, .btn):is([data-hitpad="left"], [data-hitpad="right"], [data-hitpad="up"], [data-hitpad="down"])::before {
+  content: "";
+  position: absolute;
+  width: max(100%, var(--hit, 0px));
+  height: max(100%, var(--hit, 0px));
+}
+
+[data-hit="wide"] :is(.hot, .btn)[data-hitpad="left"]::before {
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+[data-hit="wide"] :is(.hot, .btn)[data-hitpad="right"]::before {
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+[data-hit="wide"] :is(.hot, .btn)[data-hitpad="up"]::before {
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+[data-hit="wide"] :is(.hot, .btn)[data-hitpad="down"]::before {
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+[data-hit="wide"] .hot[data-hitpad="rect"]::before {
+  content: "";
+  position: absolute;
+  left: var(--pad-l);
+  top: var(--pad-t);
+  width: var(--pad-w);
+  height: var(--pad-h);
+}
+
+/* ───── 原版按钮（ClassicButton） ───── */
+.btn {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn:disabled {
+  cursor: default;
+}
+
+.btn:focus-visible {
+  outline: 2px solid #ffe060;
+  outline-offset: 1px;
+}
+
+.btnArt {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+.btnText {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+/* 精灵缺失时的回退画法：木框金边 */
+.btnFallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid #f6c64a;
+  border-radius: 4px;
+  background: linear-gradient(#8a4a14, #5a2a0a);
+  color: #fff;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.btn:disabled .btnFallback {
+  filter: grayscale(0.8) brightness(0.8);
+}
+
+.btn[data-state="hover"] .btnFallback {
+  background: linear-gradient(#a85a1a, #6a3410);
+}
+
+.btn[data-state="pressed"] .btnFallback {
+  transform: translateY(1px);
+}
+
+[data-hit="wide"] .btn[data-hitpad="grow"]::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--hit, 0px));
+  height: max(100%, var(--hit, 0px));
+  transform: translate(-50%, -50%);
+}
+
+/* ───── 九宫格 / 三宫格（NineSlice） ───── */
+.nine {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.ninePart {
+  position: absolute;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+.nineContent {
+  position: absolute;
+  inset: 0;
+}
+
+.nineFallback {
+  position: absolute;
+  inset: 0;
+  border: 3px solid #c98b2b;
+  border-radius: 4px;
+  background: #4a2208;
+  box-shadow: inset 0 0 0 1px #000;
+  pointer-events: none;
+}
+
+/* ───── YES / NO（YesNoBox） ───── */
+.yesno {
+  position: absolute;
+}
+
+.msgText {
+  position: absolute;
+  overflow: hidden;
+}
+
+.msgText p {
+  margin: 0;
+}
+
+.yesnoArt {
+  position: absolute;
+  pointer-events: none;
+}
+
+.yesnoFallback {
+  position: absolute;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  pointer-events: none;
+}
+
+.yesnoFallback span {
+  display: grid;
+  place-items: center;
+  border: 1px solid #000;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.yesnoFallback span:first-child {
+  background: #d86a8a;
+}
+
+.yesnoFallback span:last-child {
+  background: #2a9a88;
+}
+
+/* 「是」钮不能按（例如现金不足）：半透明灰罩 */
+.yesMask {
+  position: absolute;
+  background: rgb(40 40 40 / 0.55);
+  pointer-events: none;
+}
+
+/* ───── 讲话头像与气泡（SpeakerBubble） ───── */
+.speaker {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.bubbleText {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  text-align: center;
+}
+
+.bubbleText p {
+  margin: 0;
+}
+
+.headFallback {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #000;
+}
+
+.cloudFallback {
+  position: absolute;
+  border: 4px solid #e8412a;
+  border-radius: 48% 52% 50% 50% / 60% 55% 45% 40%;
+  background: #fffaf0;
+}
+
+/* ───── 计算器（Calculator） ───── */
+.calc {
+  position: absolute;
+  width: 128px;
+  height: 192px;
+}
+
+.calcArt {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+.calcFallback {
+  position: absolute;
+  inset: 0;
+  border: 2px solid #1a1a1a;
+  border-radius: 6px;
+  background: #3a3a3a;
+  pointer-events: none;
+}
+
+.calcLcd {
+  position: absolute;
+  pointer-events: none;
+}
+
+.calcLcdText {
+  position: absolute;
+  display: grid;
+  align-items: center;
+  justify-items: end;
+  padding-right: 2px;
+  color: #102010;
+  font: 700 16px / 1 monospace;
+  pointer-events: none;
+}
+
+.calcInput {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font: inherit;
+  cursor: text;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.calcInput:focus-visible {
+  outline: 2px solid #ffe060;
+  outline-offset: 0;
+}
+
+.calcInput::selection {
+  background: transparent;
+}
+
+[data-hit="wide"] .calcInput {
+  /* 手机：点液晶屏弹出系统数字键盘；输入框向上补到 44px 高 */
+  min-height: var(--hit, 0px);
+  transform: translateY(calc(min(0px, 22px - var(--hit, 0px))));
+}
+
+.calcMeter {
+  position: absolute;
+  cursor: pointer;
+  touch-action: none;
+}
+
+/* 手机 / 粗指针：计量条只显示——它那一横条让给 MAX / ↵ 的扩展热区（见 numpad.ts NUMPAD_KEYS.pad） */
+[data-hit="wide"] .calcMeter {
+  pointer-events: none;
+}
+
+.calcMeter:focus-visible {
+  outline: 2px solid #ffe060;
+  outline-offset: 1px;
+}
+
+.calcMeterFill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.calcMeterFallback {
+  position: absolute;
+  inset: 1px;
+  border: 1px solid #0a0a0a;
+  background: #183018;
+  pointer-events: none;
+}
+
+.calcMeterFallback > span {
+  display: block;
+  height: 100%;
+  background: #6adf5a;
+}
+
+.calcKeyFallback {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border: 1px solid #000;
+  border-radius: 2px;
+  background: #c8d0d8;
+  color: #111;
+  font: 700 11px / 1 sans-serif;
+  pointer-events: none;
+}
+
+.calcKeyFallback[data-pressed="true"] {
+  background: #f6c64a;
+}
+
+/* ───── 通用 ───── */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn[data-state="pressed"] .btnFallback {
+    transform: none;
+  }
+}

@@ -275,11 +275,14 @@ test('桌面 1920×1080：经典布局、工具列可用、GO 钮与空格键走
       48 * 2.25,
     ]);
 
-    // 工具列：查询 → 玩家资产；说明；系统设定 → 系统菜单
+    // 工具列：查询 → 原版资产表 classic-assets（开局后精灵可能还没预取完：先收起程序化面板、等精灵就绪再开，
+    // 程序化面板 panel-info 不出现）；说明；系统设定 → 系统菜单
     await a.getByTestId('action-info').click();
-    await expect(a.getByTestId('panel-info')).toBeVisible();
+    const assets = a.getByTestId('classic-assets');
+    await expect(assets).toBeVisible();
+    await expect(a.getByTestId('panel-info')).toHaveCount(0);
     await a.keyboard.press('Escape');
-    await expect(a.getByTestId('panel-info')).toBeHidden();
+    await expect(assets).toBeHidden();
     await a.getByTestId('tool-help').click();
     await expect(a.getByTestId('classic-help')).toBeVisible();
     await a.keyboard.press('Escape');

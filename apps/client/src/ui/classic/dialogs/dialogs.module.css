@@ -1,0 +1,387 @@
+/* 原版通用对话框（ui/classic/dialogs）的样式。尺寸一律是场景逻辑像素（场景根随舞台 transform 缩放）。 */
+
+/*
+ * 棋盘可点的场景（目标选择、选地、选人）：场景根与透明背板不接收指针，点到空白处落到下面的棋盘与工具列；
+ * 场景里的按钮、输入框与列表照常可点。
+ */
+[data-scene="classic"][data-readonly].passThrough,
+[data-scene="classic"][data-readonly].passThrough [data-backdrop] {
+  pointer-events: none;
+}
+
+.passThrough :is(button, input, select, textarea, [data-interactive="true"]) {
+  pointer-events: auto;
+}
+
+/* ───── 消息框正文（MessageBox） ───── */
+.msg {
+  position: absolute;
+}
+
+.msgText {
+  position: absolute;
+  overflow: hidden;
+}
+
+.msgText p {
+  margin: 0;
+}
+
+.msgList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ───── YES / NO 半边钮（HalfButton） ───── */
+.half {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.half:disabled {
+  cursor: default;
+}
+
+.half:focus-visible {
+  outline: 2px solid #ffe060;
+  outline-offset: 1px;
+}
+
+.halfClip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.halfArt {
+  position: absolute;
+  top: 0;
+  background-repeat: no-repeat;
+}
+
+.halfFallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid #000;
+  font-size: 14px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.half[data-half="yes"] .halfFallback {
+  background: #d86a8a;
+}
+
+.half[data-half="no"] .halfFallback {
+  background: #2a9a88;
+}
+
+.half:disabled .halfClip,
+.half:disabled .halfFallback {
+  filter: grayscale(0.85) brightness(0.65);
+}
+
+[data-hit="wide"] .half::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--hit, 0px));
+  height: max(100%, var(--hit, 0px));
+  transform: translate(-50%, -50%);
+}
+
+/* ───── 木框金边的文字钮（没有原版图的次要操作：投降、股市、公布栏…） ───── */
+.plate {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0 6px;
+  border: 2px solid #f6c64a;
+  border-radius: 4px;
+  background: linear-gradient(#8a4a14, #5a2a0a);
+  box-shadow: 0 0 0 1px #000;
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.plate:hover:not(:disabled),
+.plate:focus-visible {
+  background: linear-gradient(#a85a1a, #6a3410);
+  outline: none;
+}
+
+.plate:focus-visible {
+  box-shadow: 0 0 0 2px #ffe060;
+}
+
+.plate:disabled {
+  cursor: default;
+  filter: grayscale(0.8) brightness(0.75);
+}
+
+.plate[aria-pressed="true"] {
+  border-color: #fff27a;
+  background: linear-gradient(#c8781e, #7a3e10);
+}
+
+.plate[data-tone="red"] {
+  border-color: #ff9a8a;
+  background: linear-gradient(#a0281c, #5a0e08);
+}
+
+[data-hit="wide"] .plate::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--hit, 0px));
+  height: max(100%, var(--hit, 0px));
+  transform: translate(-50%, -50%);
+}
+
+/* 只往上补：回合菜单的一排文字钮下方紧贴卡片欄（欄能接收指针），居中补的下半截会被欄盖住 */
+[data-hit="wide"] .plate[data-hitpad="up"]::before {
+  top: auto;
+  bottom: 0;
+  transform: translateX(-50%);
+}
+
+/* ───── 卡片欄 / 道具欄（Panel#11）与格子 ───── */
+.grid {
+  position: absolute;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.cell {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  text-align: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cell:disabled {
+  cursor: default;
+}
+
+.cell[data-usable="false"] > * {
+  opacity: 0.45;
+}
+
+.cell:hover:not(:disabled),
+.cell:focus-visible {
+  outline: 2px solid #ffe060;
+  outline-offset: -2px;
+}
+
+.cell[aria-pressed="true"] {
+  outline: 2px solid #fff;
+  outline-offset: -3px;
+  background: rgb(255 240 120 / 0.28);
+}
+
+.cellIcon {
+  position: relative;
+  flex: none;
+}
+
+.cellCount {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+}
+
+.cellEmpty {
+  cursor: default;
+}
+
+/* ───── 选人窗（Data#477）与候选格 ───── */
+.pick {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pick:disabled {
+  cursor: default;
+}
+
+.pick:hover:not(:disabled),
+.pick:focus-visible {
+  outline: 2px solid #ffe060;
+  outline-offset: -1px;
+}
+
+.pick[aria-pressed="true"] {
+  outline: 3px solid #fff;
+  outline-offset: -2px;
+}
+
+.pickName {
+  position: absolute;
+  white-space: nowrap;
+  text-align: center;
+  pointer-events: none;
+}
+
+.faceFallback {
+  position: absolute;
+  inset: 4px;
+  border: 2px solid #fff;
+  border-radius: 6px;
+  background: #f3c89a;
+  pointer-events: none;
+}
+
+/* ───── 候选列表（选地、目标） ───── */
+.list {
+  position: absolute;
+  overflow: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
+  scrollbar-width: thin;
+}
+
+.listRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+  margin: 0 0 2px;
+  padding: 1px 4px;
+  border: 1px solid transparent;
+  background: rgb(0 0 0 / 0.25);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.listRow:hover:not(:disabled),
+.listRow:focus-visible {
+  border-color: #ffe060;
+  outline: none;
+}
+
+.listRow[aria-pressed="true"] {
+  border-color: #fff;
+  background: rgb(255 230 90 / 0.35);
+}
+
+[data-hit="wide"] .listRow {
+  min-height: var(--hit, 0px);
+}
+
+/* 目标选择：程序化 TargetPicker 的 DOM 候选列表换成原版描边字、半透明底 */
+.picker {
+  position: absolute;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  border: 2px solid #c98b2b;
+  border-radius: 4px;
+  background: rgb(40 16 4 / 0.9);
+  box-shadow: 0 0 0 1px #000;
+  pointer-events: auto;
+  scrollbar-width: thin;
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.picker :is(h3, h4, p) {
+  margin: 2px 0;
+  font-size: 12px;
+}
+
+.picker :is(button) {
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.picker :global(.btn) {
+  min-height: 20px;
+  padding: 2px 6px;
+}
+
+/* ───── 卡片插画与说明 ───── */
+.cardArt {
+  position: absolute;
+  background-size: 100% 100%;
+  pointer-events: none;
+}
+
+/* ───── 倒计时（小游戏开局） ───── */
+.clock {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+
+/* 选中项的原版手形光标（Data#0 图27）轻轻上下晃 */
+.pointer {
+  position: absolute;
+  animation: nudge 0.8s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes nudge {
+  from {
+    transform: translate(0, 0);
+  }
+
+  to {
+    transform: translate(2px, 3px);
+  }
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pointer {
+    animation: none;
+  }
+}

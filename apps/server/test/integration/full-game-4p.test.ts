@@ -57,7 +57,10 @@ describe('integration/full-game-4p', () => {
       expect(b.errors).toEqual([]);
       expect(b.over!.epoch).toBe(1);
     }
-    expect(s.host.batches.length).toBeGreaterThan(100);
+    // 房间种子随机：资金 10000 时偶尔有人很早破产、以 lastStanding 提前结束（实测 89–96 批），
+    // 只有打满 30 天的对局才要求批次数 > 100
+    const reason = s.bots[0]!.over!.result.reason;
+    expect(s.host.batches.length).toBeGreaterThan(reason === 'timeLimit' ? 100 : 40);
     const views = s.bots.map((b) => canonicalJson(b.view));
     expect(new Set(views).size).toBe(1);
     expect(s.bots[0]!.view!.status).toBe('over');

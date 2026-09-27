@@ -7,6 +7,7 @@
 //   否则只用 ZzFX 程序化音效（无语音、无音乐）；映射表或音频文件被 401（cookie 过期、被吊销）时 notePackAccessDenied：
 //   显示门禁页，通过后 skinStore 整体重载素材包，这里随之重新 applyPack（清空失败记为 null 的音频缓存）；
 // - 场景曲：房间 / 对局 / 结算与当前场所（本人的决策，或他人公开的场所决策）、今日节日 → director.setUi；
+//   原版片头播放期间（uiStore.introPlaying）标题画面不放标题曲；
 // - 测试钩子：window.__rich4.audio（state、log、music()、clearLog()）。
 import type { PackManifestV1 } from '@rich4/shared/assets';
 import type { MapIndex } from '@rich4/shared/data';
@@ -29,6 +30,7 @@ import { currentPackClient, notePackAccessDenied, type SkinState, useSkinStore }
 import { useGameStore } from '../store/gameStore';
 import { mySeat, useRoomStore } from '../store/roomStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useUiStore } from '../store/uiStore';
 import { testHooksEnabled } from './flags';
 
 // ───────────────────────── UI 状态 → 场景（纯函数） ─────────────────────────
@@ -54,6 +56,8 @@ export interface AudioUiInput {
   /** 收到 game:over */
   over: boolean;
   map: MapIndex | null;
+  /** 原版片头正在播放（标题画面上）：不放标题曲，片头结束后再放 */
+  intro?: boolean;
 }
 
 /** 当前场所：本人的决策优先（带监狱 / 医院与小游戏种类），否则取他人公开的场所决策 */
@@ -77,7 +81,7 @@ export function venueOf(
 /** 房间与对局状态 → 导演层的 UI 状态 */
 export function audioUiStateOf(i: AudioUiInput): AudioUiState {
   const room = i.room;
-  if (!room) return { screen: 'title' };
+  if (!room) return i.intro ? { screen: 'none' } : { screen: 'title' };
   if (room.phase === 'lobby') return { screen: 'lobby' };
   if (room.phase === 'ended' || i.over) return { screen: 'gameOver' };
   if (!i.view) return { screen: 'game', venue: null, holiday: null };
@@ -174,13 +178,14 @@ export function wireAudio(client: GameClient, o: WireAudioOptions = {}): () => v
       pending: g.pending,
       over: g.over !== null,
       map: client.currentMap,
+      intro: useUiStore.getState().introPlaying,
     });
     const k = uiKey(ui);
     if (k === lastUi) return;
     lastUi = k;
     system.director.setUi(ui);
   };
-  offs.push(useRoomStore.subscribe(syncUi), useGameStore.subscribe(syncUi));
+  offs.push(useRoomStore.subscribe(syncUi), useGameStore.subscribe(syncUi), useUiStore.subscribe(syncUi));
   syncUi();
 
   const h = testHooksEnabled() ? testHooks() : null;

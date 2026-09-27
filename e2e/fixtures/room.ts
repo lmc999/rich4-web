@@ -14,7 +14,7 @@ export const Q_ANIM = 'audio=off&test=1';
 
 /**
  * 原版皮肤模式（e2e/playwright.original.config.ts：服务器挂合成素材包，fixture 地图 test 判定为原版皮肤）：
- * 对局页是经典布局 + 原版棋盘，界面文字为繁体；大厅、首页不受皮肤影响（仍是简体）。
+ * 对局页是经典布局 + 原版棋盘，首页、开局设置与大厅是原版标题 / 选人画面（A14），界面文字都是繁体。
  */
 export const SKIN_ORIGINAL = process.env.RICH4_E2E_SKIN === 'original';
 
@@ -108,7 +108,8 @@ export async function joinRoom(page: Page, code: string, watch = false): Promise
 export async function pickCharacter(page: Page, id: number): Promise<void> {
   await page.getByTestId(`char-${id}`).click();
   await page.getByTestId('char-select').click();
-  await expect(page.getByTestId('char-select')).toHaveText('已选择');
+  // 程序化大厅为简体、原版选人画面为繁体（原版皮肤由素材包决定，与本进程的配置无关：默认配置下也有 page.route 供包的用例）
+  await expect(page.getByTestId('char-select')).toHaveText(/^已(选择|選擇)$/);
 }
 
 export async function setReady(page: Page): Promise<void> {

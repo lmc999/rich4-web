@@ -113,7 +113,12 @@ test('存档 → 全员离开 → 新房间读档认领座位 → 状态一致�
   await b.getByTestId('lobby-saves-toggle').click();
   await b.getByTestId(`save-load-${savedId}`).click();
   await expect(
-    b.getByTestId('toast').filter({ hasText: '这个存档所在的对局还在进行中，请先结束或解散那个房间' }),
+    b.getByTestId('toast').filter({
+      hasText: zh(
+        '这个存档所在的对局还在进行中，请先结束或解散那个房间',
+        '這個存檔所在的對局還在進行中，請先結束或解散那個房間',
+      ),
+    }),
   ).toBeVisible();
   await expect(b.getByTestId('loaded-save')).toHaveCount(0);
   await b.getByTestId('room-dissolve').click();
@@ -138,7 +143,9 @@ test('存档 → 全员离开 → 新房间读档认领座位 → 状态一致�
 
   // 导入同一文件：新条目，仍是官方存档
   await importText(a, download.suggestedFilename(), text);
-  await expect(a.getByTestId('toast').filter({ hasText: `已导入存档「${SAVE_NAME}」` })).toBeVisible();
+  await expect(
+    a.getByTestId('toast').filter({ hasText: zh(`已导入存档「${SAVE_NAME}」`, `已匯入存檔「${SAVE_NAME}」`) }),
+  ).toBeVisible();
   await expect(a.locator(`[data-testid="save-list"] > li[data-name="${SAVE_NAME}"]`)).toHaveCount(2);
   const importedId = (await saveIds(a, SAVE_NAME)).find((id) => id !== savedId)!;
   expect(importedId).toBeTruthy();
@@ -147,15 +154,15 @@ test('存档 → 全员离开 → 新房间读档认领座位 → 状态一致�
 
   // 导入篡改过的文件：可以导入，但标「非官方存档」
   await importText(a, 'tampered.r4save', tamper(text));
-  await expect(a.getByTestId('toast').filter({ hasText: '非官方存档' })).toBeVisible();
+  await expect(a.getByTestId('toast').filter({ hasText: zh('非官方存档', '非官方存檔') })).toBeVisible();
   const [tamperedId] = await saveIds(a, TAMPERED_NAME);
   expect(tamperedId).toBeTruthy();
-  await expect(a.getByTestId(`save-unofficial-${tamperedId}`)).toHaveText('非官方存档');
+  await expect(a.getByTestId(`save-unofficial-${tamperedId}`)).toHaveText(zh('非官方存档', '非官方存檔'));
 
   // 读篡改存档：大厅横幅也标「非官方存档」
   await a.getByTestId(`save-load-${tamperedId}`).click();
   await expect(a.getByTestId('loaded-save')).toContainText(TAMPERED_NAME);
-  await expect(a.getByTestId('loaded-unofficial')).toHaveText('非官方存档');
+  await expect(a.getByTestId('loaded-unofficial')).toHaveText(zh('非官方存档', '非官方存檔'));
 
   // 改读导入的官方存档
   await a.getByTestId('lobby-saves-toggle').click();
@@ -165,7 +172,7 @@ test('存档 → 全员离开 → 新房间读档认领座位 → 状态一致�
   // 房主自动回到 1P；其余座位显示「原：角色 / 昵称，待认领」
   await expect(a.getByTestId('seat-0')).toHaveAttribute('data-kind', 'human');
   await expect(a.getByTestId('seat-1-origin')).toHaveText('原：阿土伯 / P2');
-  await expect(a.getByTestId('seat-1-unclaimed')).toHaveText('待认领');
+  await expect(a.getByTestId('seat-1-unclaimed')).toHaveText(zh('待认领', '待認領'));
   await expect(a.getByTestId('room-start')).toBeDisabled();
 
   // P2 以玩家身份进房：凭 token 自动回到原座位
@@ -264,9 +271,9 @@ test('对局中全员离开 → 自动存档并关闭房间 → 首页读取存�
   await expect(a.getByTestId('seat-0')).toHaveAttribute('data-kind', 'human');
   // 存档里的电脑座位：只读显示原预设，没有可改的下拉框
   await expect(a.getByTestId('seat-1')).toHaveAttribute('data-kind', 'ai');
-  await expect(a.getByTestId('seat-1-ai-saved')).toHaveText('存档设定：大老奸 · 困难');
+  await expect(a.getByTestId('seat-1-ai-saved')).toHaveText(zh('存档设定：大老奸 · 困难', '存檔設定：大老奸 · 困難'));
   await expect(a.getByTestId('seat-1-ai-preset')).toHaveCount(0);
-  await expect(a.getByTestId('seat-2-unclaimed')).toHaveText('待认领');
+  await expect(a.getByTestId('seat-2-unclaimed')).toHaveText(zh('待认领', '待認領'));
 
   // P2 凭邀请链接进房，自动回到原座位
   await joinRoom(b, code2!);

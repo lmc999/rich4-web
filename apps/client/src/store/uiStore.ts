@@ -63,6 +63,8 @@ export interface UiState {
   diceChoice: 1 | 2 | 3 | null;
   /** 展开回合菜单时要直接打开的子页（TurnMenuDialog 打开后清空） */
   menuSheet: MenuSheet | null;
+  /** 原版片头正在播放（音频导演层期间不放标题曲） */
+  introPlaying: boolean;
   openPanel(p: PanelId | null): void;
   /** 展开回合菜单并直接打开某个子页 */
   openMenu(sheet: MenuSheet | null): void;
@@ -81,6 +83,7 @@ export interface UiState {
   setChatOpen(b: boolean): void;
   setLogOpen(b: boolean): void;
   setDiceChoice(n: 1 | 2 | 3 | null): void;
+  setIntroPlaying(b: boolean): void;
   /** 关闭所有临时演出（reset / skipAll） */
   closeTransient(): void;
   clear(): void;
@@ -104,6 +107,7 @@ const initial = {
   logOpen: false,
   diceChoice: null,
   menuSheet: null as MenuSheet | null,
+  introPlaying: false,
 };
 
 export const useUiStore = create<UiState>()((set, get) => ({
@@ -148,6 +152,7 @@ export const useUiStore = create<UiState>()((set, get) => ({
   setChatOpen: (chatOpen) => set({ chatOpen }),
   setLogOpen: (logOpen) => set({ logOpen }),
   setDiceChoice: (diceChoice) => set({ diceChoice }),
+  setIntroPlaying: (introPlaying) => set({ introPlaying }),
   closeTransient: () => set({ banner: null, dice: null, flashes: [] }),
   clear: () => set({ ...initial, toasts: [], flashes: [] }),
 }));

@@ -1,0 +1,251 @@
+/* 场所屏第二组（魔法屋、拍卖、公佈欄、监狱 / 医院）。尺寸一律是场景逻辑像素（场景根随舞台 transform 缩放）。 */
+
+.box {
+  position: absolute;
+  margin: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.box p {
+  margin: 0;
+}
+
+/* 不挡点击的装饰层（底图、立绘、提示框）：点击落到下面的热区容器 */
+.deco {
+  pointer-events: none;
+}
+
+.deco * {
+  pointer-events: none;
+}
+
+/* 用原版素材以外的地方画的文字钮（原版没有对应的钮图时）：沿用该场所讲话框的配色 */
+.textBtn {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0 6px;
+  border: 2px solid #1f6a3a;
+  border-radius: 8px;
+  background: linear-gradient(#f3e2bd, #dcc08c);
+  color: #3a2410;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.textBtn[data-tone="blue"] {
+  border-color: #2a5aa8;
+  background: linear-gradient(#f4f0fb, #d6dcf5);
+  color: #1a2a5a;
+}
+
+.textBtn[data-tone="red"] {
+  border-color: #7a1a10;
+  background: linear-gradient(#ff8a7a, #e0473a);
+  color: #fff;
+  text-shadow: 1px 1px 0 #5a0a00;
+}
+
+.textBtn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.textBtn:disabled {
+  filter: grayscale(0.8) brightness(0.85);
+  cursor: default;
+}
+
+.textBtn:focus-visible {
+  outline: 2px solid #ffe060;
+  outline-offset: 1px;
+}
+
+/* 手机 / 粗指针：文字钮补透明热区到 ≥44px */
+[data-hit="wide"] .textBtn::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--hit, 0px));
+  height: max(100%, var(--hit, 0px));
+  transform: translate(-50%, -50%);
+}
+
+/* 可点的精灵格子（囚犯格、挂牌、表格行）：透明按钮，悬停 / 焦点时描边 */
+.cell {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cell:disabled {
+  cursor: default;
+}
+
+.cell:focus-visible,
+.cell[data-selected="true"] {
+  outline: 2px solid #ffe060;
+  outline-offset: -2px;
+}
+
+.cell:hover:not(:disabled) {
+  outline: 2px solid rgb(255 224 96 / 0.7);
+  outline-offset: -2px;
+}
+
+[data-hit="wide"] .cell::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--hit, 0px));
+  height: max(100%, var(--hit, 0px));
+  transform: translate(-50%, -50%);
+}
+
+/* 不补手机热区的精确小钮（旁边另有大钮） */
+[data-hit="wide"] .flat::before {
+  content: none;
+}
+
+/* 没有东西可选的格子：压暗 */
+.cell[data-empty="true"] {
+  background: rgb(0 0 0 / 0.45);
+}
+
+/* 表格行（列表很密：手机上不向外补，行高本身已按 ≥44px 折算，见各场景） */
+.row {
+  display: grid;
+  align-items: center;
+  text-align: left;
+}
+
+[data-hit="wide"] .row::before {
+  content: none;
+}
+
+/* 魔法屋：女巫眨眼、说话 */
+.blink {
+  animation: blink 3.6s steps(1, end) infinite;
+}
+
+@keyframes blink {
+  0%,
+  94% {
+    opacity: 0;
+  }
+
+  95%,
+  100% {
+    opacity: 1;
+  }
+}
+
+.talk {
+  animation: talk 0.36s steps(1, end) infinite;
+}
+
+@keyframes talk {
+  0%,
+  49% {
+    opacity: 1;
+  }
+
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* 水晶球里的条件图标 */
+.ball {
+  opacity: 0.88;
+}
+
+/* FLC 画布宿主（整幅 640×480） */
+.flic {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 640px;
+  height: 480px;
+  pointer-events: none;
+}
+
+.flic canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 拍卖：价格变化时闪一下 */
+.price {
+  display: inline-block;
+  animation: priceFlash 0.6s ease-out;
+}
+
+@keyframes priceFlash {
+  0% {
+    transform: scale(1.35);
+    color: #ff5a3a;
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* 拍卖：竞拍者状态牌 */
+.tag {
+  position: absolute;
+  transform: translateX(-50%);
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgb(0 0 0 / 0.55);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tag[data-state="passed"] {
+  background: rgb(60 60 80 / 0.75);
+}
+
+.tag[data-state="quit"] {
+  background: rgb(90 20 20 / 0.75);
+}
+
+.dimmed {
+  filter: grayscale(0.85) brightness(0.7);
+}
+
+/* 精灵不可用时的占位色块（场景整体已判定可用，只有个别帧缺失时才会出现） */
+.missing {
+  position: absolute;
+  border: 1px dashed rgb(255 255 255 / 0.4);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blink,
+  .talk,
+  .price {
+    animation: none;
+  }
+
+  .blink {
+    opacity: 0;
+  }
+}

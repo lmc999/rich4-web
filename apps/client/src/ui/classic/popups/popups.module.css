@@ -1,0 +1,237 @@
+/* 原版弹窗（ui/classic/popups）的样式。尺寸一律是场景逻辑像素（场景根随舞台 transform 缩放）。 */
+
+.layer {
+  position: absolute;
+}
+
+.text {
+  position: absolute;
+  overflow: hidden;
+}
+
+.text p {
+  margin: 0;
+}
+
+.center {
+  text-align: center;
+}
+
+/* 只读演出：场景根不接收指针（不挡棋盘），「跳过」钮单独可点 */
+.skip {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 1px 8px;
+  border: 2px solid #f6c64a;
+  border-radius: 4px;
+  background: linear-gradient(#8a4a14, #5a2a0a);
+  box-shadow: 0 0 0 1px #000;
+  color: #fff;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.skip:focus-visible {
+  outline: 2px solid #ffe060;
+}
+
+[data-hit="wide"] .skip::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--hit, 0px));
+  height: max(100%, var(--hit, 0px));
+  transform: translate(-50%, -50%);
+}
+
+.art {
+  position: absolute;
+  background-size: 100% 100%;
+  pointer-events: none;
+}
+
+.blank {
+  position: absolute;
+  background: #fff;
+  pointer-events: none;
+}
+
+/* 命运板的程序化插图：大问号 + 本人头像（命运插图的对应未核实） */
+.affected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gain {
+  color: #9fe39a;
+}
+
+.loss {
+  color: #ff9a8a;
+}
+
+/* 转盘 / 老虎机 / 月结：纯演出层 */
+.spin {
+  position: absolute;
+  pointer-events: none;
+}
+
+.panel {
+  position: absolute;
+  padding: 6px 8px;
+  border: 2px solid #c98b2b;
+  border-radius: 4px;
+  background: rgb(40 16 4 / 0.88);
+  box-shadow: 0 0 0 1px #000;
+}
+
+.bar {
+  position: absolute;
+  bottom: 0;
+  border: 1px solid #000;
+  background: linear-gradient(#ffe070, #e0901a);
+}
+
+/* ───── 资产表 ───── */
+.cell {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.cell[data-align="left"] {
+  justify-content: flex-start;
+  padding-left: 4px;
+}
+
+.cell[data-align="right"] {
+  justify-content: flex-end;
+  padding-right: 4px;
+}
+
+.btn {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.btn:hover:not(:disabled),
+.btn:focus-visible {
+  outline: 2px solid #ffe060;
+  outline-offset: -1px;
+}
+
+.btn[aria-pressed="true"] {
+  outline: 2px solid #fff;
+  outline-offset: -3px;
+}
+
+[data-hit="wide"] .btn::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--hit, 0px));
+  height: max(100%, var(--hit, 0px));
+  transform: translate(-50%, -50%);
+}
+
+.btnArt {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+.btnLabel {
+  position: relative;
+  pointer-events: none;
+}
+
+/* 滑杆（托管比例）：亮格叠在原图刻度上 */
+.meter {
+  position: absolute;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.meter:focus-visible {
+  outline: 2px solid #ffe060;
+  outline-offset: 1px;
+}
+
+.meterFill {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  background: repeating-linear-gradient(90deg, rgb(150 255 110 / 0.75) 0 6px, transparent 6px 8px);
+  pointer-events: none;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    transition: none;
+  }
+}
+
+/* ───── 存读档（Data#479 窗里的服务器存档列表） ───── */
+.savePanel {
+  position: absolute;
+  overflow: hidden;
+  border: 1px solid rgb(0 0 0 / 0.4);
+  background: rgb(255 250 235 / 0.9);
+  color: #2b1a0c;
+}
+
+/* 按舞台倍率反向缩放：里面的程序化列表按 CSS 像素排版（字号、手机热区与大厅里的存档页一致） */
+.saveZoom {
+  zoom: calc(1 / var(--classic-scale, 1));
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  pointer-events: auto;
+  user-select: text;
+}
+
+.saveNote {
+  margin: 4px 0 8px;
+  font-size: 13px;
+}

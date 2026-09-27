@@ -106,6 +106,9 @@ async function use(
   pick?: (picker: ReturnType<Page['getByTestId']>) => Promise<void>,
 ): Promise<void> {
   await waitMyTurn(page);
+  // 原版皮肤：上一次用卡后收起的回合菜单可能还在播退场动画（decision-TURN_MENU-exit，里面有同名但禁用的格子），
+  // 紧接着再展开时页面上会短暂同时存在两份 inv-card-*；等退场的原版场景卸载再展开（程序化皮肤没有这种层）
+  await expect(page.locator('[data-scene][data-testid$="-exit"]')).toHaveCount(0);
   await page.getByTestId(`action-${sheet}`).click();
   const btn = page.getByTestId(tile);
   await expect(btn).toBeEnabled();

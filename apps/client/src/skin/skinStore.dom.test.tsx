@@ -18,8 +18,15 @@ import type { BoardFactory } from './BoardSurface';
 import { registerBoardFactory } from './boardRegistry';
 import type { FetchLike } from './pack/http';
 import { PackClient } from './pack/PackClient';
-import { notePackAccessDenied, resetSkinStoreForTest, shouldProbePack, useSkinStore } from './skinStore';
-import { resetSkinThemeForTest } from './theme';
+import {
+  currentPackClient,
+  notePackAccessDenied,
+  packClient,
+  resetSkinStoreForTest,
+  shouldProbePack,
+  useSkinStore,
+} from './skinStore';
+import { appliedSkin, applySkinTheme, resetSkinThemeForTest } from './theme';
 import { useGameSkin } from './useGameSkin';
 
 const manifest = syntheticManifest();
@@ -222,6 +229,30 @@ describe('素材包发现：失败与恢复', () => {
     warn.mockRestore();
   });
 
+  it('回归：重置单例之后才完成的旧 PackClient import 作废，不覆盖测试注入的客户端', async () => {
+    let finish!: () => void;
+    const slow = vi.fn(
+      () =>
+        new Promise<typeof import('./pack/PackClient')>((resolve) => {
+          finish = () => void import('./pack/PackClient').then(resolve);
+        }),
+    );
+    resetSkinStoreForTest({ importClient: slow });
+    const stale = packClient();
+    const injected = { injected: true } as unknown as PackClient;
+    resetSkinStoreForTest({ client: injected });
+    finish();
+    await expect(stale).resolves.toBe(injected);
+    expect(currentPackClient()).toBe(injected);
+    // 重置成「没有客户端」之后才完成：同样不登记（不漏到之后的测试）
+    resetSkinStoreForTest({ importClient: slow });
+    const stale2 = packClient();
+    resetSkinStoreForTest();
+    finish();
+    await expect(stale2).resolves.toBeInstanceOf(PackClient);
+    expect(currentPackClient()).toBeNull();
+  });
+
   it('门禁状态未知（/api/access 暂时失败）不缓存：恢复后下次 ensurePack 重新发现', async () => {
     const { urls } = setup({ access: null });
     expect(await useSkinStore.getState().ensurePack()).toMatchObject({ status: 'absent', detail: 'accessUnknown' });
@@ -318,6 +349,38 @@ describe('对局页皮肤钩子与界面语言', () => {
     await waitFor(() => expect(i18next.language).toBe('zh-CN'));
     expect(document.documentElement.dataset.skin).toBeUndefined();
     expect(useSkinStore.getState().activeMap).toBeNull();
+  });
+
+  it('回归：地图载入前沿用当前主题（从原版大厅开局不闪 zh-TW → zh-CN → zh-TW）', async () => {
+    setup({ access: { mode: 'passcode', granted: true } });
+    const client = (await import('./skinStore')).currentPackClient()!;
+    vi.spyOn(client, 'loadGroup').mockResolvedValue({} as never);
+    // 大厅已应用原版主题
+    await act(async () => {
+      await applySkinTheme('original');
+    });
+    expect(i18next.language).toBe('zh-TW');
+    const seen: string[] = [];
+    const onLang = (l: string): void => {
+      seen.push(l);
+    };
+    i18next.on('languageChanged', onLang);
+    try {
+      const view = render(<GameSkinProbe on={false} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(document.documentElement.dataset.skin).toBe('original');
+      expect(appliedSkin()).toBe('original');
+      view.rerender(<GameSkinProbe on />);
+      await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('original/procedural/false'));
+      expect(i18next.language).toBe('zh-TW');
+      expect(seen).toEqual([]);
+      view.unmount();
+      await waitFor(() => expect(i18next.language).toBe('zh-CN'));
+    } finally {
+      i18next.off('languageChanged', onLang);
+    }
   });
 
   it('没有素材包：保持简体与程序化', async () => {

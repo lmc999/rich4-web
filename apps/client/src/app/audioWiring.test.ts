@@ -64,6 +64,9 @@ describe('audioUiStateOf / venueOf', () => {
   it('没有房间 = 标题；大厅 = 开局设定；结束或收到 game:over = 结算', () => {
     const base = { view: null, decision: null, pending: [], over: false, map: null };
     expect(audioUiStateOf({ ...base, room: null })).toEqual({ screen: 'title' });
+    // 原版片头播放期间标题画面不放曲子
+    expect(audioUiStateOf({ ...base, room: null, intro: true })).toEqual({ screen: 'none' });
+    expect(audioUiStateOf({ ...base, room: roomView({ phase: 'lobby' }), intro: true })).toEqual({ screen: 'lobby' });
     expect(audioUiStateOf({ ...base, room: roomView({ phase: 'lobby' }) })).toEqual({ screen: 'lobby' });
     expect(audioUiStateOf({ ...base, room: roomView({ phase: 'ended' }) })).toEqual({ screen: 'gameOver' });
     expect(audioUiStateOf({ ...base, room: roomView({ phase: 'playing' }), over: true }).screen).toBe('gameOver');

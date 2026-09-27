@@ -11,5 +11,5 @@ export function mountAccessGate(): void {
   const el = document.createElement('div');
   el.id = 'rich4-access-gate';
   document.body.appendChild(el);
-  createRoot(el).render(<AccessGateHost />);
+  createRoot(el).render(<AccessGateHost standalone />);
 }

@@ -1,0 +1,944 @@
+/* 原版皮肤的标题 / 开局设置 / 选人大厅 / Loading / 片头（original-skin.md §4.3、A14）。
+ * 舞台沿用经典外壳 ClassicStage（640×480 等比缩放、整数倍最近邻、两侧侧栏或抽屉、data-hit="wide" 与 --hit）；
+ * 这几屏没有棋盘视窗：把外壳的棋盘槽藏起来（它叠在舞台层之上）。
+ * 文字用原版字体栈与 8 方向描边；原版素材之外的装饰（按钮面、面板）用与侧栏同色系的 CSS。 */
+
+.screen {
+  --ink: #2b1a0c;
+  --gold: #f6c64a;
+  --paper: #fff8e0;
+}
+
+.frame [data-testid="classic-board-slot"] {
+  display: none;
+}
+
+/* 舞台层内铺满的容器（表单、画面根） */
+.fill {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.layer {
+  position: absolute;
+}
+
+.image {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+.outline {
+  text-shadow:
+    -1px -1px 0 #000,
+    0 -1px 0 #000,
+    1px -1px 0 #000,
+    1px 0 0 #000,
+    1px 1px 0 #000,
+    0 1px 0 #000,
+    -1px 1px 0 #000,
+    -1px 0 0 #000;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ───── 透明热区钮（原版图上的按钮：图在底图里或另画精灵） ───── */
+.hot {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  overflow: visible;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hot:disabled {
+  cursor: default;
+}
+
+.hot:focus-visible {
+  outline: 2px solid #fff36b;
+  outline-offset: -2px;
+}
+
+.hot[data-state="pressed"] > [data-sprite] {
+  filter: brightness(0.85);
+}
+
+/* ───── 标题画面 ───── */
+.band {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 按钮带上的木框金边钮（热区是整格 56 高，钮面居中 34 高） */
+.bandFace {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 34px;
+  border: 2px solid #6b4412;
+  border-radius: 4px;
+  background: linear-gradient(#fff4c8, #e4bf6a);
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #b0853a,
+    0 2px 0 rgb(0 0 0 / 0.5);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.band:hover .bandFace,
+.band:focus-visible .bandFace,
+.band[aria-expanded="true"] .bandFace {
+  background: linear-gradient(#fffbe3, #f2d27f);
+  border-color: #c0392b;
+}
+
+.band:active .bandFace {
+  transform: translateY(1px);
+  filter: brightness(0.92);
+}
+
+.band:focus-visible {
+  outline: 2px solid #fff36b;
+  outline-offset: -2px;
+}
+
+.plate {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  cursor: text;
+}
+
+.plateLabel {
+  color: var(--gold);
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.plateInput {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  outline: none;
+  /* 输入框铺满整格（热区 56 高），框面由伪元素画成 34 高 */
+  background-image: linear-gradient(#fffdf2, #f4e3b0);
+  background-size: 100% 34px;
+  background-position: center;
+  background-repeat: no-repeat;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 2px #6b4412;
+  background-clip: padding-box;
+}
+
+.plateInput:focus {
+  box-shadow:
+    inset 0 0 0 2px #c0392b,
+    0 0 0 2px #fff36b;
+}
+
+/* 面板（加入房间、设置、提示）：深棕底金边，与侧栏消息框同色系 */
+.panel {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 3px solid #c98b2b;
+  border-radius: 8px;
+  background: linear-gradient(#6b3410, #4a2208);
+  box-shadow:
+    inset 0 0 0 1px #3a1a06,
+    0 4px 0 #000,
+    0 0 30px rgb(0 0 0 / 0.6);
+  color: #f7e7c0;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.panel h2 {
+  margin: 0;
+  color: var(--gold);
+  font-size: 16px;
+}
+
+.panelRow {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.panelInput {
+  flex: 1;
+  min-width: 0;
+  min-height: 56px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 2px solid #6b4412;
+  border-radius: 4px;
+  background: #fffdf2;
+  color: var(--ink);
+  font: inherit;
+  font-size: 20px;
+  text-align: center;
+  letter-spacing: 2px;
+}
+
+.panelBtn {
+  display: grid;
+  place-items: center;
+  min-width: 64px;
+  min-height: 56px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 2px solid #6b4412;
+  border-radius: 4px;
+  background: linear-gradient(#fff4c8, #e4bf6a);
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #b0853a;
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.panelBtn:hover:not(:disabled),
+.panelBtn:focus-visible {
+  background: linear-gradient(#fffbe3, #f2d27f);
+  border-color: #c0392b;
+}
+
+.panelBtn:disabled {
+  cursor: default;
+  filter: grayscale(0.7) brightness(0.8);
+}
+
+.panelBtn[data-tone="blue"] {
+  background: linear-gradient(#cfe6ff, #7eaee8);
+}
+
+.error {
+  margin: 0;
+  color: #ffd2c8;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.note {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border: 2px solid #c98b2b;
+  border-radius: 6px;
+  background: rgb(58 26 6 / 0.9);
+  color: #ffe9a8;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+/* EXIT 钮（Data#1 图7/8）：面板右下角 */
+.exitBtn {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 64px;
+  height: 56px;
+}
+
+.exitFallback {
+  position: absolute;
+  inset: 16px 2px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #6b4412;
+  border-radius: 4px;
+  background: linear-gradient(#e7f2ff, #7ea9e0);
+  color: #0c2a5a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ───── 开局设置与选人：原版下拉框（白框 + 箭头烘焙在竖栏里） ───── */
+.boxSelect {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 26px 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.boxSelect:focus-visible {
+  outline: 2px solid #c0392b;
+  outline-offset: 0;
+}
+
+.boxSelect:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.boxValue {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 0 4px;
+  color: var(--ink);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
+.boxLabel {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* 关卡行：当前地图打勾，没有地图的行变暗 */
+.stageRow {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.stageRow[data-available="false"]::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  background: rgb(0 0 0 / 0.35);
+}
+
+.banner {
+  position: absolute;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* 设置面板（联机设置；手机横屏为全部设置两列） */
+.settings {
+  position: absolute;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-content: start;
+  gap: 4px 10px;
+  padding: 8px 10px;
+  border: 3px solid #c98b2b;
+  border-radius: 8px;
+  background: rgb(40 18 4 / 0.9);
+  box-shadow: 0 3px 0 #000;
+  color: #f7e7c0;
+  font-size: 12px;
+}
+
+.settings h2 {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--gold);
+  font-size: 14px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 28px;
+}
+
+.row > span:first-child {
+  flex: 0 0 auto;
+  width: 64px;
+  color: #ffe9a8;
+  white-space: nowrap;
+}
+
+.rowSelect {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  border: 2px solid #6b4412;
+  border-radius: 3px;
+  background: #fffdf2;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+}
+
+.check {
+  position: relative;
+  width: 28px;
+  height: 24px;
+  border: 2px solid #6b4412;
+  border-radius: 3px;
+  background: #fffdf2;
+}
+
+.check input {
+  /* 连边框一起盖住：热区就是整个勾选框 */
+  position: absolute;
+  inset: -2px;
+  z-index: 1;
+  width: calc(100% + 4px);
+  height: calc(100% + 4px);
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.checkFallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #c0392b;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* 手机横屏 / 粗指针：行高 56（≥44 CSS 像素），控件铺满 */
+.settings[data-wide="true"] {
+  gap: 0 10px;
+  padding: 4px 10px;
+}
+
+.settings[data-wide="true"] .row {
+  min-height: 56px;
+}
+
+.settings[data-wide="true"] .rowSelect {
+  height: 56px;
+  font-size: 15px;
+}
+
+.settings[data-wide="true"] .check {
+  width: 56px;
+  height: 56px;
+  box-sizing: border-box;
+}
+
+.settings[data-wide="true"] .row > span:first-child {
+  width: 72px;
+  font-size: 14px;
+}
+
+.settingsBtn {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 2px solid #6b4412;
+  border-radius: 4px;
+  background: linear-gradient(#fff4c8, #e4bf6a);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.settings[data-wide="true"] .settingsBtn {
+  grid-column: auto;
+  justify-self: stretch;
+  /* 与行高 56 一致（0.8125 倍时约 45.5px；52 只有约 42px） */
+  min-height: 56px;
+  margin: 0;
+}
+
+/* ───── 选人画面 ───── */
+.face {
+  position: absolute;
+  inset: 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #c6a46a;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.cell {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cell[data-taken="true"] {
+  cursor: not-allowed;
+}
+
+/* 被别人选走：置灰 */
+.cell[data-taken="true"] > [data-sprite],
+.cell[data-taken="true"] > .face {
+  filter: grayscale(1) brightness(0.55);
+}
+
+/* 光标（正在查看的角色）：白框 */
+.cell[data-cursor="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px solid #fff;
+  box-shadow: 0 0 6px 1px #fff;
+  pointer-events: none;
+}
+
+/* 自己选中的角色：描金边 */
+.cell[data-mine="true"]::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: 1;
+  border: 3px solid #f6c64a;
+  box-shadow:
+    0 0 0 1px #6b4412,
+    0 0 8px 2px #ffd400;
+  pointer-events: none;
+}
+
+.cell:focus-visible {
+  outline: 2px solid #fff36b;
+  outline-offset: 1px;
+}
+
+.seatTag {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  z-index: 2;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgb(0 0 0 / 0.75);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.tip {
+  position: absolute;
+  z-index: 3;
+  padding: 1px 6px;
+  border: 1px solid #000;
+  border-radius: 4px;
+  background: #fffbe0;
+  color: var(--ink);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.previewName {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.previewName small {
+  display: block;
+  color: #ffe9a8;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.walker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.walker[data-facing="left"] > [data-sprite] {
+  transform: scaleX(-1);
+}
+
+.plateSeat {
+  position: absolute;
+  box-sizing: border-box;
+  display: grid;
+  /* minmax(0, 1fr)：长昵称、电脑个性在格内省略，不溢出到相邻座位牌 */
+  grid-template-columns: 44px minmax(0, 1fr);
+  overflow: hidden;
+  gap: 4px;
+  align-items: center;
+  padding: 4px;
+  border: 2px solid rgb(201 139 43 / 0.9);
+  border-radius: 6px;
+  background: rgb(40 18 4 / 0.78);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.plateSeat[data-kind="empty"] {
+  opacity: 0.75;
+}
+
+.plateSeat[data-mine="true"] {
+  border-color: #f6c64a;
+  box-shadow: 0 0 6px 1px #ffd400;
+}
+
+.plateFace {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #5a3a1a;
+}
+
+.plateName {
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plateSub {
+  overflow: hidden;
+  color: #ffe9a8;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.okState {
+  position: absolute;
+  pointer-events: none;
+}
+
+.okDim {
+  position: absolute;
+  background: rgb(0 0 0 / 0.45);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+/* ───── 侧栏（大厅：房间信息、座位、设置、观战者、存档；聊天） ───── */
+.railBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.railTitle {
+  margin: 0;
+  color: var(--gold);
+  font-size: 13px;
+}
+
+.railBtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.railBtn {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 2px solid #6b4412;
+  border-radius: 4px;
+  background: linear-gradient(#fff4c8, #e4bf6a);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.railBtn[data-tone="green"] {
+  background: linear-gradient(#d8f5c0, #7cc35a);
+}
+
+.railBtn[data-tone="blue"] {
+  background: linear-gradient(#cfe6ff, #7eaee8);
+}
+
+.railBtn:disabled {
+  cursor: default;
+  filter: grayscale(0.7) brightness(0.8);
+}
+
+.seatList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.seatRow {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 2px 8px;
+  padding: 6px;
+  border: 2px solid #c98b2b;
+  border-radius: 6px;
+  background: rgb(58 26 6 / 0.6);
+}
+
+.seatRow[data-mine="true"] {
+  border-color: #f6c64a;
+}
+
+.seatRow > .plateFace {
+  grid-row: span 3;
+  width: 40px;
+  height: 40px;
+}
+
+.seatHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  align-items: baseline;
+  font-weight: 700;
+}
+
+.seatStatus {
+  color: #ffe9a8;
+  font-size: 12px;
+}
+
+.seatActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  grid-column: 2;
+}
+
+.seatActions button,
+.seatActions select {
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #3a1a06;
+  color: #ffe9a8;
+  font-size: 11px;
+}
+
+.badge[data-tone="ready"] {
+  background: #2e6b1a;
+  color: #eaffd8;
+}
+
+.badge[data-tone="warn"] {
+  background: #8a2a10;
+  color: #ffe0d0;
+}
+
+.warnTag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #8a2a10;
+  color: #ffe0d0;
+  font-size: 11px;
+}
+
+.railSettings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.railBox .railSettings .row > span:first-child {
+  width: 72px;
+}
+
+.railBox .railSettings .rowSelect {
+  height: 30px;
+}
+
+.savesBox summary {
+  cursor: pointer;
+  color: var(--gold);
+  font-weight: 700;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+}
+
+.savesBox[open] {
+  color: var(--ink);
+}
+
+.savesBox > div,
+.savesBox > section {
+  padding: 6px;
+  border-radius: 4px;
+  background: rgb(255 246 220 / 0.96);
+}
+
+/* 手机抽屉：侧栏里的控件（含沿用的邀请、观战者、存档、聊天组件）补到 44px */
+.railBox[data-wide="true"] :is(button, select, summary, input:not([type="checkbox"], [type="radio"])),
+.chatRail[data-wide="true"] :is(button, select, input:not([type="checkbox"], [type="radio"])) {
+  min-height: 44px;
+}
+
+/* 抽屉里的房间设置行（侧栏不随舞台缩放，CSS 像素）：行高与勾选框也补到 44（勾选框的透明 input 铺满整个框） */
+.railBox[data-wide="true"] .row {
+  min-height: 44px;
+}
+
+.railBox[data-wide="true"] .check {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  box-sizing: border-box;
+}
+
+/* ───── Loading / 片头 / 发现素材包时的载入画面 ───── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: #000;
+  color: #ffe9a8;
+}
+
+.overlay img,
+.overlay video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.loading {
+  pointer-events: none;
+  transition: opacity 0.3s ease-out;
+}
+
+.loading[data-state="done"] {
+  opacity: 0;
+}
+
+.loadingText {
+  position: absolute;
+  bottom: 12%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.introBtns {
+  position: absolute;
+  right: max(12px, env(safe-area-inset-right, 0px));
+  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  display: flex;
+  gap: 8px;
+}
+
+.introBtn {
+  min-width: 88px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 2px solid #c98b2b;
+  border-radius: 6px;
+  background: rgb(22 12 4 / 0.8);
+  color: #ffe9a8;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.introBtn:focus-visible {
+  outline: 2px solid #fff36b;
+}
+
+.pending {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #0d0a12;
+  color: #ffe9a8;
+  font-size: 15px;
+}

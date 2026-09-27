@@ -1,9 +1,10 @@
 import type { SaveSummary } from '@rich4/shared/net';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { memoryLocation } from 'wouter/memory-location';
 import { setUiLanguage } from '../i18n';
+import { resetSkinStoreForTest, useSkinStore } from '../skin/skinStore';
 import { useRoomStore } from '../store/roomStore';
 import { useUiStore } from '../store/uiStore';
 import { makeTestClient } from '../test/fakeTransport';
@@ -30,9 +31,16 @@ function renderAt(path: string, setup?: (t: ReturnType<typeof makeTestClient>) =
   return { ...utils, loc, ...t };
 }
 
+// 首页 / 房间 / 单机按皮肤选画面（A14，ui/classic/screens/SkinRoutes）：这里测的是程序化画面，按「没有素材包」同步判定
+// （否则首帧是发现素材包时的载入画面）；原版画面的切换见 ui/classic/screens/screens.dom.test.tsx
+beforeEach(() => {
+  useSkinStore.setState({ pack: { status: 'absent', reason: 'not-found', detail: null } });
+});
+
 afterEach(() => {
   useRoomStore.getState().clear();
   useUiStore.getState().clear();
+  resetSkinStoreForTest();
 });
 
 const SAVE: SaveSummary = {

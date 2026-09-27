@@ -3,7 +3,7 @@
 // - installMinigames：挂到 GameClient 的传输层（先取走 GameClient 在安装前缓存的票据与帧），处理观战票据（game:minigameWatch，live 在开局前 3 秒弹出、replay 结算后回放）、
 //   输入帧（game:minigameFrames：观战者转交宿主；自己的帧先缓存供续玩）、以及对局批次里的 MINIGAME_ENDED（权威分数、跳过即关）。
 //   宿主是自带 React root 的全屏遮罩，不依赖对局页的组件树；对局页只需在进入时调用一次 installMinigames（幂等）。
-import type { GameEvent, SeatIndex } from '@rich4/shared/engine';
+import type { GameEvent, PlayerIntent, SeatIndex } from '@rich4/shared/engine';
 import { isMinigameTicket, type MinigameTicket } from '@rich4/shared/minigames';
 import type { C2SAckData, C2SEventName, C2SPayload, Result, S2CEventName, S2CPayload } from '@rich4/shared/net';
 import { testHooksEnabled } from '../app/flags';
@@ -30,6 +30,11 @@ export interface MinigameClientPort {
   clock: { serverNow(): number };
   /** 安装前已到达的票据与帧（刷新、中途加入时服务器只补发一次）；安装时取走并按顺序处理 */
   takeMinigameBacklog?(): MinigameBacklogItem[];
+  /**
+   * 回答本人的决策（GameClient.act：与决策对话框共用全局提交锁）。原版入场 FLC 提前盖住开局倒计时对话框时，
+   * 遮罩上的「不玩了」经它发 MINIGAME_DECLINE；没有时不提供该按钮。
+   */
+  act?(intent: PlayerIntent, decisionId?: string): Promise<Result<unknown>>;
 }
 
 function seatInfo(seat: SeatIndex): { name: string; characterId: number | null } {
@@ -115,6 +120,8 @@ export class MinigameSessions {
     const info = seatInfo(ticket.seat);
     const resume = this.buffered.get(ticket.sessionId) ?? [];
     this.buffered.delete(ticket.sessionId);
+    const act = this.client.act?.bind(this.client);
+    const allowDecline = useRoomStore.getState().room?.settings.allowMinigameDecline ?? true;
     const host = MiniGameHost.open({
       ticket,
       mode: 'play',
@@ -126,6 +133,15 @@ export class MinigameSessions {
       resumeFrames: resume,
       paused: () => useRoomStore.getState().room?.phase === 'paused',
       ...(o.revealAt !== undefined ? { revealAt: o.revealAt } : {}),
+      ...(act && allowDecline
+        ? {
+            decline: async () => {
+              const r = await act({ type: 'MINIGAME_DECLINE' }, ticket.decisionId);
+              if (r.ok) this.finished.add(ticket.sessionId);
+              return r.ok;
+            },
+          }
+        : {}),
       onClosed: (h) => this.onClosed(h),
       ...this.extra,
     });

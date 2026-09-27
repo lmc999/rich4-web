@@ -30,11 +30,17 @@ type PackClientModule = typeof import('./pack/PackClient');
 const importPackClient = (): Promise<PackClientModule> => import('./pack/PackClient');
 let loadPackClientModule: () => Promise<PackClientModule> = importPackClient;
 
-/** 取得（必要时创建）PackClient；401 → 门禁页。动态 import 失败时不缓存失败结果（下次重试） */
+/**
+ * 取得（必要时创建）PackClient；401 → 门禁页。动态 import 失败时不缓存失败结果（下次重试）。
+ * 单例被换掉（resetSkinStoreForTest）之后才完成的旧 import 作废：不写 clientNow（不覆盖新注入的客户端、也不把实例
+ * 漏到之后的测试里），等待它的调用方拿到当前单例，或一个不登记的新实例。生产环境不会重置单例，走不到这条分支。
+ */
 export function packClient(): Promise<PackClient> {
   if (!clientPromise) {
-    const p = loadPackClientModule().then((m) => {
-      clientNow = new m.PackClient({ onAccessRequired: () => notePackAccessDenied() });
+    const p: Promise<PackClient> = loadPackClientModule().then((m) => {
+      const make = (): PackClient => new m.PackClient({ onAccessRequired: () => notePackAccessDenied() });
+      if (clientPromise !== p) return clientPromise ?? make();
+      clientNow = make();
       return clientNow;
     });
     clientPromise = p;

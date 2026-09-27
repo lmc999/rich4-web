@@ -838,6 +838,9 @@ function panelItems(): CatalogItem[] {
     smp('Panel', 66, 'ui.newsBoard', 'ui.dialog', 2, 'rgb0-backdrop', '新闻板（蓝 NEWS）/ 命运板（紫 ?）440×480'),
     smp('Panel', 67, 'ui.godSlot', 'ui.dialog', 24, 'rgb0', '神明老虎机 4 位/3 位 + 拉杆 + 滚轮数字'),
   );
+  // 盘面按本机真实素材图2 逐格目视核对：#68 = 0,1,2,3,2,1（航空）、#69 = 1–4（旅馆）、#70 = 6,1–5（购物中心）、
+  // #71 = 3,5,10,15,20,30（保险）；客户端 ui/classic/popups/layout.ts 的 WHEELS 同此
+  const wheels = ['航空', '旅馆', '购物中心', '保险'] as const;
   for (let i = 0; i < 4; i++) {
     out.push(
       smp(
@@ -847,7 +850,7 @@ function panelItems(): CatalogItem[] {
         'ui.dialog',
         14,
         'rgb0',
-        `轮盘 ${i}（旅馆/购物中心/保险/航空，顺序为推断）：天使与数字转盘 12 帧旋转`,
+        `轮盘 ${i}（${wheels[i]}；#68–71 依次为航空 / 旅馆 / 购物中心 / 保险，按图2 盘面核对）：天使与数字转盘 12 帧旋转`,
       ),
     );
   }

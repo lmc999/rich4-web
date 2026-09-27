@@ -158,6 +158,19 @@ describe('AccessGateHost', () => {
     expect(screen.getByTestId('access-submit')).toBeDisabled();
     expect(useAccessStore.getState().status).toEqual(STATUS);
   });
+
+  it('自挂的全屏浮层（standalone）在页面另有宿主时让位：同一时刻只有一份门禁页', () => {
+    const overlay = render(<AccessGateHost standalone reload={vi.fn()} />);
+    act(() => requireAccess('api'));
+    expect(screen.getAllByTestId('access-gate')).toHaveLength(1);
+    const page = render(<AccessGateHost reload={vi.fn()} />);
+    expect(screen.getAllByTestId('access-gate')).toHaveLength(1);
+    expect(useAccessStore.getState().hosts).toBe(2);
+    page.unmount();
+    expect(screen.getAllByTestId('access-gate')).toHaveLength(1);
+    overlay.unmount();
+    expect(useAccessStore.getState().hosts).toBe(0);
+  });
 });
 
 describe('InviteLink + 门禁', () => {
