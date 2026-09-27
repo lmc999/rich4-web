@@ -80,6 +80,16 @@
   border-radius: var(--radius-sm);
 }
 
+/* 纵向分组（声音设置：开关与各路音量滑杆逐行排列） */
+.groupColumn {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.groupColumn input[type="range"] {
+  width: 100%;
+}
+
 .radio,
 .check {
   display: inline-flex;

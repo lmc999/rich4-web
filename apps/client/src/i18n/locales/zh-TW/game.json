@@ -1,0 +1,48 @@
+{
+  "reason": {
+    "noTarget": "沒有可選目標",
+    "passive": "被動卡，滿足條件時自動詢問",
+    "marketClosed": "今天不開市",
+    "suspended": "停牌中",
+    "limitUp": "漲停無法買進",
+    "limitDown": "跌停無法賣出",
+    "tortoise": "烏龜狀態下不能用",
+    "sleepwalk": "夢遊中不能用",
+    "investBlocked": "神明作祟，禁止投資",
+    "notEnoughCash": "現金不足",
+    "notEnoughPoints": "點券不足",
+    "handFull": "手牌已滿",
+    "itemFull": "這個道具已經拿滿了",
+    "poolEmpty": "已經賣完了",
+    "noAnchor": "還沒有可以回去的時間點",
+    "humanOnly": "只有真人玩家能用",
+    "alreadyEquipped": "已經裝備了",
+    "nothingToDispel": "沒有需要送走的東西",
+    "menuLimit": "本回合操作次數已達上限",
+    "notYourTurn": "還沒輪到你"
+  },
+  "status": {
+    "jail": "坐牢",
+    "hospital": "住院",
+    "hotel": "住旅館",
+    "away": "不在場",
+    "hibernate": "冬眠",
+    "sleepwalk": "夢遊",
+    "stay": "停留",
+    "tortoise": "烏龜"
+  },
+  "vehicle": {
+    "walk": "步行",
+    "moto": "機車",
+    "car": "汽車",
+    "engineer": "工程車"
+  },
+  "object": {
+    "roadblock": "路障",
+    "mine": "地雷",
+    "bomb": "定時炸彈",
+    "gift": "禮物",
+    "chest": "寶箱"
+  },
+  "stockFallback": "股票 {{n}}"
+}

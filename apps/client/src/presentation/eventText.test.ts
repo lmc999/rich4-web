@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { initI18n } from '../i18n';
 import { tx } from '../i18n/tx';
 import { eventTextParams, fateShown, newsBody, villainActionText } from './eventText';
-import { makeNames } from './names';
+import { makeNames, pickMapString } from './names';
 
 beforeAll(() => {
   initI18n('original');
@@ -57,5 +57,25 @@ describe('eventText', () => {
     const t = villainActionText(n, { kind: 'robber', victim: null, what: 'robDeposit', amount: 12345 });
     expect(t).toContain('12,345');
     expect(t).not.toContain('无人');
+  });
+});
+
+describe('pickMapString（地图文案按界面语言）', () => {
+  const strings = { 'zh-CN': { a: '台北', b: '只有简体' }, 'zh-TW': { a: '臺北', c: '只有繁體' } };
+  it('先取界面语言，缺失时回退另一种；都没有为 null；缺省 zh-CN', () => {
+    expect(pickMapString(strings, 'a')).toBe('台北');
+    expect(pickMapString(strings, 'a', 'zh-TW')).toBe('臺北');
+    expect(pickMapString(strings, 'b', 'zh-TW')).toBe('只有简体');
+    expect(pickMapString(strings, 'c', 'zh-CN')).toBe('只有繁體');
+    expect(pickMapString(strings, 'x', 'zh-TW')).toBeNull();
+    expect(pickMapString(undefined, 'a')).toBeNull();
+  });
+
+  it('makeNames 的地块名跟随 lang', () => {
+    const tw = makeNames({ t: tx, view: () => null, map: () => map, lang: () => 'zh-TW' });
+    const lot = map.def.lots[0]!;
+    const key = lot.nameKey;
+    const twName = map.def.strings['zh-TW'][key] ?? map.def.strings['zh-CN'][key];
+    expect(tw.lot(lot.id)).toContain(twName!);
   });
 });

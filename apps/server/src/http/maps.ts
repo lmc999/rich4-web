@@ -2,6 +2,8 @@
  * 地图 API（architecture §5.8 HTTP）：
  * - GET /api/maps：列出全部地图（fixture 与 RICH4_DATA_DIR 中通过校验的地图；playable=false 的只列出不可开局）。
  * - GET /api/maps/:id?h=<mapHash>：返回 MapDef；带 h 且一致时 Cache-Control: immutable，h 不一致返回 404。
+ * 访问门禁开启时 /api/* 受保护：http/access.ts 的 onSend 把这里的 `public, max-age=1 年, immutable` 改写成
+ * `private, max-age=30 天`（共享缓存不能把地图数据转给未授权者，便于吊销），长缓存响应上也不附带续期 cookie。
  */
 import { appError } from '@rich4/shared/net';
 import type { FastifyInstance } from 'fastify';

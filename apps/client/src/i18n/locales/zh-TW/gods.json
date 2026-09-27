@@ -1,0 +1,87 @@
+{
+  "smallWealth": {
+    "name": "小財神",
+    "arrive": "小財神來也，出門在外手頭寬鬆！",
+    "power": "小財神發威，財源滾滾！"
+  },
+  "bigWealth": {
+    "name": "大財神",
+    "arrive": "大財神駕到，一路暢行無阻！",
+    "power": "大財神發威，天降橫財！"
+  },
+  "smallFortune": {
+    "name": "小福神",
+    "arrive": "小福神來也，好運跟著走！",
+    "power": "小福神發威，福氣臨門！"
+  },
+  "bigFortune": {
+    "name": "大福神",
+    "arrive": "大福神駕到，福星高照！",
+    "power": "大福神發威，喜上加喜！"
+  },
+  "smallPoor": {
+    "name": "小窮神",
+    "arrive": "小窮神上身，錢包要變瘦了…",
+    "power": "小窮神發威，錢財溜走！"
+  },
+  "bigPoor": {
+    "name": "大窮神",
+    "arrive": "大窮神上身，荷包大失血…",
+    "power": "大窮神發威，家財散去！"
+  },
+  "smallMisfortune": {
+    "name": "小衰神",
+    "arrive": "小衰神上身，諸事不順…",
+    "power": "小衰神發威，黴運連連！"
+  },
+  "bigMisfortune": {
+    "name": "大衰神",
+    "arrive": "大衰神上身，倒霉透頂…",
+    "power": "大衰神發威，禍不單行！"
+  },
+  "angel": {
+    "name": "天使",
+    "arrive": "天使降臨，所到之處一片祥和。",
+    "power": "天使送上祝福！"
+  },
+  "devil": {
+    "name": "惡魔",
+    "arrive": "惡魔附身，走到哪兒鬧到哪兒！",
+    "power": "惡魔大鬧一場！"
+  },
+  "dog": {
+    "name": "惡犬",
+    "arrive": "惡犬擋路，小心別被咬！",
+    "power": "汪汪汪！"
+  },
+  "earthGod": {
+    "name": "土地公",
+    "arrive": "土地公顯靈，保佑一方土地。",
+    "power": "土地公施展神通！"
+  },
+  "death": {
+    "name": "死神",
+    "arrive": "死神纏身，大難將至…",
+    "power": "死神揮動鐮刀！",
+    "summon": "有人請我來帶你走…"
+  },
+  "manifest": {
+    "levelUp": "神明顯靈，這裡的房子加蓋了一層！",
+    "levelDown": "神明作祟，這裡的房子塌了一層！",
+    "seize": "神明顯靈，這塊地收歸己有！"
+  },
+  "npc": {
+    "anchor": "新聞主播",
+    "witch": "魔法屋女巫",
+    "doctor": "醫生",
+    "police": "警察"
+  },
+  "gallery": {
+    "gods": "神明（M6）",
+    "villains": "四大惡人",
+    "npcs": "NPC",
+    "stage": "路面物件與特效（Pixi）",
+    "popups": "演出彈窗",
+    "statuses": "角色狀態外觀"
+  }
+}

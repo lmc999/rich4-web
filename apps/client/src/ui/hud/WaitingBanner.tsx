@@ -5,6 +5,7 @@ import { CHARACTER_KEYS } from '@rich4/shared/engine';
 import type { RoomView } from '@rich4/shared/net';
 import { type GameView, isAutopilot, type PendingView } from '@rich4/shared/view';
 import type { ReactNode } from 'react';
+import { uiLanguage } from '../../i18n';
 import { useTx } from '../../i18n/tx';
 import { makeNames } from '../../presentation/names';
 import { useGameStore } from '../../store/gameStore';
@@ -36,7 +37,7 @@ export function WaitingBanner({
   if (!p) return null;
   const player = view.players.find((x) => x.seat === p.seat);
   const who = player ? t(`characters:${CHARACTER_KEYS[player.character]}.name`) : `${p.seat + 1}P`;
-  const names = makeNames({ t, view: () => view, map: () => map });
+  const names = makeNames({ t, view: () => view, map: () => map, lang: uiLanguage });
   const lot = p.publicInfo.lot ? names.lot(p.publicInfo.lot) : '';
   const action = t(`hud:waiting.kind.${p.kind}`, { lot, amount: p.publicInfo.amount ?? '' });
   const secs = remainingMs === null ? null : Math.ceil(remainingMs / 1000);

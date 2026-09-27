@@ -3,7 +3,9 @@ import type { MapIndex } from '@rich4/shared/data';
 import type { GameView } from '@rich4/shared/view';
 import clsx from 'clsx';
 import type { ReactNode } from 'react';
+import { uiLanguage } from '../../i18n';
 import { useTx } from '../../i18n/tx';
+import { pickMapString } from '../../presentation/names';
 import h from './hud.module.css';
 
 export function formatCentsShort(c: number): string {
@@ -16,7 +18,7 @@ export function StockTicker({ view, map }: { view: GameView; map: MapIndex | nul
   if (view.stocks.length === 0) return <div className={h.ticker} />;
   const name = (idx: number): string => {
     const def = map?.def.stocks.find((s) => s.index === idx);
-    return (def && (map?.def.strings['zh-CN'][def.nameKey] ?? map?.def.strings['zh-TW'][def.nameKey])) ?? `#${idx + 1}`;
+    return (def && pickMapString(map?.def.strings, def.nameKey, uiLanguage())) ?? `#${idx + 1}`;
   };
   const items = view.stocks.map((s) => {
     const d = s.priceCents - s.prevCents;

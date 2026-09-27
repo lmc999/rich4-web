@@ -1,6 +1,10 @@
 /**
  * Socket.IO 服务（design/net.md §1、§4、§5.1）：握手校验、会话挂载与顶替、连接数限制、注册处理器。
  * 不启用 connectionStateRecovery：断线恢复完全由应用层 room:resume 负责。
+ * 访问门禁（docs/design/original-skin.md U4）：ACCESS_MODE != off 时握手必须带有效的 r4_access cookie，
+ * 否则 connect_error.data 为 ACCESS_REQUIRED（先于其他握手检查）；握手响应顺带滑动续期 cookie。
+ * 门禁在命名空间中间件里判（HTTP 层的 allowRequest 只能回 403，客户端拿不到 ACCESS_REQUIRED 错误码）；
+ * 拒绝之后 CONNECT_ERROR 一送出就关闭底层 engine.io 连接，未授权者不能占着会话（含 WebSocket）等到 connectTimeout。
  */
 import { createHash } from 'node:crypto';
 import type { Server as HttpServer } from 'node:http';
@@ -19,6 +23,7 @@ import {
   sanitizeNickname,
 } from '@rich4/shared/net';
 import { Server } from 'socket.io';
+import type { AccessControl } from '../access/AccessControl';
 import type { Emitter } from '../rooms/RoomBroadcaster';
 import type { AppSocket, HandlerCtx, SocketData } from './guard';
 import { registerChatHandlers } from './handlers/chat';
@@ -37,6 +42,8 @@ export interface IoOptions {
   trustProxy: boolean;
   devCorsOrigin: string | null;
   maxConnectionsPerIp?: number;
+  /** 访问门禁；缺省或未启用时不检查 */
+  access?: AccessControl;
 }
 
 export function createIo(http: HttpServer, o: IoOptions): AppServer {
@@ -123,9 +130,12 @@ export function clientIp(socket: Pick<AppSocket, 'handshake'>, trustProxy: boole
   return peer || 'unknown';
 }
 
-function handshakeError(code: 'BAD_HANDSHAKE' | 'PROTOCOL_MISMATCH' | 'SERVER_BUSY'): Error {
+function handshakeError(
+  code: 'BAD_HANDSHAKE' | 'PROTOCOL_MISMATCH' | 'SERVER_BUSY' | 'ACCESS_REQUIRED',
+  details?: unknown,
+): Error {
   const err = new Error(code) as Error & { data: unknown };
-  err.data = appError(code);
+  err.data = appError(code, details);
   return err;
 }
 
@@ -139,8 +149,31 @@ export function attachIo(io: AppServer, ctx: HandlerCtx, o: IoOptions): void {
   const relay = new MinigameRelay(ctx, rawEmit(io));
   relays.set(io, relay);
   const limit = o.maxConnectionsPerIp ?? MAX_CONNECTIONS_PER_IP;
+  const access = o.access?.enabled ? o.access : null;
+
+  if (access) {
+    // 握手的第一个 HTTP 响应（polling 握手或 WebSocket 升级）上滑动续期
+    io.engine.on(
+      'initial_headers',
+      (headers: Record<string, string | string[]>, req: { headers: { cookie?: string } }) => {
+        const g = access.check(req.headers.cookie);
+        if (g.granted && g.renew) headers['set-cookie'] = g.renew;
+      },
+    );
+  }
 
   io.use((socket, next) => {
+    if (access) {
+      const g = access.check(socket.handshake.headers.cookie);
+      if (!g.granted) {
+        next(handshakeError('ACCESS_REQUIRED', { reason: g.reason }));
+        // CONNECT_ERROR 在 process.nextTick 里入队；之后关闭连接（不丢弃缓冲：polling 下等客户端取走错误包再关）
+        setImmediate(() => {
+          if (socket.conn.readyState === 'open') socket.conn.close();
+        });
+        return;
+      }
+    }
     const parsed = HandshakeAuthSchema.safeParse(socket.handshake.auth);
     if (!parsed.success) return next(handshakeError('BAD_HANDSHAKE'));
     if (parsed.data.protocolVersion !== PROTOCOL_VERSION) return next(handshakeError('PROTOCOL_MISMATCH'));

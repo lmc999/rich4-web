@@ -5,6 +5,7 @@ import type { MapIndex } from '@rich4/shared/data';
 import type { GameView, PendingView } from '@rich4/shared/view';
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
+import { uiLanguage } from '../../i18n';
 import { useTx } from '../../i18n/tx';
 import { formatMoney, makeNames, type NameKit } from '../../presentation/names';
 import { useGameStore } from '../../store/gameStore';
@@ -102,7 +103,7 @@ export function AuctionBanner({ map = null }: { map?: MapIndex | null }): ReactN
   if (a && live) return <AuctionBannerView a={a} />;
   // 演出没有建立横幅（后台标签页、instant、跳过、刷新）：按待决策补一条
   if (!a && !playing) {
-    const d = derivedAuction(pending, view, makeNames({ t, view: () => view, map: () => map }));
+    const d = derivedAuction(pending, view, makeNames({ t, view: () => view, map: () => map, lang: uiLanguage }));
     if (d) return <AuctionBannerView a={d} />;
   }
   return null;

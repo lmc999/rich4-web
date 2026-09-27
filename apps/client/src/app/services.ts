@@ -1,9 +1,13 @@
 // 服务容器（design/client.md §2 app/services.ts）：全局唯一的 GameClient（socket.io 传输 + EventPlayer + 路由）。
 // React 通过 ClientContext 取用；组件测试用 ClientProvider 注入假传输的 GameClient。
+// 原版皮肤：创建时懒加载音频（app/audio.ts，?audio=off 时不加载）；Socket.IO 握手被访问门禁拒绝（ACCESS_REQUIRED）时
+// 显示门禁页（通过后重新载入页面，带着新 cookie 重新握手）。
 import { createContext, createElement, type ReactNode, useContext } from 'react';
 import { tx } from '../i18n/tx';
 import { GameClient, handshakeAuth } from '../net/client';
 import { createSocketTransport } from '../net/socketTransport';
+import { requireAccess } from '../ui/access/accessStore';
+import { installAudio } from './audio';
 import { appFlags } from './flags';
 import { installTestHooks } from './testHooksInstall';
 
@@ -25,6 +29,10 @@ export function getGameClient(): GameClient {
       instant: flags.animInstant,
     });
     installTestHooks(singleton);
+    singleton.transport.onStatus((_s, info) => {
+      if (info.error?.code === 'ACCESS_REQUIRED') requireAccess('socket');
+    });
+    installAudio(singleton);
   }
   return singleton;
 }

@@ -90,7 +90,8 @@ test('P3 断线托管后恢复、刷新续座、同 token 两标签页顶替', a
 
   await p3.context.setOffline(false);
   await expect(c.getByTestId('reconnect-overlay')).toHaveCount(0, { timeout: 30_000 });
-  await expect(c.getByTestId('toast').filter({ hasText: '已重新连接' })).toBeVisible();
+  // 原版皮肤（门禁 + 素材包下跑本用例时）对局页是繁体：已重新连接 / 已重新連線
+  await expect(c.getByTestId('toast').filter({ hasText: /已重新(连接|連線)/ })).toBeVisible();
   // 托管解除（所有页面），P3 页面没有残留对话框
   for (const p of pages) await expect(p.getByTestId('chip-2-autopilot')).toHaveCount(0, { timeout: 20_000 });
   await waitIdle(c);

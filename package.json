@@ -28,9 +28,12 @@
     "check:determinism": "tsx scripts/check-determinism.ts",
     "check:no-original": "tsx scripts/check-no-original.ts",
     "check:deps": "tsx scripts/check-deps.ts",
-    "check": "npm run typecheck && npm run lint && npm test && npm run check:determinism && npm run check:no-original && npm run check:deps",
+    "check": "npm run typecheck && npm run lint && npm test && npm run check:determinism && npm run check:no-original && npm run check:deps && npm run check:zh-tw",
     "test:browser": "vitest run --project client-browser",
-    "bench:engine": "tsx apps/server/scripts/bench-engine.ts"
+    "bench:engine": "tsx apps/server/scripts/bench-engine.ts",
+    "access": "tsx scripts/access.ts",
+    "i18n:zh-tw": "tsx scripts/gen-zh-tw.ts",
+    "check:zh-tw": "tsx scripts/gen-zh-tw.ts --check"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

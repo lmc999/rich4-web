@@ -2,6 +2,7 @@
 import type { AiPreset, InitialFund, StartVehicle, Tenure, TimeLimitDays, WinMultiple } from '@rich4/shared/engine';
 import { DEFAULT_INITIAL_FUND, QUICK_GAME_PRESET } from '@rich4/shared/engine';
 import type { RoomSettings, RoomSettingsPatch, TimerPreset } from '@rich4/shared/net';
+import { noteApiStatus } from '../access/accessStore';
 
 export interface SettingsDraft {
   mapId: string;
@@ -91,10 +92,11 @@ export interface MapListingLite {
 }
 
 export async function fetchMapList(
-  fetchImpl: (u: string) => Promise<{ ok: boolean; json(): Promise<unknown> }> = (u) => fetch(u),
+  fetchImpl: (u: string) => Promise<{ ok: boolean; status?: number; json(): Promise<unknown> }> = (u) => fetch(u),
 ): Promise<{ defaultMap: string; maps: MapListingLite[] }> {
   try {
     const r = await fetchImpl('/api/maps');
+    if (r.status !== undefined) noteApiStatus(r.status);
     if (r.ok) {
       const j = (await r.json()) as { defaultMap?: string; maps?: MapListingLite[] };
       const maps = (j.maps ?? []).filter((m) => m.playable !== false);

@@ -1,0 +1,368 @@
+{
+  "top": {
+    "turn": "第 {{n}} 回合",
+    "market": "股市行情",
+    "suspended": "停牌",
+    "spectating": "觀戰中",
+    "room": "房間",
+    "log": "日誌",
+    "chat": "聊天",
+    "menu": "選單"
+  },
+  "stat": {
+    "cash": "現金",
+    "deposit": "存款",
+    "points": "點券"
+  },
+  "chips": {
+    "you": "你",
+    "out": "出局",
+    "offline": "離線",
+    "autopilot": "託管"
+  },
+  "vehicle": {
+    "walk": "🚶 步行",
+    "moto": "🛵 機車",
+    "car": "🚗 汽車",
+    "engineer": "🚜 工程車"
+  },
+  "days": "{{n}} 天",
+  "status": {
+    "jail": "坐牢 {{n}} 天",
+    "hospital": "住院 {{n}} 天",
+    "hotel": "住旅館 {{n}} 天",
+    "away": "不在場 {{n}} 天",
+    "hibernate": "冬眠 {{n}} 天",
+    "sleepwalk": "夢遊 {{n}}",
+    "stay": "停留 {{n}}",
+    "tortoise": "烏龜 {{n}}",
+    "bankReject": "拒絕往來 {{n}} 天",
+    "insurance": "保險 {{n}} 天",
+    "bomb": "💣 {{n}} 步",
+    "loan": "貸款 {{n}}（{{due}} 到期）"
+  },
+  "out": {
+    "bankrupt": "已破產",
+    "surrender": "已投降"
+  },
+  "mini": {
+    "title": "小地圖",
+    "owner": "{{n}}P 所有",
+    "unowned": "無主"
+  },
+  "action": {
+    "cards": "卡片",
+    "items": "道具",
+    "stock": "股票",
+    "board": "公佈欄",
+    "info": "檢視",
+    "more": "更多",
+    "moreTitle": "展開回合選單（公佈欄、投降等）",
+    "autopilot": "託管",
+    "autopilotOn": "託管中",
+    "focus": "回到當前玩家",
+    "speed": "動畫速度",
+    "skip": "跳過動畫",
+    "diceCount": "骰子數",
+    "diceN": "{{n}} 顆骰子",
+    "roll": "擲骰（{{n}} 顆）",
+    "locked": {
+      "stay": "停留（原地結算）",
+      "tortoise": "烏龜（走 1 步）",
+      "sleepwalk": "夢遊（自動前進）"
+    }
+  },
+  "waiting": {
+    "text": "等待 {{who}} {{action}}…",
+    "textAi": "{{who}} 正在思考：{{action}}…",
+    "secs": "{{n}} 秒",
+    "kind": {
+      "TURN_MENU": "行動",
+      "BANK_ATM": "使用提款機",
+      "BANK_COUNTER": "在銀行櫃檯辦理業務",
+      "BUY_LAND": "選擇是否購買 {{lot}}",
+      "UPGRADE_LAND": "選擇是否加蓋 {{lot}}",
+      "BUY_FACILITY": "選擇是否購買 {{lot}}",
+      "BUILD_FACILITY": "選擇在 {{lot}} 興建什麼",
+      "UPGRADE_FACILITY": "選擇是否擴建 {{lot}}",
+      "FACILITY_TYPE": "選擇 {{lot}} 的設施類型",
+      "RESEARCH": "選擇研發專案",
+      "SHOP": "在百貨公司購物",
+      "LOTTERY": "挑選樂透號碼",
+      "BAIL": "考慮保釋",
+      "MINIGAME": "準備小遊戲",
+      "MAGIC_CAST": "在魔法屋施法",
+      "CONSTRUCTION_PICK": "挑選要加蓋的地",
+      "SUBSCRIBE_SHARES": "考慮認購股票",
+      "USE_FREE_CARD": "考慮使用免費卡",
+      "SCAPEGOAT": "考慮嫁禍給誰",
+      "AUCTION_BID": "出價",
+      "BIRTHDAY_PICK": "挑選生日禮物",
+      "DISCARD_CARD": "選擇丟棄的卡片",
+      "DEATH_GOD_TARGET": "選擇死神的目標"
+    }
+  },
+  "decision": {
+    "collapse": "收起回合選單"
+  },
+  "dice": {
+    "sum": "共 {{n}} 步"
+  },
+  "panel": {
+    "cards": "卡片",
+    "items": "道具",
+    "stock": "股市行情",
+    "info": "玩家與地產"
+  },
+  "log": {
+    "title": "事件記錄",
+    "empty": "還沒有事件"
+  },
+  "chat": {
+    "title": "聊天",
+    "placeholder": "說點什麼…",
+    "send": "傳送",
+    "emote": "表情",
+    "disabled": "觀戰聊天已關閉",
+    "tooFast": "說話太快了，稍等一下",
+    "spectatorTag": "觀戰"
+  },
+  "emotes": {
+    "smile": "微笑",
+    "laugh": "大笑",
+    "cry": "哭哭",
+    "angry": "生氣",
+    "shock": "嚇到了",
+    "cool": "酷",
+    "love": "喜歡",
+    "sweat": "流汗",
+    "think": "思考",
+    "sleepy": "犯困",
+    "thumbsUp": "點贊",
+    "clap": "鼓掌",
+    "money": "發財",
+    "broke": "破財",
+    "bomb": "炸彈",
+    "lucky": "好運"
+  },
+  "spectators": {
+    "title": "觀戰",
+    "none": "暫無觀戰者",
+    "you": "你",
+    "kick": "請出",
+    "disabled": "已關閉"
+  },
+  "system": {
+    "playerJoined": "{{nickname}} 加入了房間（{{seatNo}}P）",
+    "playerLeft": "{{nickname}} 離開了房間",
+    "spectatorJoined": "{{nickname}} 進來觀戰",
+    "spectatorLeft": "{{nickname}} 離開了觀戰",
+    "hostChanged": "{{nickname}} 成為房主",
+    "autopilotOn": "{{nickname}} 進入托管（{{reason}}）",
+    "autopilotOff": "{{nickname}} 解除託管",
+    "disconnected": "{{nickname}} 斷線了",
+    "reconnected": "{{nickname}} 重新連上了",
+    "kicked": "{{nickname}} 被請出房間",
+    "timeoutDefault": "{{seatNo}}P 超時，已由電腦代為決定",
+    "gamePaused": "對局暫停（{{reason}}）",
+    "gameResumed": "對局繼續",
+    "gameSaved": "已存檔",
+    "gameLoaded": "已讀取存檔「{{name}}」",
+    "aiPaused": "{{seatNo}}P 的電腦連續出錯，對局已暫停",
+    "internalError": "對局內部錯誤，房間已暫停，請房主稍後繼續",
+    "serverRestored": "伺服器已重啟並恢復本房間，等待玩家回來"
+  },
+  "systemReason": {
+    "manual": "手動",
+    "afk": "連續超時",
+    "disconnect": "斷線",
+    "left": "離開",
+    "host": "房主暫停",
+    "all_away": "全員離線"
+  },
+  "toast": {
+    "stale": "已超時，電腦代為決定"
+  },
+  "error": {
+    "BAD_HANDSHAKE": "連線參數無效，請重新整理頁面",
+    "PROTOCOL_MISMATCH": "客戶端版本過舊，請重新整理頁面",
+    "BAD_REQUEST": "請求格式不正確",
+    "RATE_LIMITED": "操作太頻繁，請稍後再試",
+    "SERVER_BUSY": "伺服器繁忙，請稍後再試",
+    "INTERNAL": "伺服器內部錯誤",
+    "ROOM_NOT_FOUND": "房間不存在或已關閉",
+    "ROOM_FULL": "房間已滿",
+    "ROOM_IN_GAME": "對局已開始，只能觀戰",
+    "ALREADY_IN_ROOM": "你已在另一個進行中的房間裡，請先離開",
+    "NOT_IN_ROOM": "你不在這個房間裡",
+    "NOT_HOST": "只有房主可以這樣做",
+    "NOT_A_PLAYER": "觀戰者不能進行此操作",
+    "SEAT_TAKEN": "座位已被佔用",
+    "CHARACTER_TAKEN": "角色已被其他人選擇",
+    "NOT_ALL_READY": "還有玩家沒有準備",
+    "NOT_ENOUGH_PLAYERS": "至少需要 2 名參與者",
+    "SPECTATORS_DISABLED": "房間不允許觀戰",
+    "MAP_UNAVAILABLE": "地圖不可用",
+    "GAME_PAUSED": "對局已暫停",
+    "GAME_OVER": "對局已結束",
+    "NOT_YOUR_DECISION": "現在不是你的決策",
+    "STALE_DECISION": "決策已失效（可能已超時）",
+    "INVALID_ACTION": "操作不合法",
+    "MINIGAME_INVALID": "小遊戲資料無效",
+    "MINIGAME_TOO_EARLY": "小遊戲提交過早",
+    "MINIGAME_TOO_LATE": "小遊戲已超時",
+    "SAVE_NOT_FOUND": "存檔不存在",
+    "SAVE_INCOMPATIBLE": "存檔與當前版本或地圖不相容",
+    "SAVE_FORBIDDEN": "你無權讀取這個存檔",
+    "CHAT_DISABLED": "聊天已關閉",
+    "ACCESS_REQUIRED": "需要通關密語或邀請連結才能進入"
+  },
+  "errorReason": {
+    "timeout": "請求超時，請檢查網路",
+    "disconnected": "連線已斷開",
+    "replaced": "已在其他頁面開啟，請在本頁選擇「在這裡繼續」"
+  },
+  "board": {
+    "waiting": "等待對局資料…",
+    "loadingMap": "正在載入地圖…",
+    "error": "棋盤載入失敗：{{reason}}",
+    "contextLost": "圖形重建中…",
+    "rotateLeft": "向左旋轉",
+    "rotateRight": "向右旋轉"
+  },
+  "paused": {
+    "title": "對局已暫停",
+    "host": "房主暫停了對局",
+    "all_away": "所有玩家都離線了"
+  },
+  "over": {
+    "title": "遊戲結束",
+    "winner": "{{who}} 獲勝",
+    "noWinner": "沒有贏家",
+    "rematch": "再來一局",
+    "leave": "離開房間",
+    "reason": {
+      "timeLimit": "遊戲時間到",
+      "wealthTarget": "資產達到目標",
+      "lastStanding": "只剩一人",
+      "noHumansLeft": "真人玩家全部出局"
+    }
+  },
+  "menu": {
+    "title": "系統選單",
+    "pause": "暫停對局",
+    "resume": "繼續對局",
+    "settings": "設定",
+    "leave": "離開房間"
+  },
+  "saves": {
+    "save": "存檔",
+    "saved": "已存檔",
+    "namePlaceholder": "存檔名稱",
+    "hostOnly": "只有房主可以存檔和讀檔",
+    "list": "伺服器存檔",
+    "empty": "還沒有存檔",
+    "unofficial": "非官方存檔",
+    "incompatible": "不相容",
+    "tablesMismatch": "資料版本不同",
+    "tablesMismatchNote": "（存檔的資料版本與伺服器不同，個別數值可能有出入）",
+    "auto": "自動",
+    "day": "第 {{n}} 天",
+    "load": "讀取",
+    "loaded": "已讀取存檔，請玩家重新入座",
+    "delete": "刪除"
+  },
+  "settings": {
+    "title": "設定",
+    "nickname": "暱稱",
+    "speed": "動畫速度",
+    "autoFollow": "鏡頭自動跟隨當前玩家",
+    "muted": "靜音",
+    "audio": {
+      "title": "聲音",
+      "master": "主音量",
+      "bgm": "背景音樂",
+      "sfx": "音效",
+      "voice": "角色語音",
+      "ui": "介面音",
+      "voiceEnabled": "角色語音（含卡片、道具台詞與新聞播報）",
+      "muteInBackground": "切到背景時靜音"
+    },
+    "quality": "畫質",
+    "qualities": {
+      "auto": "自動",
+      "high": "高",
+      "mid": "中",
+      "low": "低"
+    },
+    "colorBlind": "色弱模式（強化玩家形狀標記）",
+    "leftHanded": "左手模式（行動區放左側）",
+    "skin": "皮膚",
+    "skins": {
+      "auto": "自動（有原版素材包且地圖匹配時用原版）",
+      "original": "原版",
+      "procedural": "程式化"
+    },
+    "skinKinds": {
+      "original": "原版",
+      "procedural": "程式化"
+    },
+    "skinCurrent": "當前介面：{{skin}}；棋盤：{{board}}",
+    "skinPack": "原版素材包：{{id}}",
+    "skinNoPack": "原版素材包：未檢測到",
+    "skinReason": "原因：{{reason}}",
+    "skinHint": "原版素材僅供私人與朋友遊玩；原版皮膚下介面文字為繁體。"
+  },
+  "reconnect": {
+    "title": "連線中斷，正在重連…",
+    "titleN": "連線中斷，正在重連（第 {{n}} 次）…",
+    "autopilot": "斷線超過 15 秒後，你的角色會由電腦託管；重連後自動恢復。",
+    "replacedTitle": "已在其他頁面開啟",
+    "replacedBody": "同一身份在另一個標籤頁或裝置上登入了，這個頁面已斷開。",
+    "reclaim": "在這裡繼續",
+    "fatalTitle": "無法連線",
+    "reload": "重新整理頁面"
+  },
+  "rotate": {
+    "title": "請把手機橫過來",
+    "body": "對局畫面只支援橫屏，旋轉裝置後繼續。"
+  },
+  "skin": {
+    "reason": {
+      "setting": "設定為程式化皮膚",
+      "pack-loading": "正在檢查原版素材包…",
+      "pack-absent": "本站沒有原版素材包",
+      "pack-invalid": "原版素材包清單校驗失敗",
+      "pack-error": "原版素材包暫時無法訪問",
+      "access-required": "需要通關密語才能使用原版素材",
+      "no-board": "素材包不含棋盤素材",
+      "map-missing": "素材包裡沒有這張地圖的原版棋盤",
+      "map-mismatch": "地圖資料與素材包不匹配（需要重新生成素材包）",
+      "group-missing": "這張地圖的原版素材不完整",
+      "renderer-unavailable": "原版棋盤尚未完成，暫用程式化棋盤",
+      "renderer-failed": "原版棋盤載入失敗，已改用程式化棋盤"
+    },
+    "mismatch": {
+      "map-id": "地圖 id 不同（素材包 {{expected}}，當前 {{actual}}）",
+      "source": "原始地圖檔案不同",
+      "geometry": "節點、地塊或企業的座標 / 朝向有變化"
+    },
+    "unlock": "輸入通關密語"
+  },
+  "access": {
+    "title": "需要通關密語",
+    "intro": "本站的原版素材僅供私人與朋友遊玩。請輸入房主告訴你的通關密語，或開啟房主發來的邀請連結。",
+    "passcode": "通關密語",
+    "submit": "進入",
+    "checking": "驗證中…",
+    "redeeming": "正在驗證邀請連結…",
+    "privateNote": "密語只用於換取本瀏覽器的通行憑證，不會儲存在頁面上。",
+    "error": {
+      "badPasscode": "密語不正確",
+      "rateLimited": "嘗試次數過多，請 {{n}} 秒後再試",
+      "grantInvalid": "邀請連結已失效（過期或次數已用完），請向房主索取新連結或輸入密語",
+      "network": "無法連線伺服器，請稍後再試",
+      "generic": "驗證失敗，請稍後再試"
+    }
+  }
+}

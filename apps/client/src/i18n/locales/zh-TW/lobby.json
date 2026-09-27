@@ -1,0 +1,195 @@
+{
+  "home": {
+    "title": "大富翁4 連線版",
+    "tagline": "4 人連線 · 伺服器權威 · 美術自制致敬風格",
+    "nickname": "你的暱稱",
+    "nickEmpty": "請先填寫暱稱（1–12 個字）",
+    "createRoom": "建立房間",
+    "joinRoom": "輸入房間號加入",
+    "codePlaceholder": "6 位房間號",
+    "codeInvalid": "房間號是 6 位數字",
+    "join": "加入",
+    "watch": "觀戰",
+    "solo": "單機對戰電腦",
+    "settings": "設定",
+    "devMap": "地圖預覽",
+    "devGallery": "美術畫廊",
+    "devDecisions": "對話方塊樣板",
+    "loadSave": "讀取存檔",
+    "loadTitle": "讀取存檔",
+    "loadHint": "選一個存檔，會新建一個私密房間並讀檔：存檔裡的玩家進房後自動回到原座位，其餘座位可以認領或補電腦。也可以匯入 .r4save 檔案。"
+  },
+  "closed": {
+    "dissolved": "房間 {{code}} 已被房主解散",
+    "kicked": "你已被房主請出房間 {{code}}",
+    "idle": "房間 {{code}} 已關閉（長時間無人）",
+    "server": "伺服器維護，房間 {{code}} 已關閉"
+  },
+  "create": {
+    "title": "建立房間",
+    "submit": "建立",
+    "creating": "正在建立…",
+    "quick": "快速局（1 年 / 10 倍）"
+  },
+  "settings": {
+    "map": "地圖",
+    "fund": "總資金",
+    "fundValue": "{{n}} 萬",
+    "vehicle": "行進方式",
+    "tenure": "地契",
+    "timeLimit": "遊戲時間",
+    "win": "勝利條件",
+    "rules": "規則",
+    "minigames": "小遊戲",
+    "timer": "決策計時",
+    "visibility": "房間",
+    "spectators": "允許觀戰",
+    "aiCount": "電腦補位",
+    "aiCountValue": "{{n}} 個",
+    "aiPreset": "電腦個性"
+  },
+  "maps": {
+    "taiwan": "台灣",
+    "test": "測試小圖",
+    "test-allkinds": "測試圖（全部落點）"
+  },
+  "vehicle": {
+    "walk": "步行",
+    "moto": "機車",
+    "car": "汽車"
+  },
+  "tenure": {
+    "unlimited": "永久",
+    "2y": "2 年",
+    "1y": "1 年",
+    "6m": "6 個月",
+    "3m": "3 個月",
+    "1m": "1 個月"
+  },
+  "timeLimit": {
+    "0": "無限",
+    "30": "1 個月",
+    "91": "3 個月",
+    "182": "半年",
+    "365": "1 年",
+    "730": "2 年"
+  },
+  "win": {
+    "none": "破產淘汰",
+    "multiple": "資產達到 {{n}} 倍"
+  },
+  "rules": {
+    "program": "原版程式",
+    "manual": "說明書",
+    "custom": "自定義"
+  },
+  "minigames": {
+    "play": "親自玩",
+    "skip": "跳過（直接結算）"
+  },
+  "timer": {
+    "fast": "快（減半）",
+    "normal": "普通",
+    "slow": "慢（加倍）",
+    "off": "不限時"
+  },
+  "visibility": {
+    "private": "私密（憑房間號）",
+    "public": "公開（大廳可見）"
+  },
+  "aiPreset": {
+    "character": "按角色（原版）",
+    "gentle": "乖寶寶 · 簡單",
+    "normal": "普通人 · 普通",
+    "cunning": "大老奸 · 困難"
+  },
+  "yes": "是",
+  "no": "否",
+  "phase": {
+    "lobby": "等待中",
+    "playing": "對局中",
+    "paused": "暫停",
+    "ended": "已結束"
+  },
+  "public": {
+    "title": "公開房間",
+    "refresh": "重新整理",
+    "empty": "暫時沒有公開房間",
+    "join": "加入",
+    "watch": "觀戰"
+  },
+  "room": {
+    "title": "房間 {{code}}",
+    "entering": "正在進入房間 {{code}}…",
+    "invalidCode": "房間號無效",
+    "spectating": "觀戰中",
+    "fellBackToSpectator": "房間已滿或已開局，你已作為觀戰者加入",
+    "ready": "準備",
+    "unready": "取消準備",
+    "start": "開始遊戲",
+    "startHint": "至少 2 名參與者、其他真人都準備後才能開始",
+    "toSpectator": "改為觀戰",
+    "leave": "離開房間",
+    "dissolve": "解散房間",
+    "settings": "房間設定",
+    "editSettings": "修改設定",
+    "saveSettings": "儲存",
+    "cancel": "取消",
+    "loadSave": "讀取存檔"
+  },
+  "seat": {
+    "label": "{{n}}P",
+    "host": "房主",
+    "you": "你",
+    "empty": "空位",
+    "ai": "電腦",
+    "noCharacter": "未選角色",
+    "randomCharacter": "開局隨機角色",
+    "offline": "離線",
+    "ready": "已準備",
+    "notReady": "未準備",
+    "addAi": "補電腦",
+    "removeAi": "移除電腦",
+    "take": "坐這裡",
+    "kick": "踢出",
+    "makeHost": "轉讓房主"
+  },
+  "picker": {
+    "title": "選擇角色",
+    "prev": "上一個",
+    "next": "下一個",
+    "select": "選這個",
+    "selected": "已選擇",
+    "taken": "已被 {{n}}P 選走"
+  },
+  "invite": {
+    "code": "房間號",
+    "link": "邀請連結",
+    "copy": "複製連結",
+    "copyWatch": "複製觀戰連結",
+    "copied": "已複製到剪貼簿",
+    "copyFailed": "複製失敗，請手動複製",
+    "qr": "QR 碼",
+    "qrAlt": "邀請QR 碼",
+    "grantNote": "連結內含訪問授權：24 小時內有效，最多 {{uses}} 次",
+    "grantFailed": "生成授權失敗，已複製普通連結",
+    "guestNoGrant": "你是通過邀請連結進入的，不能再生成授權；朋友需要向房主索取連結或密語"
+  },
+  "solo": {
+    "title": "單機對戰",
+    "starting": "正在準備單機對局（補 3 個電腦）…"
+  },
+  "saved": {
+    "banner": "已讀取存檔「{{name}}」· {{date}} · 第 {{day}} 天",
+    "hint": "存檔裡的玩家進房後自動回到原座位；其餘座位可認領或補電腦。",
+    "origin": "原：{{character}} / {{nickname}}",
+    "unclaimed": "待認領",
+    "claim": "認領",
+    "fillAi": "補電腦",
+    "notInSave": "未使用",
+    "characterLocked": "讀檔后角色按存檔鎖定。",
+    "startHint": "還有座位待認領（{{seats}}）：等玩家認領，或由房主補電腦",
+    "aiPresetSaved": "存檔設定：{{preset}}",
+    "aiStandIn": "電腦代打（沿用存檔裡的設定）"
+  }
+}

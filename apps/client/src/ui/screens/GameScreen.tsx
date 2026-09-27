@@ -1,21 +1,25 @@
 // 对局页（design/client.md §5.1 桌面布局 + §5.2 手机横屏紧凑右栏；竖屏阻断式旋转遮罩）：
 // 棋盘（BoardCanvas，挂载一次）+ HUD（顶栏、玩家面板、玩家条、小地图、行动区、等待条、决策层、横幅、骰子、日志、聊天、菜单）。
 // 地图按 view.dataRef 经 GET /api/maps/:id?h= 加载；决策倒计时的服务器时钟与棋盘桥由这里提供给对话框。
+// 原版皮肤 A5：皮肤判定（useGameSkin：素材包、地图绑定、界面语言）决定棋盘用哪个渲染器；棋盘只经 BoardSurface 访问
+// （镜头、旋转 0..7、锚点、视口框）；门禁页宿主挂在这里（素材包 401 时显示，门禁开启时定期续期 cookie）。
 import type { SeatIndex } from '@rich4/shared/engine';
 import type { RoomView } from '@rich4/shared/net';
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useClient } from '../../app/services';
-import type { BoardController } from '../../game/BoardController';
 import type { Insets } from '../../game/camera/Camera';
-import type { Pt, Rotation } from '../../game/iso/projection';
+import type { Pt } from '../../game/iso/projection';
 import { useTx } from '../../i18n/tx';
 import { installMinigames } from '../../minigames';
+import type { BoardControllerLike, BoardSurface, SurfaceRotation } from '../../skin/BoardSurface';
+import { useGameSkin } from '../../skin/useGameSkin';
 import { useConnectionStore } from '../../store/connectionStore';
 import { currentSeat, useGameStore } from '../../store/gameStore';
 import { mapKey, useMapStore } from '../../store/mapStore';
 import { mySeat } from '../../store/roomStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useUiStore } from '../../store/uiStore';
+import { AccessGateHost } from '../access/AccessGateHost';
 import { DecisionClockProvider } from '../decisions/clock';
 import { type BoardBridge, BoardBridgeContext } from '../decisions/targeting';
 import { ActionPad } from '../hud/ActionPad';
@@ -79,14 +83,16 @@ export default function GameScreen({ room, onLeave }: { room: RoomView; onLeave(
   const mapId = view?.dataRef.mapId ?? null;
   const mapHash = view?.dataRef.mapHash ?? null;
   const entry = useMapStore((s) => (mapId && mapHash ? (s.entries[mapKey(mapId, mapHash)] ?? null) : null));
-  const [ctrl, setCtrl] = useState<BoardController | null>(null);
+  const [ctrl, setCtrl] = useState<BoardControllerLike | null>(null);
+  const [surface, setSurface] = useState<BoardSurface | null>(null);
   const [bridge, setBridge] = useState<BoardBridge | null>(null);
-  const [rotation, setRotation] = useState<Rotation>(0);
+  const [rotation, setRotation] = useState<SurfaceRotation>(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const topRef = useRef<HTMLElement>(null);
   const rightRef = useRef<HTMLElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const insets = useHudInsets(topRef, rightRef, bottomRef);
+  const skin = useGameSkin(entry?.def ?? null);
 
   useEffect(() => {
     if (!mapId || !mapHash) return;
@@ -111,45 +117,36 @@ export default function GameScreen({ room, onLeave }: { room: RoomView; onLeave(
     installMinigames(client);
   }, [client]);
 
-  const onBoardReady = useCallback((c: BoardController | null, b: BoardBridge | null) => {
+  const onBoardReady = useCallback((c: BoardControllerLike | null, b: BoardBridge | null, s: BoardSurface | null) => {
     setCtrl(c);
     setBridge(b);
-    if (c) setRotation(c.renderer.rotation);
+    setSurface(s);
+    if (s) setRotation(s.rotation);
   }, []);
 
-  const viewport = useCallback((): Pt[] | null => {
-    if (!ctrl) return null;
-    const cam = ctrl.renderer.camera;
-    const { width: w, height: hh } = ctrl.renderer.app.screen;
-    return [
-      cam.screenToWorld({ x: 0, y: 0 }),
-      cam.screenToWorld({ x: w, y: 0 }),
-      cam.screenToWorld({ x: w, y: hh }),
-      cam.screenToWorld({ x: 0, y: hh }),
-    ];
-  }, [ctrl]);
+  const viewport = useCallback((): Pt[] | null => surface?.viewportCorners() ?? null, [surface]);
 
   const panTo = useCallback(
     (p: Pt) => {
-      if (!ctrl) return;
-      ctrl.renderer.camera.onUserGesture();
-      void ctrl.renderer.camera.panTo(p, 400);
+      if (!surface) return;
+      surface.camera.onUserGesture();
+      void surface.camera.panTo(p, 400);
     },
-    [ctrl],
+    [surface],
   );
 
   const focusMe = useCallback(() => {
-    if (!ctrl || !view) return;
+    if (!ctrl || !surface || !view) return;
     const seat = (mySeat(room) ?? currentSeat(view)) as SeatIndex | null;
     if (seat === null) return;
-    const a = ctrl.anchorPos({ seat });
-    if (a) void ctrl.renderer.camera.panTo(a, 400);
+    const a = surface.anchorPos({ seat });
+    if (a) void surface.camera.panTo(a, 400);
     ctrl.follow(seat);
-  }, [ctrl, view, room]);
+  }, [ctrl, surface, view, room]);
 
   const rotate = (d: number): void => {
-    if (!ctrl) return;
-    setRotation(ctrl.renderer.rotate(d));
+    if (!surface) return;
+    setRotation(surface.rotate(d));
   };
 
   if (!view) {
@@ -172,8 +169,14 @@ export default function GameScreen({ room, onLeave }: { room: RoomView; onLeave(
           data-phase={room.phase}
           data-left={leftHanded ? 'true' : 'false'}
         >
-          {entry?.def && map ? (
-            <BoardCanvas def={entry.def} map={map} insets={insets} onReady={onBoardReady} />
+          {entry?.def && map && !skin.waitForPack ? (
+            <BoardCanvas
+              def={entry.def}
+              map={map}
+              insets={insets}
+              skin={skin.resolution.board}
+              onReady={onBoardReady}
+            />
           ) : (
             <div className={h.board}>
               <p className={h.boardNote} role="status">
@@ -235,6 +238,7 @@ export default function GameScreen({ room, onLeave }: { room: RoomView; onLeave(
           <GameOverPanel view={view} room={room} onLeave={onLeave} />
           <SystemMenu room={room} open={menuOpen} onOpenChange={setMenuOpen} onLeave={onLeave} />
           <RotateHint />
+          <AccessGateHost renew />
         </main>
       </BoardBridgeContext.Provider>
     </DecisionClockProvider>

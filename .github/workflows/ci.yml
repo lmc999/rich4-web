@@ -53,3 +53,45 @@ jobs:
 
       - name: Guard - layer dependencies
         run: npm run check:deps
+
+  browser:
+    # 原版皮肤 §3 修正 6：CI 用合成素材包覆盖原版渲染路径。check 作业没有浏览器（vitest.projects.ts 在缺 Chromium 时
+    # 不加 client-browser），这里单独装 Playwright Chromium 跑 client-browser（BoardSurface、FLIC 画布、AudioEngine），
+    # 再跑全部 E2E（含 skin-pack-load、skin-procedural-fallback、access：真实门禁服务器 + 合成素材包 /pack）。
+    # 合成素材包现场生成到 .cache/（内容全为自绘图形，不入库）；E2E 用 runner 自带的 Google Chrome（channel 'chrome'）。
+    name: client-browser / E2E (synthetic pack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      RICH4_DATASET: fixture
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Synthetic asset pack
+        run: npm run extract -- assets synth --out .cache/synthetic-pack
+
+      - name: Test - client-browser
+        run: npx vitest run --project client-browser
+
+      - name: Test - E2E
+        run: npm run test:e2e
+
+      - name: Upload E2E results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: test-results/e2e
+          retention-days: 7

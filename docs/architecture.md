@@ -650,7 +650,18 @@ SAVE_HMAC_SECRET=<≥32 字节>  TRUST_PROXY=1  LOG_LEVEL=info  MAX_ROOMS=500  R
 ADMIN_TOKEN=<可选>  DEV_CORS_ORIGIN=<仅开发>  RICH4_TEST_MODE=0
 STORE=sqlite|json  BACKUP_ENABLED=1  BACKUP_KEEP=7     # M5（§18.3）；开发默认 DATA_DIR=.cache/data
 RICH4_AI_POLICY=original|basic  RICH4_TIMER_SCALE=<(0,1]，仅 RICH4_TEST_MODE=1 生效>   # §18.6
+STATIC_DIR=<前端构建目录，缺省 apps/client/dist>
+# 原版皮肤（§22.1；original-skin.md U4 / §3 修正 3）
+RICH4_ASSETS_DIR=/assets-rich4   # 只读素材包目录，只认显式设置，目录里有 manifest.json 才启用
+RICH4_ASSETS_VERIFY=quick|full   # 启动校验：结构 + 字节数 | 另外逐文件复算 sha256
+ACCESS_MODE=off|passcode|invite  ACCESS_PASSCODE_HASH=scrypt:<N>:<r>:<p>:<salt>:<hash>  ACCESS_SECRET=<≥32 字节>
+ACCESS_TTL_DAYS=30  ACCESS_GRANTS=1   # 口令 / 邀请码 cookie 有效天数（滑动续期）；允许生成房间邀请授权
+RICH4_ASSETS_ALLOW_UNGATED=0     # 仅本机调试：非 production + PUBLIC_URL 为 localhost + TRUST_PROXY=0 时允许有素材包而不设门禁
 ```
+
+启用素材包（RICH4_ASSETS_DIR 下有 manifest.json）而 ACCESS_MODE=off 时服务器拒绝启动（上面的本机调试例外除外）。
+口令哈希与签名密钥用 `npx tsx scripts/access.ts hash [--stdin]` / `secret` 生成；邀请码与吊销见 `scripts/access.ts invite|list|revoke`
+或 `ADMIN_TOKEN` 保护的 `/admin/access/*`（§22.1）。
 
 ### 9.3 Docker、compose、Caddy
 
@@ -1262,3 +1273,83 @@ RICH4_AI_POLICY=original|basic  RICH4_TIMER_SCALE=<(0,1]，仅 RICH4_TEST_MODE=1
 - **拍卖对话框的建筑预览**（修复）：按地块的真实地主上色（`lotStatus(view, lot).owner`），不再用卖方；卖方仍在「卖方」一行显示。
 
 验证：`npm run check` 全绿（223 个文件 2112 通过 1 跳过）；E2E 12 个 spec 13 个用例全部通过；simulate（original）test-allkinds 限时 365 天 1000 局 `finished=1000 rejects=0 invariantErrors=0 errors=0 actions=1855308 finalHash=7564c5f1685091a8 journalHash=f475e533bfa9de40`（AI 保释的随机数消耗与拍卖 others 口径变化，哈希随之改变）；另跑 `--humans 2` 200 局（锚点每 50 步随结构校验检查）`finished=200 rejects=0 invariantErrors=0 errors=0`。
+
+---
+
+## 22. 原版皮肤 A4 / A5 / A9 实施记录与整合实测（2026-09-27）
+
+本轮完成原版皮肤的服务器素材包与访问门禁（A4）、前端素材包与回退矩阵 / FLC 播放器 / BoardSurface 接缝 / zh-TW 管线 / 门禁页（A5）、音频引擎（A9），随后把三者接通并在本机真实素材包上实测。上位裁决见 design/original-skin.md（U1–U6、§3 修正 1–10）；以下只列实现要点、与设计草案不一致之处和原因。素材包内容始终不入库：CI 与 E2E 只用 `npm run extract -- assets synth` 生成到 `.cache/synthetic-pack` 的合成包。
+
+### 22.1 服务器：`/pack/*` 与访问门禁（A4）
+
+- **配置**（§9.2）：`RICH4_ASSETS_DIR` 只认显式设置、目录里有 manifest.json 才启用；`RICH4_ASSETS_VERIFY=quick|full`（任何不符整体不启用）；`ACCESS_MODE=off|passcode|invite`、`ACCESS_PASSCODE_HASH`（scrypt，格式 `scrypt:<N>:<r>:<p>:<salt>:<hash>`，不用设计稿的 `$` 分隔：compose 的 .env 会对 `$` 插值；解析时仍接受 `$`）、`ACCESS_SECRET`（≥32 字节）、`ACCESS_TTL_DAYS=30`、`ACCESS_GRANTS=1`。空字符串视为未设置。**启动守卫**（修正 3）：启用素材包而门禁为 off 时 ConfigError，只有「非 production + PUBLIC_URL 为 localhost + TRUST_PROXY=0 + 显式 RICH4_ASSETS_ALLOW_UNGATED=1」四条同时满足才放行，并打印高亮告警。
+- **`/pack/*` 永远注册**（修正 4）：未启用时 404 JSON（reason packDisabled），只提供 manifest 白名单里的文件；带哈希文件 `private, max-age=2592000`，manifest `private, no-cache` + `ETag=packId`、启动时预压缩 br / gzip；单段 Range（206 / 416 / If-Range）；所有 /pack 响应带 nosniff、CORP same-origin、X-Robots-Tag。SPA 回退排除 `/pack` 与 `/api`，`/robots.txt` 为 `Disallow: /`。
+- **门禁**：cookie `r4_access=v1.<exp>.<epoch>.<kind>.<HMAC>`（kind p 口令 / i 邀请码 / g 房间授权），HttpOnly、SameSite=Lax、https 时 Secure；`/api`、manifest、GET `/api/access`、Socket.IO 握手响应上滑动续期。口令 scrypt（线程池）+ timingSafeEqual，POST 必须是 application/json。限流：按 IP 退避（前 5 次免费，之后 1s→30s 封顶，30 分钟清零）+ 全局令牌桶软上限（排队，超过 10s 才 429），不做硬锁。**房间授权**（U4）：24 小时、8 次、只存 sha256、绑定 epoch；g 会话不能再生成授权（防链式扩散），已持有效 cookie 的人兑换不消耗次数。邀请码存 sqlite `access_invites/access_meta/access_grants`（`CREATE IF NOT EXISTS`，不升 `DB_SCHEMA_VERSION`；STORE=json 时 `DATA_DIR/access.db`）。`epoch+1` 一键吊销（每秒至多读一次库，另一进程的 CLI 吊销 1 秒内生效）；吊销不强制断开已建立的 Socket（下次握手被拒），免得踢掉进行中的对局。
+- **接口**：`GET /api/access`（状态 + `pack: packId|null`，未通过门禁恒为 null）、`POST /api/access {passcode}`（口令模式也接受邀请码）、`/api/access/grant`、`/redeem`、`/logout`；`ADMIN_TOKEN` 保护的 `/admin/access/invites`（GET / POST / DELETE）与 `/admin/access/revoke`（Docker 部署不进容器即可管理）。受保护请求失败 401 `ACCESS_REQUIRED{reason}`；`io.use` 先查门禁（先于 BAD_HANDSHAKE / PROTOCOL_MISMATCH）。
+- **CLI**：`npx tsx scripts/access.ts hash [--stdin] | secret | invite | list | revoke`（根 package.json 未加 `npm run access`）。**部署**：`deploy/Dockerfile`（构建期发现原版 / 派生文件即失败，镜像扫描 0）、`deploy/docker-compose.yml`（`../rich4-assets:/assets-rich4:ro`、TRUST_PROXY=1）、`deploy/.env.example`（缺省 ACCESS_MODE=passcode）、`deploy/Caddyfile`（/pack 不再压缩）。
+
+### 22.2 前端：素材包、回退矩阵、FLC、BoardSurface、zh-TW、门禁页（A5）
+
+- **PackClient**（`skin/pack`）：`/pack/manifest.json`（no-cache），404 / 204 / 非 JSON / zod 或一致性校验失败 / 5xx / 网络错误一律按「没有素材包」，401 → 门禁页；逻辑路径经 `manifest.files[].path` 换成带哈希 URL；按组懒加载并逐个校验图集、地图皮肤与映射表；`checkMap`（修正 9：resourceSha256 + 几何摘要）、`usableEntry`（缺失 / 组失败 / guess → null）、`audioFile`、`loadFlic`。
+- **皮肤判定**（`skin/resolve.ts` 纯函数矩阵 + `skinStore`）：设置 auto / original / procedural；素材包发现先 GET `/api/access`，门禁开启且已通过（或状态里 `pack` 非空、开发构建、`?pack=1`）才请求 manifest，门禁 off 的生产构建不请求（避免每局一个 404 控制台错误）。原版判定后预取当前地图组，失败记 group-missing 回退。界面语言与主题只在对局页内随判定切换（原版 → zh-TW + `<html data-skin="original" lang="zh-TW">` + `local('MingLiU')` 字体栈；离开对局页恢复）。
+- **FLC**（`skin/flic`，自写）：8 位 FLC 全部子块、0xF100 前缀、循环帧与 Panel#20 COPY 怪癖；FlicPlayer 由 AnimClock 驱动、`playFit` 规划（原速 → 加速 ≤2× → trim → 均匀跳帧）。本机 105 段 FLC / 3204 帧块与 extract 解码器逐帧一致。
+- **BoardSurface 接缝**（修正 7）：统一旋转口径 0..7（程序化只用偶数）、镜头门面、anchorPos、测试钩子同形；`boardRegistry` 供 A6 注册原版渲染器，未注册或创建失败回退程序化（renderer-unavailable / renderer-failed）。Camera 缩放上下限参数化；EventPlayer 调 handler 时 `ctx.at = {epoch, seq, eventIndex}`。
+- **zh-TW**：`scripts/gen-zh-tw.ts` 用 opencc-js cn→twp 生成 15 个 `locales/zh-TW/*.json` 并入库（保护 `{{占位符}}`，再套 `i18n/zhTw.ts` 的词汇与键覆盖表），`--check` 校验新鲜度；client-unit 测试键集、占位符与入库文件一致。改了 zh-CN 语言包要重跑生成器。
+- **门禁页**（`ui/access`）：AccessGate（口令表单；`#g=` 片段先清掉再兑换）、AccessGateHost（对局页常驻，门禁开启时每 30 分钟 GET `/api/access` 续期）、`requireAccess`（没有宿主时自挂全屏浮层）；InviteLink 在可以生成授权时直接把邀请框换成 `/r/<code>#g=<token>`（`data-grant="true"`），受邀访客提示不能再生成授权。
+
+### 22.3 音频（A9）
+
+- **AudioEngine**（`audio/`）：master + bgm / sfx / voice / ui 总线（dB 曲线）；首次手势解锁（含 iOS 媒体元素与 audioSession）；后台挂起并记下音乐位置；SFX 解码缓存（按字节 LRU）、同键并发 ≤4、加载超过 400ms 作废；Opus 优先、失败换 m4a；语音单通道按原版阻塞语义（每句至少停留 1000ms），有语音时 BGM 压低 6dB；棋盘曲 `<audio>` + MediaElementSource 流式轮播，场景曲 AudioBuffer loopStart/loopEnd 无缝循环（过长或解码失败退回元素），场景栈续播、noResume（开局设定、结算、节日）。
+- **导演层与映射**：`presentation/soundMap.ts` 改为 `{sfx?, voice?, scene?}` 按事件类型穷举；`selectors.ts` 的 sfx / voice / scene 选择（语音按 `mix32(epoch, seq, eventIndex)` 确定性选变体与概率，所有客户端听到同一句）；guess 置信度的原版音效缺省走 ZzFX（18 个自拟预设，随机度 0），flicCovered 的演出在 FLIC 播放器接管后由它出声（`flicSfx`，A8 之前为 false）。
+- **来源**：`manifestAudioSource(manifest, urlOf)` 只依赖已校验的 manifest；`loadAudioMaps` 逐张 zod + 交叉引用校验，不合格整张按缺失。试听页 `/dev/audio`（音乐进出场景核对续播、音效集含置信度、12 角色 × 27 槽语音、道具 / 卡片台词、NPC、新闻、事件映射）。
+
+### 22.4 本轮整合：接线
+
+- **音频接到对局**：`app/audio.ts`（首屏只有开关；`?audio=off` 或没有 Web Audio 时不加载）懒加载 `app/audioWiring.ts`：
+  - `createAudioSystem({ settings: useSettingsStore })`；`GameClient.setAudio(EventAudioHook)`——`presentation/audioHook.ts` 的 `withEventAudio` 包在全部 handler **最外层**（音效 / 语音在 handler 开始时触发，事件场景曲在 handler 结束、封顶或中止后收起），`ctx.audio` 为 `AudioSystem.port()`，EventPlayer 的 onAbort 与离开房间时 `director.reset()`。包装按需进行、以空对象为 Proxy 目标（测试替身常用 Proxy 充当 HandlerMap，原表可能被冻结）。
+  - **素材包**：皮肤判定为原版且素材包就绪时 `applyPack(manifest, { urlOf: PackClient.urlOf, fetchJson })`（映射表 401 → 门禁页），否则只用 ZzFX（没有语音与音乐）。音频跟随 `resolution.skin`：强制程序化或 auto 下地图不匹配时，原版声音也不用。
+  - **场景曲**：房间 / 对局 / 结算与当前场所 → `director.setUi`。场所取本人的决策（BAIL 按 options.where 分监狱 / 医院，MINIGAME 取小游戏种类），否则取他人公开的场所决策（银行 ATM / 柜台、商店、乐透、魔法屋、拍卖；他人的保释与小游戏在 publicInfo 里分不清，不算）；节日由 `holidaySceneOf(view, map)`。
+  - 测试钩子 `window.__rich4.audio = { state, log, music(), clearLog() }`（只在测试钩子开启时）。
+- **设置**：settingsStore 升 v2——`volume.ui`（缺省同音效）、`voiceEnabled`（U1 默认开）、`muteInBackground`（默认开），`migrate` 给旧数据补齐；设置页换成 `AudioSettings`（五路音量、静音、角色语音、后台静音；纵向排列），文案 `hud:settings.audio.*`（zh-TW 词汇表补「台詞」「切到背景」），删掉「音效将在后续版本加入」。
+- **`/dev/audio` 路由**：试听页经 skinStore / PackClient 发现素材包（门禁未通过时弹门禁页，通过后自动重新发现），按 packId 重建试听用的音频系统；vite `optimizeDeps.include` 加 `zzfx`（否则 dev 下首次动态 import 触发依赖重新优化并整页重载）。`PackClient.urlOf(packPath)` 给音频来源用。
+- **门禁接线**：`main.tsx` 启动时 `bootstrapAccess()`（`#g=` 片段 → 门禁页兑换；门禁开启而未通过 → 门禁页）；Socket.IO 握手 `ACCESS_REQUIRED` 时 `requireAccess('socket')`，socketTransport 把它和版本不符一样视为终态（此前每 3 秒重试一次握手），ReconnectOverlay 对此不显示「正在重连」；地图、地图目录、存档导入导出的 `/api` 返回 401 时 `requireAccess('api')`（`noteApiStatus`）。**需要重新载入时门禁页保持显示直到新页面接手**（此前先收起再 `location.replace`，旧页面在导航途中露出并继续请求；E2E 的 evaluate 也会撞上导航），提交成功后按钮停在「验证中」。
+- **地图文案按界面语言**：`pickMapString(strings, key, lang)`；`makeNames` 增加 `lang`（GameClient、等待条、拍卖横幅传 `uiLanguage`），HUD 的名字、股票跑马灯同样取当前语言，`lotLabels` 按语言分别缓存编号表。原版皮肤（zh-TW）下地块 / 股票 / 格子名取 `strings['zh-TW']`。程序化棋盘上的地块标签仍按 BoardView 的 zh-CN（原版棋盘由 A6 负责）。
+
+### 22.5 本轮修复
+
+- **audio/music.ts**：元素模式场景曲在 URL 缺失时提前返回的句柄，stop 访问尚未初始化的 `onEnded`（TDZ ReferenceError；A5 报告的 client-dom 未处理异常，来自 AudioLab 进出场景）。
+- **AudioLab 在开发构建里引擎恒为 disposed**：`useMemo` 建的系统在 StrictMode 的第一次卸载时被 dispose、再挂载时沿用。改为在 effect 里创建并在卸载时释放。
+- **类型检查**：`audioEngine.browser.test.ts` 引入 `vitest/browser` 后，`@vitest/browser` 的 `toHaveTextContent(string|number)` 先于 jest-dom 载入，`dialogs.dom.test` 里的 RegExp 参数报错。`src/vite-env.d.ts`（位于 src 根目录，先于子目录进入类型程序）先引用 `@testing-library/jest-dom/vitest` 的类型。
+- **首屏分包**：`presentation/handlers/gods.ts` 与 `GodBadge` 在运行时引用 `game/actors/godPalettes`（纯数据），它落在 game 分组里，首屏因此 modulepreload 整个 game chunk 与 pixi。game 分组排除这个文件后，首屏 JS gzip 从 450.9 KB 降到 242.4 KB（client.md 预算 450 KB），index.html 不再预载 pixi / game。
+- **E2E 适配**：`newPlayer` 增加 `setup(page)`（打开首页之前装 `page.route`；前端启动时就读门禁状态，之后装的路由对缓存的状态不起作用），`skin-pack-load.spec` 改用它；access 夹具的 `accessStatus` 碰上页面跳转时等载入再读，`enterPasscode` 等新页面载入；`access.spec` 改为断言走界面（启动即门禁页、邀请框直接是授权链接、前端兑换并清掉片段）；门禁开启时 `lobby.spec` 的邀请框断言带授权片段，`reconnect.spec` 的恢复提示接受繁体（门禁 + 素材包下对局页是原版皮肤）。
+
+### 22.6 新增与调整的测试
+
+- client-unit：`presentation/audioHook.test.ts`（包装语义、钩子抛错不影响演出、Proxy 形式的 handler 表；GameClient 每个事件经钩子、`ctx.audio` 与 `ctx.at`、reset 与离开房间时 reset）；`app/audioWiring.test.ts`（UI 状态 → 场景、场所取值、素材包选取、wireAudio 接 GameClient / skinStore / 房间与对局 store，撤销后解除）；`stores.test`（音频默认值、v1 → v2 迁移、音量清洗）；`socketTransport.test`（ACCESS_REQUIRED 终态不重试）；`AudioEngine.test`（元素模式缺曲时弹出不抛错）；`eventText.test`（pickMapString、makeNames 按语言取地块名）。
+- client-dom：`AudioSettings.dom`（界面音、角色语音开关、后台静音写回 store）；`access.dom`（需要重新载入时门禁页保持显示）；`system.dom`（ACCESS_REQUIRED 不出重连遮罩）；`AudioLab.dom`（StrictMode 下自建系统可用）。
+- E2E：新增 `audio.spec`（生产构建懒加载音频、页面点击解锁、事件经导演层放出 ZzFX 音效、设置写回 store、无报错）；`access.spec` 断言走界面。
+
+### 22.7 本机实测（真实素材包 rich4-assets，packId e6f3322db57bdedd；浏览器面板）
+
+服务器 `RICH4_ASSETS_DIR=./rich4-assets ACCESS_MODE=passcode RICH4_DATA_DIR=./rich4-data`（口令哈希与密钥由 `scripts/access.ts` 现场生成，放在 `.cache/`）+ vite dev：
+
+- **门禁页**：打开首页即显示门禁页；错误口令提示「口令不正确」（服务器 401）；正确口令后页面重新载入进入首页，`GET /api/access` 为 `granted, kind p, pack=e6f3322db57bdedd`，`/pack/manifest.json` 200。
+- **邀请链接**：房间页邀请框直接是 `/r/<房间>#g=<token>`，下方提示「链接内含访问授权：24 小时内有效，最多 8 次」；用 `p2.localhost` 隔离 cookie 打开该链接，片段被清掉、兑换成 g 会话（canGrant=false）直接进房，房间页提示「不能再生成授权」。
+- **/pack 资源与皮肤判定**：台湾图开局后 manifest、三张音频映射表、`maps/taiwan.skin.*.json`、27 个 sprites 图集 JSON / 位图、3 个音频文件全部 200（带哈希文件 `private, max-age=2592000`，manifest `private, no-cache`）；`__rich4.skin`：`skin original / board procedural（renderer-unavailable）`、`lang zh-TW`、failedGroups 为空；界面、日志、跑马灯为繁体；设置页显示「當前介面：原版；棋盤：程式化」「原因：原版棋盤尚未完成，暫用程式化棋盤」。受邀者页面同样判定为原版。
+- **音频**：对局中棋盘曲 music.track02 轮播；掷骰 / 走路放 ZzFX（guess 项）、买地放原版 `sfx.049`。`/dev/audio`：解锁后播放棋盘曲、进银行切 music.track14、离开后棋盘曲从断点续播；试听 voice.1050 / 1056 / 1060（opus，200）；控制台除故意输错口令的 401 外没有错误。
+
+### 22.8 验证
+
+- `npm run check` 全绿：typecheck、lint（1020 个文件）、vitest 253 个文件 2380 通过 1 跳过；check-determinism OK（193 个文件）、check-no-original OK（1224 个文件）、check-deps OK（968 个文件）；`npx tsx scripts/gen-zh-tw.ts --check` 最新（15 个文件）。
+- client-browser（`RICH4_CHROMIUM_PATH` 指向 chromium-1228）：8 个文件 28 通过 1 跳过（连跑 4 次，第一次有 1 个用例失败、后 3 次全过，未复现）。
+- E2E（`CI=1 npx playwright test -c e2e/playwright.config.ts`，门禁 off）：16 个 spec 20 个用例全部通过（含 access ×4、skin-pack-load、skin-procedural-fallback 与新增 audio）。
+- E2E（门禁 + 合成素材包：`ACCESS_MODE=passcode ACCESS_PASSCODE_HASH=… ACCESS_SECRET=… RICH4_ASSETS_DIR=.cache/synthetic-pack RICH4_E2E_PASSCODE=…`）：lobby、turn-cycle、reconnect 3 个用例通过；夹具先注入口令，对局页判定为原版皮肤（繁体），邀请框为授权链接。
+- 生产构建：首屏 JS gzip 242.4 KB（本轮之前 450.9 KB），音频引擎、接线与试听页各自懒加载。
+
+### 22.9 遗留
+
+- 原版棋盘（A6）、OrigActor / OrigStage（A7 / A8）、路线 A 外壳与原版对话框（A10–A12）未开始：台湾图的棋盘仍回退程序化；FLIC 播放器未接到演出，`flicSfx` 保持 false，flicCovered 的演出仍放 cue 音效。
+- 界面音（`director.uiCue`：按钮、倒计时最后 5 秒）尚未接到组件；他人的保释 / 小游戏场所曲只在本人决策时播放；隐藏标签页 EventPlayer 走 instant，不放事件声音（设计如此）。
+- guess 置信度的音效 / 语音槽需要人工在 `/dev/audio` 试听核对（A9 清单）；iOS / Android 真机（解锁、切后台、静音键、audioSession）未测，设置里还没有关闭 `audioSession=playback` 的开关。
+- 合成素材包不含音频（features.audio/voice/music 为 false），E2E 只覆盖 ZzFX 回退路径；原版声音的 E2E（开局宣言、进银行切曲续播）需要带音频的合成包。
+- 根 package.json 不在本轮可改范围：`npm run access`、`gen-zh-tw --check` 进 check、`check:bundle` 都还没有。

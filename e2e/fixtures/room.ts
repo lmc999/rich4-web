@@ -2,6 +2,7 @@
 // spectator（第 5 个上下文），以及建房、进房、选角、准备、开局、掷骰、回答决策、读取 HUD 的助手。
 // 对局页通过 window.__rich4（开发 / 测试模式的钩子）等待动画空闲与读取状态；点击一律走 data-testid 的 DOM 按钮。
 import { type Browser, type BrowserContext, test as base, expect, type Page } from '@playwright/test';
+import { E2E_PASSCODE, grantAccess } from './access';
 
 /**
  * 测试页 URL 参数：只提交不播放、关声音、测试构建开关（?test=1：生产构建里也开批尾对账，不一致走 console.error，
@@ -19,9 +20,32 @@ export interface Player {
   errors: string[];
 }
 
-export async function newPlayer(browser: Browser, nickname: string, query = Q): Promise<Player> {
-  const context = await browser.newContext();
+export interface NewPlayerOptions {
+  /** 覆盖 baseURL（access.spec 自带开启门禁的服务器） */
+  baseURL?: string;
+  /**
+   * 访问口令：缺省取 RICH4_E2E_PASSCODE（服务器开启门禁时设置），打开页面前为上下文注入 cookie；
+   * 传 null 表示不注入（测试门禁本身）
+   */
+  passcode?: string | null;
+  /**
+   * 打开首页之前对页面做的准备（例如 page.route 模拟 /api/access 与 /pack/*）：前端启动时就会读一次门禁状态
+   * （bootstrapAccess），之后装的路由对已缓存的状态不起作用
+   */
+  setup?(page: Page): Promise<void>;
+}
+
+export async function newPlayer(
+  browser: Browser,
+  nickname: string,
+  query = Q,
+  o: NewPlayerOptions = {},
+): Promise<Player> {
+  const context = await browser.newContext(o.baseURL ? { baseURL: o.baseURL } : {});
+  const passcode = o.passcode === undefined ? E2E_PASSCODE : o.passcode;
+  if (passcode) await grantAccess(context, passcode);
   const page = await context.newPage();
+  if (o.setup) await o.setup(page);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {

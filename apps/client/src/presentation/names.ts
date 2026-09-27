@@ -86,6 +86,20 @@ export interface NameDeps {
   t: LooseT;
   view(): GameView | null;
   map(): MapIndex | null;
+  /** 当前界面语言（地图文案优先取它；缺省 zh-CN）。原版皮肤下为 zh-TW */
+  lang?(): MapLang;
+}
+
+export type MapLang = 'zh-CN' | 'zh-TW';
+
+/** 地图文案（MapDef.strings）：先取界面语言，缺失时回退另一种；都没有为 null */
+export function pickMapString(
+  strings: Partial<Record<MapLang, Readonly<Record<string, string>>>> | undefined,
+  key: string,
+  lang: MapLang = 'zh-CN',
+): string | null {
+  const other: MapLang = lang === 'zh-TW' ? 'zh-CN' : 'zh-TW';
+  return strings?.[lang]?.[key] ?? strings?.[other]?.[key] ?? null;
 }
 
 /** 带缺省值的 t：键缺失时返回 fallback（i18next 的 defaultValue） */
@@ -94,10 +108,7 @@ function tf(t: LooseT, key: string, fallback: string, params?: Record<string, un
 }
 
 export function makeNames(d: NameDeps): NameKit {
-  const mapString = (key: string): string | null => {
-    const s = d.map()?.def.strings;
-    return s?.['zh-CN']?.[key] ?? s?.['zh-TW']?.[key] ?? null;
-  };
+  const mapString = (key: string): string | null => pickMapString(d.map()?.def.strings, key, d.lang?.());
   const seat = (s: SeatIndex | null): string => {
     if (s === null) return tf(d.t, 'events:names.nobody', '无人');
     const p = d.view()?.players.find((x) => x.seat === s);
@@ -109,7 +120,7 @@ export function makeNames(d: NameDeps): NameKit {
   const lot = (id: LotId): string => {
     const m = d.map();
     if (!m) return id;
-    return lotLabels(m, (k) => mapString(k) ?? k).get(id) ?? id;
+    return lotLabels(m, (k) => mapString(k) ?? k, d.lang?.() ?? 'zh-CN').get(id) ?? id;
   };
   const kit: NameKit = {
     t: d.t,
@@ -128,6 +139,7 @@ export function makeNames(d: NameDeps): NameKit {
           mapString,
           (kind) => tf(d.t, `tiles:kind.${kind}`, kind),
           (lot) => tf(d.t, 'tiles:near', `${lot}旁`, { name: lot }),
+          d.lang?.() ?? 'zh-CN',
         );
         return `${label} #${id}`;
       } catch {

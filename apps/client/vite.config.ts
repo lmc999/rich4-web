@@ -53,8 +53,9 @@ export default defineConfig({
   plugins: [react(), devLocalMaps()],
   resolve: { alias: sharedAliases() },
   // react-dom/client 只由懒加载的小游戏宿主等处引用：依赖预构建中途才发现它会重新打包 React，
-  // 浏览器模式测试与开发页可能出现两份 React（useSyncExternalStore of null），预先声明
-  optimizeDeps: { include: ['react-dom/client'] },
+  // 浏览器模式测试与开发页可能出现两份 React（useSyncExternalStore of null），预先声明。
+  // zzfx 由音频引擎首次需要程序化音效时动态 import：不预先声明时 dev 下会触发依赖重新优化并整页重载
+  optimizeDeps: { include: ['react-dom/client', 'zzfx'] },
   server: {
     port: 5173,
     strictPort: true,
@@ -75,6 +76,9 @@ export default defineConfig({
     proxy: {
       '/socket.io': { target: API_TARGET, ws: true, changeOrigin: true },
       '/api': { target: API_TARGET, ws: true, changeOrigin: true },
+      // 原版皮肤素材包（服务器 /pack/*：manifest 白名单、访问门禁、Range；vite preview 沿用同一组代理）
+      // 键以 ^ 开头按正则匹配：只代理 /pack/ 之下，不误伤 /packages 之类的路径
+      '^/pack/': { target: API_TARGET, changeOrigin: true },
     },
   },
   preview: { port: 4173 },
@@ -94,10 +98,11 @@ export default defineConfig({
             { name: 'i18n', test: /node_modules[\\/](i18next|react-i18next)[\\/]/, priority: 10 },
             // 棋盘渲染与程序化美术（纯 Pixi），只由懒加载的页面引用。
             // 不递归收依赖：否则首屏与 game/ 共用的 shared 模块（以及不含 Pixi 的 game/anim）会被并进 game chunk，
-            // 首屏因此静态依赖 game 与 pixi；game/anim（AnimClock 等纯逻辑）留在首屏
+            // 首屏因此静态依赖 game 与 pixi；game/anim（AnimClock 等纯逻辑）与神明配色表 game/actors/godPalettes
+            // （纯数据，演出 handler 与 HUD 徽章引用）留在首屏
             {
               name: 'game',
-              test: /apps[\\/]client[\\/]src[\\/]game[\\/](?!anim[\\/])/,
+              test: /apps[\\/]client[\\/]src[\\/]game[\\/](?!anim[\\/]|actors[\\/]godPalettes\.ts$)/,
               priority: 5,
               includeDependenciesRecursively: false,
             },

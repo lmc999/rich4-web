@@ -1,0 +1,53 @@
+{
+  "kind": {
+    "property": "地產",
+    "plain": "道路",
+    "park": "公園",
+    "news": "新聞",
+    "fate": "命運",
+    "jail": "監獄",
+    "hospital": "醫院",
+    "penguin": "企鵝挖寶",
+    "balloon": "七彩氣球",
+    "xicong": "喜從天降",
+    "lottery": "樂透",
+    "points50": "得 50 點",
+    "points30": "得 30 點",
+    "points10": "得 10 點",
+    "card": "卡片",
+    "bank": "銀行",
+    "shop": "百貨公司",
+    "magic": "魔法屋"
+  },
+  "lot": {
+    "land": "住宅地",
+    "facility": "設施",
+    "company": "企業"
+  },
+  "landmark": {
+    "hospital": "醫院",
+    "jail": "監獄",
+    "scenery": "景點"
+  },
+  "facility": {
+    "park": "公園",
+    "hotel": "旅館",
+    "mall": "購物中心",
+    "gas": "加油站",
+    "lab": "研究所"
+  },
+  "industry": {
+    "airline": "航空",
+    "hotel": "飯店",
+    "electronics": "電子",
+    "insurance": "保險",
+    "auto": "汽車",
+    "oil": "石油",
+    "bank": "銀行",
+    "dept": "百貨",
+    "construction": "建設",
+    "sect": "宗教",
+    "unknown": "企業"
+  },
+  "near": "{{name}}旁"
+}

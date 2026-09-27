@@ -2,10 +2,19 @@
 // 事件日志（presentation/names）与对话框 / 面板（ui/components/names）共用，保证两处叫法一致。
 import type { MapIndex } from '@rich4/shared/data';
 
-const cache = new WeakMap<MapIndex, Map<string, string>>();
+const cache = new WeakMap<MapIndex, Map<string, Map<string, string>>>();
 
-export function lotLabels(map: MapIndex, mapString: (k: string) => string): Map<string, string> {
-  const hit = cache.get(map);
+/**
+ * 地块 id → 显示名。variant 区分同一张地图的不同文案来源（界面语言 zh-CN / zh-TW：原版皮肤切繁体后编号表要重算），
+ * 同一 variant 必须对应同一个 mapString。
+ */
+export function lotLabels(map: MapIndex, mapString: (k: string) => string, variant = ''): Map<string, string> {
+  let byVariant = cache.get(map);
+  if (!byVariant) {
+    byVariant = new Map();
+    cache.set(map, byVariant);
+  }
+  const hit = byVariant.get(variant);
   if (hit) return hit;
   const byName = new Map<string, string[]>();
   for (const l of [...map.def.lots, ...map.def.companies]) {
@@ -20,7 +29,7 @@ export function lotLabels(map: MapIndex, mapString: (k: string) => string): Map<
       out.set(id, ids.length > 1 ? `${name} ${i + 1}` : name);
     });
   }
-  cache.set(map, out);
+  byVariant.set(variant, out);
   return out;
 }
 
@@ -54,13 +63,14 @@ export function tileLabel(
   mapString: (k: string) => string | null,
   kindName: (kind: string) => string,
   near: (lot: string) => string,
+  variant = '',
 ): string {
   const tile = map.tile(id);
   const named = tile.nameKey ? mapString(tile.nameKey) : null;
   if (named) return named;
   if (tile.kind === 'plain') {
     const lot = frontLotOfTile(map).get(id);
-    if (lot) return near(lotLabels(map, (k) => mapString(k) ?? k).get(lot) ?? lot);
+    if (lot) return near(lotLabels(map, (k) => mapString(k) ?? k, variant).get(lot) ?? lot);
   }
   return kindName(tile.kind);
 }

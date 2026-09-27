@@ -1,6 +1,6 @@
 // socket.io-client 实现的 Transport（architecture §5.8；design/net.md §4.1、§5.1–5.2）。
 // - auth 回调每次（重）连都会重新取值：{token, nickname, protocolVersion, clientVersion}；
-// - 断线自动重连（0.5s 起、上限 8s、±20% 抖动）；握手被拒（PROTOCOL_MISMATCH / BAD_HANDSHAKE）不再重试；
+// - 断线自动重连（0.5s 起、上限 8s、±20% 抖动）；握手被拒（PROTOCOL_MISMATCH / BAD_HANDSHAKE / ACCESS_REQUIRED）不再重试；
 // - 服务器主动断开（'io server disconnect'：优雅停机 / 重启）socket.io 不会自动重连：按 server:notice 的 reconnectInMs
 //   （缺省 SERVER_RECONNECT_MS）加抖动后手动 connect()，连不上时由 socket.io 的退避接着重试（net.md §8.5 第 4 步）；
 // - 被同一 token 的另一页面顶替（session:replaced）时不自动重连，request 立即返回 replaced 错误，由用户在遮罩上接管；
@@ -141,7 +141,8 @@ export function createSocketTransport(o: SocketTransportOptions): Transport {
   }) as (...a: never[]) => void);
   s.on('connect_error', ((err: unknown) => {
     const e = handshakeError(err);
-    if (e && (e.code === 'PROTOCOL_MISMATCH' || e.code === 'BAD_HANDSHAKE')) {
+    // 版本不符、握手非法、访问门禁未通过（ACCESS_REQUIRED：门禁页通过后重新载入页面再握手）都不再重试
+    if (e && (e.code === 'PROTOCOL_MISMATCH' || e.code === 'BAD_HANDSHAKE' || e.code === 'ACCESS_REQUIRED')) {
       s.disconnect();
       setStatus('closed', e);
       return;

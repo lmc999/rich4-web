@@ -8,6 +8,13 @@ import type { BatchCause, GameOverMsg, YourDecision } from '@rich4/shared/net';
 import type { GameView, PendingView } from '@rich4/shared/view';
 import { create } from 'zustand';
 
+/** 日志行的来源：界面语言切换时按新语言重新格式化（原版皮肤 U5：日志一律繁体，包括判定完成之前的开局事件） */
+export interface LogSource {
+  event: GameEvent;
+  /** 提交该事件时的显示态（名字按当时的角色；与之后的显示态结构共享） */
+  view: GameView;
+}
+
 export interface LogLine {
   id: number;
   seq: number;
@@ -15,6 +22,7 @@ export interface LogLine {
   text: string;
   /** 游戏日期（DateNum） */
   date: number;
+  src?: LogSource;
 }
 
 export const LOG_LIMIT = 200;
@@ -63,6 +71,8 @@ export interface GameStoreState {
   setLatest(view: GameView, seq: number): void;
   setAnim(a: AnimState): void;
   pushLog(lines: Omit<LogLine, 'id'>[]): void;
+  /** 按当前语言重排带来源的日志行（format 返回 null 时保留原文） */
+  relocalizeLog(format: (src: LogSource) => string | null): void;
   setSubmitting(id: string | null): void;
   setOver(o: GameOverMsg | null): void;
   clear(): void;
@@ -149,6 +159,19 @@ export const useGameStore = create<GameStoreState>()((set, get) => ({
     if (lines.length === 0) return;
     const add = lines.map((l) => ({ ...l, id: ++logId }));
     set((st) => ({ log: [...st.log, ...add].slice(-LOG_LIMIT) }));
+  },
+  relocalizeLog: (format) => {
+    set((st) => {
+      let changed = false;
+      const log = st.log.map((l) => {
+        if (!l.src) return l;
+        const text = format(l.src);
+        if (text === null || text === l.text) return l;
+        changed = true;
+        return { ...l, text };
+      });
+      return changed ? { log } : {};
+    });
   },
   setSubmitting: (submitting) => set({ submitting }),
   setOver: (over) => set({ over }),

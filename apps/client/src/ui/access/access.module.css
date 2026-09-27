@@ -1,0 +1,34 @@
+/* 访问门禁页：全屏遮罩 + 居中卡片（原版皮肤素材包的访问控制） */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: rgba(38, 28, 18, 0.72);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(420px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  padding: var(--space-5);
+}
+
+.title {
+  margin: 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.form button {
+  min-height: var(--touch-min);
+}

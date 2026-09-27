@@ -3,6 +3,7 @@
 // 服务器不可达且是 fixture 地图（test / test-allkinds）时，退回 shared 里的 fixture，但 hash 必须一致。
 import { buildFixtureMaps, buildMapIndex, type MapDef, type MapIndex, parseMapDef } from '@rich4/shared/data';
 import { create } from 'zustand';
+import { noteApiStatus } from '../ui/access/accessStore';
 
 export type MapStatus = 'loading' | 'ready' | 'error';
 
@@ -51,6 +52,8 @@ async function fetchMap(mapId: string, mapHash: string): Promise<MapDef> {
       return def;
     }
     reason = `HTTP ${res.status}`;
+    // 访问门禁开启而本浏览器未通过（或凭据已吊销）：显示门禁页
+    noteApiStatus(res.status);
   } catch (e) {
     reason = e instanceof Error ? e.message : String(e);
   }

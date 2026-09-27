@@ -1,8 +1,10 @@
 /**
  * 前端静态资源、SPA 回退与邀请页（design/net.md §10.1）。M2 为最小版：
  * - STATIC_DIR（默认 apps/client/dist）存在时托管它：/assets/* 长缓存，index.html no-cache；
- * - 其余 GET（非 /api、/socket.io）回退到 index.html；客户端未构建时回退到一个占位页；
- * - GET /r/:code 返回注入了 og 信息的 index.html（邀请预览）。
+ * - 其余 GET（非 /api、/socket.io、/pack）回退到 index.html；客户端未构建时回退到一个占位页；
+ *   /pack 排除在外（docs/design/original-skin.md §3 修正 4：没有素材包时 manifest 必须是 404 JSON，不能是 index.html）；
+ * - GET /r/:code 返回注入了 og 信息的 index.html（邀请预览）；
+ * - GET /robots.txt 一律 `Disallow: /`（私人服务器，不让搜索引擎收录；优先于 dist 里的同名文件）。
  */
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -30,6 +32,18 @@ export function injectInvite(html: string, code: string, publicUrl: string): str
   return withTitle.includes('</head>') ? withTitle.replace('</head>', `${meta}</head>`) : `${meta}${withTitle}`;
 }
 
+export const ROBOTS_TXT = 'User-agent: *\nDisallow: /\n';
+
+/** SPA 回退排除的前缀：接口、Socket.IO 与素材包 */
+export function isSpaFallback(method: string, url: string): boolean {
+  const path = url.split('?')[0] ?? '';
+  if (method !== 'GET') return false;
+  if (path.startsWith('/api/') || path === '/api') return false;
+  if (path.startsWith('/socket.io')) return false;
+  if (path === '/pack' || path.startsWith('/pack/')) return false;
+  return true;
+}
+
 export async function registerStatic(
   app: FastifyInstance,
   o: { staticDir: string | null; publicUrl: string },
@@ -50,6 +64,10 @@ export async function registerStatic(
     }
   }
 
+  app.get('/robots.txt', async (_req, reply) =>
+    reply.type('text/plain; charset=utf-8').header('Cache-Control', 'public, max-age=86400').send(ROBOTS_TXT),
+  );
+
   app.get('/', async (_req, reply) =>
     reply.type('text/html; charset=utf-8').header('Cache-Control', 'no-cache').send(page),
   );
@@ -60,8 +78,7 @@ export async function registerStatic(
   });
 
   app.setNotFoundHandler(async (req, reply) => {
-    const path = req.url.split('?')[0] ?? '';
-    if (req.method === 'GET' && !path.startsWith('/api/') && !path.startsWith('/socket.io')) {
+    if (isSpaFallback(req.method, req.url)) {
       return reply.type('text/html; charset=utf-8').header('Cache-Control', 'no-cache').send(page);
     }
     return reply.code(404).send({ ok: false, error: appError('BAD_REQUEST', { reason: 'notFound' }) });

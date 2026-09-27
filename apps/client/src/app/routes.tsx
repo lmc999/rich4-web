@@ -10,8 +10,9 @@ const SoloScreen = lazy(() => import('../ui/screens/SoloScreen'));
 const MapPreview = lazy(() => import('../dev/MapPreview'));
 const Gallery = lazy(() => import('../dev/Gallery'));
 const DevDecisions = lazy(() => import('../ui/decisions/DevDecisions'));
+const AudioLab = lazy(() => import('../audio/dev/AudioLab'));
 
-/** 路由表（design/client.md §1.3：/、/r/:code、/solo、/dev/*） */
+/** 路由表（design/client.md §1.3：/、/r/:code、/solo、/dev/*；/dev/audio 为原版皮肤 A9 的音频试听页） */
 export const ROUTE_PATHS = {
   home: '/',
   room: '/r/:code',
@@ -19,6 +20,7 @@ export const ROUTE_PATHS = {
   devMap: '/dev/map',
   devGallery: '/dev/gallery',
   devDecisions: '/dev/decisions',
+  devAudio: '/dev/audio',
 } as const;
 
 function RouteFallback(): ReactNode {
@@ -40,6 +42,7 @@ export function AppRoutes(): ReactNode {
         <Route path={ROUTE_PATHS.devMap} component={MapPreview} />
         <Route path={ROUTE_PATHS.devGallery} component={Gallery} />
         <Route path={ROUTE_PATHS.devDecisions} component={DevDecisions} />
+        <Route path={ROUTE_PATHS.devAudio} component={AudioLab} />
         <Route>
           <NotFound />
         </Route>

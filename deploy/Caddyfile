@@ -1,0 +1,8 @@
+# 反向代理（design/net.md §10.3）：自动申请并续期证书（SITE_ADDRESS 为 localhost 时用 Caddy 内部 CA），
+# WebSocket 升级透明转发。/pack/* 只做透明反代：不缓存、不再压缩（服务器已按 Accept-Encoding 返回预压缩变体，
+# 音视频要保留 Range），缓存头与 Vary 原样透传。
+{$SITE_ADDRESS:localhost} {
+	@notpack not path /pack/*
+	encode @notpack zstd gzip
+	reverse_proxy app:3000
+}

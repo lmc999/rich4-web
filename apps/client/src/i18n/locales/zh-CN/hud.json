@@ -278,7 +278,16 @@
     "speed": "动画速度",
     "autoFollow": "镜头自动跟随当前玩家",
     "muted": "静音",
-    "volume": "主音量",
+    "audio": {
+      "title": "声音",
+      "master": "主音量",
+      "bgm": "背景音乐",
+      "sfx": "音效",
+      "voice": "角色语音",
+      "ui": "界面音",
+      "voiceEnabled": "角色语音（含卡片、道具台词与新闻播报）",
+      "muteInBackground": "切到后台时静音"
+    },
     "quality": "画质",
     "qualities": {
       "auto": "自动",
@@ -288,7 +297,21 @@
     },
     "colorBlind": "色弱模式（强化玩家形状标记）",
     "leftHanded": "左手模式（行动区放左侧）",
-    "audioLater": "音效与背景音乐将在后续版本加入。"
+    "skin": "皮肤",
+    "skins": {
+      "auto": "自动（有原版素材包且地图匹配时用原版）",
+      "original": "原版",
+      "procedural": "程序化"
+    },
+    "skinKinds": {
+      "original": "原版",
+      "procedural": "程序化"
+    },
+    "skinCurrent": "当前界面：{{skin}}；棋盘：{{board}}",
+    "skinPack": "原版素材包：{{id}}",
+    "skinNoPack": "原版素材包：未检测到",
+    "skinReason": "原因：{{reason}}",
+    "skinHint": "原版素材仅供私人与朋友游玩；原版皮肤下界面文字为繁体。"
   },
   "reconnect": {
     "title": "连接中断，正在重连…",
@@ -303,5 +326,43 @@
   "rotate": {
     "title": "请把手机横过来",
     "body": "对局画面只支持横屏，旋转设备后继续。"
+  },
+  "skin": {
+    "reason": {
+      "setting": "设置为程序化皮肤",
+      "pack-loading": "正在检查原版素材包…",
+      "pack-absent": "本站没有原版素材包",
+      "pack-invalid": "原版素材包清单校验失败",
+      "pack-error": "原版素材包暂时无法访问",
+      "access-required": "需要访问口令才能使用原版素材",
+      "no-board": "素材包不含棋盘素材",
+      "map-missing": "素材包里没有这张地图的原版棋盘",
+      "map-mismatch": "地图数据与素材包不匹配（需要重新生成素材包）",
+      "group-missing": "这张地图的原版素材不完整",
+      "renderer-unavailable": "原版棋盘尚未完成，暂用程序化棋盘",
+      "renderer-failed": "原版棋盘加载失败，已改用程序化棋盘"
+    },
+    "mismatch": {
+      "map-id": "地图 id 不同（素材包 {{expected}}，当前 {{actual}}）",
+      "source": "原始地图文件不同",
+      "geometry": "节点、地块或企业的坐标 / 朝向有变化"
+    },
+    "unlock": "输入访问口令"
+  },
+  "access": {
+    "title": "需要访问口令",
+    "intro": "本站的原版素材仅供私人与朋友游玩。请输入房主告诉你的访问口令，或打开房主发来的邀请链接。",
+    "passcode": "访问口令",
+    "submit": "进入",
+    "checking": "验证中…",
+    "redeeming": "正在验证邀请链接…",
+    "privateNote": "口令只用于换取本浏览器的访问凭据，不会保存在页面上。",
+    "error": {
+      "badPasscode": "口令不正确",
+      "rateLimited": "尝试次数过多，请 {{n}} 秒后再试",
+      "grantInvalid": "邀请链接已失效（过期或次数已用完），请向房主索取新链接或输入口令",
+      "network": "无法连接服务器，请稍后再试",
+      "generic": "验证失败，请稍后再试"
+    }
   }
 }

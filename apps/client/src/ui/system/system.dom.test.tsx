@@ -409,6 +409,17 @@ describe('ReconnectOverlay 托管倒计时与恢复提示', () => {
     expect(screen.queryByTestId('reconnect-overlay')).toBeNull();
     expect(useUiStore.getState().toasts).toHaveLength(0);
   });
+
+  it('握手被访问门禁拒绝（ACCESS_REQUIRED）：不出重连遮罩与致命遮罩，交给门禁页', async () => {
+    renderWith(<ReconnectOverlay />);
+    act(() =>
+      useConnectionStore.getState().setStatus('closed', 0, { code: 'ACCESS_REQUIRED', message: 'access required' }),
+    );
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(screen.queryByTestId('reconnect-overlay')).toBeNull();
+    expect(screen.queryByTestId('fatal-overlay')).toBeNull();
+    act(() => useConnectionStore.getState().reset());
+  });
 });
 
 describe('观战者 HUD', () => {

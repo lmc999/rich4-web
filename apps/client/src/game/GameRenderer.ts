@@ -1,12 +1,24 @@
 // 框架无关的渲染器（design/client.md §1.1、§3.3）：持有 Pixi Application、分层、动画时钟、镜头、手势、棋盘与纹理缓存。
 // React 只在挂载点调用一次 create()，之后通过方法驱动；本文件不 import React。
-import type { MapDef } from '@rich4/shared/data';
+// 原版皮肤 A5（original-skin.md §3 修正 7）：程序化渲染器经 `surface`（ProceduralSurface）实现 skin/BoardSurface，
+// 对局页、小地图与测试钩子只经由接口访问棋盘。rotation / rotate 保留程序化口径 0..3（90° 一档，开发页与测试沿用），
+// 接口上的 rotation 为统一口径 0..7（只用偶数值）。
+import type { MapDef, TileId } from '@rich4/shared/data';
 import { Application } from 'pixi.js';
+import type { Anchor } from '../presentation/types';
+import {
+  type BoardSurface,
+  type BoardSurfaceHooks,
+  fromProceduralRotation,
+  type SurfaceDoubleTapHandler,
+  type SurfaceRotation,
+  type SurfaceTapHandler,
+} from '../skin/BoardSurface';
 import { loadFontGlyphs } from '../ui/theme/fontFamilies';
 import { AnimClock } from './anim/AnimClock';
 import { type BoardLabels, BoardView } from './board/BoardView';
 import { TILE_GLYPHS } from './board/tileStyles';
-import { Camera } from './camera/Camera';
+import { Camera, MAX_ZOOM, MIN_ZOOM } from './camera/Camera';
 import { attachGestures } from './camera/gestures';
 import type { PickResult } from './iso/picking';
 import { normRotation, type Pt, type Rotation } from './iso/projection';
@@ -33,6 +45,12 @@ export const QUALITY_PRESETS: Readonly<Record<Quality, QualityPreset>> = {
 };
 
 export const BOARD_BACKGROUND = 0x8fd3f4;
+
+/** 程序化棋盘的缩放范围（等角格原始大小 = 1） */
+export const PROCEDURAL_ZOOM = { min: MIN_ZOOM, max: MAX_ZOOM } as const;
+
+/** 角色头顶飘字的高度（像素，与 BoardController 一致） */
+const HEAD_Y = 92;
 
 export interface GameRendererOptions {
   host: HTMLElement;
@@ -63,6 +81,10 @@ export class GameRenderer {
   private destroyed = false;
   private followSeat: number | null = null;
   private readonly quality: QualityPreset;
+  /** 轻点 / 双击回调（可随时替换：BoardSurface.onTap / onDoubleTap） */
+  tapHandler: GameRendererOptions['onTap'] | null;
+  doubleTapHandler: GameRendererOptions['onDoubleTap'] | null;
+  private surfaceObj: ProceduralSurface | null = null;
   private readonly onLost = (e: Event): void => {
     e.preventDefault();
     this.opts.onContextLost?.(true);
@@ -84,6 +106,14 @@ export class GameRenderer {
     this.quality = QUALITY_PRESETS[opts.quality ?? 'high'];
     this.ownsClock = !opts.clock;
     this.clock = opts.clock ?? new AnimClock();
+    this.tapHandler = opts.onTap ?? null;
+    this.doubleTapHandler = opts.onDoubleTap ?? null;
+  }
+
+  /** 棋盘表面接口（skin/BoardSurface）的程序化实现 */
+  get surface(): BoardSurface {
+    this.surfaceObj ??= new ProceduralSurface(this);
+    return this.surfaceObj;
   }
 
   /** 画质档的粒子上限（棋盘特效 FxSystem 按它设置预算） */
@@ -119,7 +149,11 @@ export class GameRenderer {
     opts.host.appendChild(canvas);
     this.layers = createLayers(app.stage);
     this.cache = new TextureCache(app.renderer, 2);
-    this.camera = new Camera(this.layers.world, { w: app.screen.width, h: app.screen.height }, this.clock);
+    this.camera = new Camera(this.layers.world, { w: app.screen.width, h: app.screen.height }, this.clock, {
+      minZoom: PROCEDURAL_ZOOM.min,
+      maxZoom: PROCEDURAL_ZOOM.max,
+      relaxMinToFit: true,
+    });
     this.board = new BoardView(this.layers, this.cache, this.clock, opts.labels ?? {}, {
       cacheChunks: true,
       resolution: this.quality.groundResolution,
@@ -132,8 +166,8 @@ export class GameRenderer {
       this.camera.update(dt);
     });
     this.detachGestures = attachGestures(canvas, this.camera, {
-      onTap: (screen) => opts.onTap?.(this.pickScreen(screen), screen),
-      onDoubleTap: (screen) => opts.onDoubleTap?.(screen),
+      onTap: (screen) => this.tapHandler?.(this.pickScreen(screen), screen),
+      onDoubleTap: (screen) => this.doubleTapHandler?.(screen),
     });
     canvas.addEventListener('webglcontextlost', this.onLost);
     canvas.addEventListener('webglcontextrestored', this.onRestored);
@@ -174,6 +208,51 @@ export class GameRenderer {
   pickScreen(screen: Pt): PickResult | null {
     if (!this.board.loaded) return null;
     return this.board.pick(this.camera.screenToWorld(screen));
+  }
+
+  /** 锚点的 world 坐标（座位 / 格 / 地块；lift 时按对象高度抬高，用于飘字） */
+  anchorPos(at: Anchor, lift = false): Pt | null {
+    if (!this.board?.loaded) return null;
+    if ('seat' in at) {
+      const a = this.board.actor(at.seat);
+      if (!a) return null;
+      const p = a.screenPos();
+      return { x: p.x, y: p.y - (lift ? HEAD_Y : 30) };
+    }
+    if ('tile' in at) {
+      try {
+        const p = this.board.tileScreenPos(at.tile);
+        return { x: p.x, y: p.y - (lift ? 40 : 0) };
+      } catch {
+        return null;
+      }
+    }
+    const p = this.board.lotScreenPos(at.lot);
+    if (!p) return null;
+    const h = this.board.footprint(at.lot)?.heightPx ?? 0;
+    return { x: p.x, y: p.y - (lift ? Math.max(40, h) : 0) };
+  }
+
+  /** 格中心的画布坐标 */
+  tileCanvasPos(id: TileId): Pt | null {
+    if (!this.board?.loaded) return null;
+    try {
+      return this.camera.worldToScreen(this.board.tileScreenPos(id));
+    } catch {
+      return null;
+    }
+  }
+
+  /** 画布四角的 world 坐标（小地图视口框） */
+  viewportCorners(): Pt[] | null {
+    if (this.destroyed || !this.board?.loaded) return null;
+    const { width: w, height: h } = this.app.screen;
+    return [
+      this.camera.screenToWorld({ x: 0, y: 0 }),
+      this.camera.screenToWorld({ x: w, y: 0 }),
+      this.camera.screenToWorld({ x: w, y: h }),
+      this.camera.screenToWorld({ x: 0, y: h }),
+    ];
   }
 
   /** 镜头跟随某座位的角色（null 取消） */
@@ -222,5 +301,79 @@ export class GameRenderer {
     void this.atlas.destroy();
     this.cache.clear();
     this.app.destroy({ removeView: true }, { children: true });
+  }
+}
+
+/** 程序化渲染器的 BoardSurface 门面：旋转换算到统一口径 0..7（偶数），其余直接委托 GameRenderer */
+class ProceduralSurface implements BoardSurface {
+  readonly kind = 'procedural' as const;
+  readonly rotationStep = 2 as const;
+
+  constructor(private readonly r: GameRenderer) {}
+
+  get camera(): Camera {
+    return this.r.camera;
+  }
+
+  get loaded(): boolean {
+    return this.r.board?.loaded === true;
+  }
+
+  get rotation(): SurfaceRotation {
+    return fromProceduralRotation(this.r.rotation);
+  }
+
+  rotate(steps: number): SurfaceRotation {
+    return fromProceduralRotation(this.r.rotate(steps));
+  }
+
+  loadMap(def: MapDef): Promise<void> {
+    return this.r.loadMap(def);
+  }
+
+  anchorPos(at: Anchor, lift?: boolean): Pt | null {
+    return this.r.anchorPos(at, lift);
+  }
+
+  viewportCorners(): Pt[] | null {
+    return this.r.viewportCorners();
+  }
+
+  tileCanvasPos(id: TileId): Pt | null {
+    return this.r.tileCanvasPos(id);
+  }
+
+  viewportSize(): { w: number; h: number } {
+    return { w: this.r.app.screen.width, h: this.r.app.screen.height };
+  }
+
+  get onTap(): SurfaceTapHandler | null {
+    // 程序化的命中结果（PickResult）是 SurfacePick 的超集
+    return (this.r.tapHandler ?? null) as SurfaceTapHandler | null;
+  }
+
+  set onTap(fn: SurfaceTapHandler | null) {
+    this.r.tapHandler = fn;
+  }
+
+  get onDoubleTap(): SurfaceDoubleTapHandler | null {
+    return this.r.doubleTapHandler ?? null;
+  }
+
+  set onDoubleTap(fn: SurfaceDoubleTapHandler | null) {
+    this.r.doubleTapHandler = fn;
+  }
+
+  get board(): BoardSurfaceHooks {
+    return this.r.board;
+  }
+
+  /** 程序化渲染器本体（开发页与程序化专用代码用） */
+  get renderer(): GameRenderer {
+    return this.r;
+  }
+
+  destroy(): void {
+    this.r.destroy();
   }
 }

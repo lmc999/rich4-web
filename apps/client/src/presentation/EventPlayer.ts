@@ -7,7 +7,8 @@
 //   积压 = 最新一批到达之前还没播完的部分（单独一批很长，例如月初结算，既不跳过也不自动加速）；
 // - 中止（reset / skipAll / dispose / 切到 instant）：当前 handler 与最近几个 handler 留下的不阻塞尾巴一并中止，
 //   abortEpoch +1（GameClient 据此让旧上下文失效，被中止的收尾不会再写棋盘）；
-// - instant（?anim=instant 或后台标签页）：不调 handler，只提交；TIME_REWOUND（resetsView）直接用批尾 view。
+// - instant（?anim=instant 或后台标签页）：不调 handler，只提交（并通知 onSkipEvent）；TIME_REWOUND（resetsView）直接用批尾 view；
+// - 每次调 handler 的上下文都带 at = {epoch, seq, eventIndex}（原版皮肤的语音确定性选择用）。
 
 import { EVENT_META, type GameEvent } from '@rich4/shared/engine';
 import {
@@ -18,7 +19,7 @@ import {
   type YourDecision,
 } from '@rich4/shared/net';
 import { applyPostPatch, eventBudgetMs, type GameView, type PendingView } from '@rich4/shared/view';
-import type { AnyHandler, HandlerMap, PresentationContext } from './types';
+import type { AnyHandler, EventStamp, HandlerMap, PresentationContext } from './types';
 
 export const AUTO_FAST_BACKLOG_MS = 6_000;
 export const AUTO_SKIP_BACKLOG_MS = 15_000;
@@ -103,14 +104,19 @@ export interface EventPlayerOptions {
   handlers: HandlerMap;
   sink: EventPlayerSink;
   clock: PlayerClock;
-  /** 为一次 handler 调用构造上下文 */
-  context(signal: AbortSignal, view: () => GameView): PresentationContext;
+  /** 为一次 handler 调用构造上下文（at 为事件位置；工厂可以不理会，EventPlayer 会补上 ctx.at） */
+  context(signal: AbortSignal, view: () => GameView, at: EventStamp): PresentationContext;
   /** 发 game:resync（服务器回 game:snapshot → reset） */
   requestResync(): void;
   /** 批尾与 reset 后：棋盘按 view 整体同步 */
   syncBoard?(view: GameView): void;
   /** reset / skipAll：清特效、关闭临时弹层 */
   onAbort?(): void;
+  /**
+   * 事件没经 handler 直接提交（instant、后台标签页、skipAll 追帧）时调用：声音层据此收起跨事件的场景曲
+   * （例如拍卖曲到 AUCTION_ENDED 为止）。抛错只告警，不影响提交。
+   */
+  onSkipEvent?(e: GameEvent): void;
   /** 开发模式：批尾 deepEqual 对账、handler 超预算告警 */
   dev?: boolean;
   warn?(msg: string, detail?: unknown): void;
@@ -451,11 +457,18 @@ export class EventPlayer {
     if (!view) return;
     let jumped = false;
     if (b.events.length > 0 && !this.instant && !this.skipping) this.o.sink.beginBatch?.(b.seq, b.decision);
-    for (const e of b.events) {
+    for (let i = 0; i < b.events.length; i++) {
+      const e = b.events[i]!;
       if (gen !== this.gen) return;
       if (!this.instant && !this.skipping) {
-        await this.runHandler(e, view);
+        await this.runHandler(e, view, { epoch: b.epoch, seq: b.seq, eventIndex: i });
         if (gen !== this.gen) return;
+      } else if (this.o.onSkipEvent) {
+        try {
+          this.o.onSkipEvent(e);
+        } catch (err) {
+          this.o.warn?.('[EventPlayer] onSkipEvent failed', err);
+        }
       }
       view = applyPostPatch(view, e.post);
       this.view = view;
@@ -488,7 +501,7 @@ export class EventPlayer {
     });
   }
 
-  private async runHandler(e: GameEvent, before: GameView): Promise<void> {
+  private async runHandler(e: GameEvent, before: GameView, at: EventStamp): Promise<void> {
     const handler = this.o.handlers[e.type] as unknown as AnyHandler | undefined;
     if (!handler) return;
     const ac = new AbortController();
@@ -498,7 +511,8 @@ export class EventPlayer {
     const t0 = this.o.clock.now();
     let watchdog: unknown = null;
     try {
-      const ctx = this.o.context(ac.signal, () => before);
+      const ctx = this.o.context(ac.signal, () => before, at);
+      if (ctx.at === undefined) ctx.at = at;
       const run = handler(e, ctx);
       const max = this.o.maxHandlerMs ?? 0;
       if (max > 0) {

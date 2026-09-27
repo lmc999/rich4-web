@@ -11,6 +11,7 @@ import {
   SAVE_IMPORT_MAX_BYTES,
   type SaveSummary,
 } from '@rich4/shared/net';
+import { noteApiStatus } from '../ui/access/accessStore';
 import { type KeyValueStorage, loadToken, safeStorage } from './identity';
 
 export const SAVE_FILE_EXT = '.r4save';
@@ -34,8 +35,9 @@ function fetchOf(o: SaveHttpOptions): FetchLike {
   return o.fetch ?? ((input, init) => globalThis.fetch(input, init));
 }
 
-/** 读出 {ok:false, error} 响应体；格式不对时按 HTTP 状态归类 */
+/** 读出 {ok:false, error} 响应体；格式不对时按 HTTP 状态归类（401 = 访问门禁拒绝，同时显示门禁页） */
 async function errorOf(res: Response): Promise<AppError> {
+  noteApiStatus(res.status);
   try {
     const body = (await res.json()) as {
       ok?: unknown;

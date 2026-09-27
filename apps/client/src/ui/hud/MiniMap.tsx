@@ -1,11 +1,13 @@
 // 小地图（design/client.md §3.9）：Canvas2D 画地块主人色、玩家彩点、视口框；250ms 节流重绘；点击平移镜头。
 // 另附一份对读屏友好的地产归属列表（visually-hidden，E2E 也用它比对四个页面的归属）。
+// 旋转用棋盘表面的统一口径 0..7（original-skin.md §3 修正 7）；程序化画法只有 4 个方向，按 0/2/4/6 → 0..3 映射。
 import type { MapIndex } from '@rich4/shared/data';
 import type { GameView } from '@rich4/shared/view';
 import { type MouseEvent, type ReactNode, useEffect, useMemo, useRef } from 'react';
-import type { Pt, Rotation } from '../../game/iso/projection';
+import type { Pt } from '../../game/iso/projection';
 import { MiniMapPainter, miniToWorld } from '../../game/minimap/MiniMapPainter';
 import { useTx } from '../../i18n/tx';
+import { type SurfaceRotation, toProceduralRotation } from '../../skin/BoardSurface';
 import h from './hud.module.css';
 
 export const MINI_W = 240;
@@ -15,7 +17,8 @@ export const MINI_REPAINT_MS = 250;
 export interface MiniMapProps {
   view: GameView;
   map: MapIndex;
-  rotation: Rotation;
+  /** 统一口径 0..7（程序化棋盘只会给偶数） */
+  rotation: SurfaceRotation;
   /** 镜头视口四角（world 坐标）；没有棋盘时为 null */
   viewport?: () => Pt[] | null;
   onPan?(world: Pt): void;
@@ -37,10 +40,11 @@ export function MiniMap({ view, map, rotation, viewport, onPan }: MiniMapProps):
   const latest = useRef(view);
   latest.current = view;
 
+  const rot4 = toProceduralRotation(rotation);
   useEffect(() => {
     const ctx = ref.current?.getContext('2d') ?? null;
-    painter.current = ctx ? new MiniMapPainter(ctx, map.def, rotation, { w: MINI_W, h: MINI_H }) : null;
-  }, [map, rotation]);
+    painter.current = ctx ? new MiniMapPainter(ctx, map.def, rot4, { w: MINI_W, h: MINI_H }) : null;
+  }, [map, rot4]);
 
   useEffect(() => {
     const paint = (): void => {

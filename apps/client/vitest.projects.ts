@@ -4,7 +4,8 @@
 //   这样从根目录跑 `--project client-unit` 也能命中原名（Vitest 5 会给「容器」配置的子 project 加前缀，
 //   形如 "client (client-unit)"，内联 project 不加）。
 //
-// - client-unit    node：纯数学与纯逻辑（投影、深度、道路拼接、镜头、动画时钟、SVG 生成…）
+// - client-unit    node：纯数学与纯逻辑（投影、深度、道路拼接、镜头、动画时钟、SVG 生成…）；
+//                  globalSetup 先用 `npm run extract -- assets synth` 生成合成素材包（.cache/synthetic-pack，原版皮肤 A5）
 // - client-dom     jsdom + Testing Library：路由、占位页、i18n
 // - client-browser Vitest 浏览器模式 + Playwright Chromium：真实 WebGL 下的 GameRenderer 冒烟
 //
@@ -50,6 +51,7 @@ export function clientTestProjects(base: ClientProjectBase): TestProjectInlineCo
         environment: 'node',
         include: ['src/**/*.test.ts'],
         exclude: ['src/**/*.browser.test.ts', 'src/**/*.dom.test.ts'],
+        globalSetup: ['src/skin/testing/synthPack.globalSetup.ts'],
       },
     },
     {

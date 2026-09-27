@@ -1,0 +1,721 @@
+{
+  "app": {
+    "title": "大富翁4 網頁連線復刻",
+    "short": "rich4",
+    "tagline": "4 人連線 · 伺服器權威 · 美術自制致敬風格"
+  },
+  "common": {
+    "loading": "載入中…",
+    "error": "出錯了",
+    "retry": "重試",
+    "back": "返回",
+    "backHome": "回到首頁",
+    "comingSoon": "施工中"
+  },
+  "cmp": {
+    "close": "關閉",
+    "max": "最大",
+    "countdown": {
+      "aria": "剩餘 {{n}} 秒",
+      "unlimited": "不限時"
+    },
+    "stepper": {
+      "dec": "減少",
+      "inc": "增加",
+      "decBy": "減少 {{n}}",
+      "incBy": "增加 {{n}}"
+    },
+    "slider": {
+      "quarter": "¼",
+      "half": "一半",
+      "all": "全部"
+    },
+    "unit": {
+      "yuan": "元",
+      "points": "點",
+      "shares": "股"
+    }
+  },
+  "dlg": {
+    "common": {
+      "waiting": "等待 {{name}} 做決定…",
+      "sent": "已提交，等待伺服器確認…",
+      "expired": "時間到，將按預設選項處理",
+      "back": "返回",
+      "cancel": "取消",
+      "cash": "現金",
+      "deposit": "存款",
+      "points": "點券",
+      "levelN": "{{n}} 級",
+      "notEnoughCash": "現金不足",
+      "unowned": "無主"
+    },
+    "kind": {
+      "TURN_MENU": "行動",
+      "BANK_ATM": "銀行 ATM",
+      "BANK_COUNTER": "銀行櫃檯",
+      "BUY_LAND": "購買土地",
+      "UPGRADE_LAND": "加蓋房屋",
+      "BUY_FACILITY": "購買設施地",
+      "BUILD_FACILITY": "興建設施",
+      "UPGRADE_FACILITY": "設施升級",
+      "FACILITY_TYPE": "選擇設施種類",
+      "RESEARCH": "研究所",
+      "SHOP": "百貨公司",
+      "LOTTERY": "樂透",
+      "BAIL": "保釋",
+      "MINIGAME": "小遊戲",
+      "MAGIC_CAST": "魔法屋",
+      "CONSTRUCTION_PICK": "建設公司",
+      "SUBSCRIBE_SHARES": "認購股票",
+      "USE_FREE_CARD": "免費卡",
+      "SCAPEGOAT": "嫁禍卡",
+      "AUCTION_BID": "拍賣",
+      "BIRTHDAY_PICK": "生日禮物",
+      "DISCARD_CARD": "丟棄卡片",
+      "DEATH_GOD_TARGET": "死神附身"
+    },
+    "intent": {
+      "CONFIRM": "確定",
+      "DECLINE": "放棄",
+      "SKIP": "跳過",
+      "LEAVE": "離開",
+      "PASS": "這輪不加價",
+      "QUIT": "退出競拍",
+      "MINIGAME_DECLINE": "不玩了",
+      "ROLL": "擲骰子"
+    },
+    "generic": {
+      "default": "按預設處理",
+      "body": "這個決策暫時沒有專用介面，請從下面選擇。"
+    },
+    "turn": {
+      "title": "輪到你了",
+      "subtitle": "本回合已操作 {{used}}/{{limit}} 次",
+      "dice": "骰子數",
+      "diceN": "{{n}} 顆骰子",
+      "roll": "擲 {{n}} 顆骰子",
+      "go": "出發",
+      "cards": "卡片",
+      "items": "道具",
+      "stock": "股市",
+      "board": "公佈欄",
+      "surrender": "投降",
+      "usable": "可用 {{n}}/{{total}}",
+      "marketOpen": "開市中",
+      "listings": "{{n}} 件掛牌",
+      "pickTarget": "選擇目標",
+      "surrenderTitle": "確定投降？",
+      "surrenderConfirm": "投降",
+      "surrenderBody": "{{name}} 投降後將退出本局：先指定一位對手讓死神附身（沒收他的卡片與道具）；名下地產超過 3 處時隨機拍賣 3 處，其餘收回。這個操作不能撤銷。",
+      "locked": {
+        "stay": "停留中：這回合原地不動",
+        "tortoise": "烏龜狀態：這回合只走一步",
+        "sleepwalk": "夢遊中：自動擲骰"
+      }
+    },
+    "target": {
+      "title": "使用 {{name}}",
+      "use": "使用 {{name}}",
+      "none": "不需要選擇目標，確認後立即生效。",
+      "timeMachine": "將回到第 {{turn}} 回合（最近一次真人擲骰之前），此後所有人的變化都會撤銷。",
+      "timeMachinePerSeat": "將回到第 {{turn}} 回合（你上一次擲骰之前），此後所有人的變化都會撤銷。",
+      "auto": "將自動選擇視野內最近的神明。",
+      "noCandidates": "視野內沒有可選目標。",
+      "self": "（自己）",
+      "facilityType": "選擇設施種類",
+      "underfoot": "作用於腳下的「{{name}}」。",
+      "pairFrom": "用腳下的「{{name}}」與下面選中的地交換：",
+      "anyNode": "目標地點",
+      "dice": "點數",
+      "robWhat": "搶走哪一樣？",
+      "tpSource": "要傳送誰（什麼）？",
+      "tpDest": "傳送到哪裡？",
+      "house": "{{name}} 上的房屋",
+      "boardHint": "也可以直接點棋盤上高亮的位置。"
+    },
+    "buyLot": {
+      "titleLand": "購買土地",
+      "titleFacility": "購買設施地",
+      "price": "地價",
+      "cashAfter": "購買後現金",
+      "tollAfter": "買下後的過路費",
+      "facilityType": "設施",
+      "level": "等級",
+      "street": "同街地產",
+      "fortuneBonus": "福神附身：買下後多送 1 級！",
+      "confirm": "購買",
+      "decline": "不買"
+    },
+    "upgrade": {
+      "title": "加蓋房屋",
+      "cashAfter": "加蓋後現金",
+      "cost": "加蓋費用",
+      "toll": "過路費",
+      "facility": "設施",
+      "cap": "等級上限",
+      "now": "現在",
+      "next": "加蓋後",
+      "bonus": "福神附身：這次多蓋 1 級！",
+      "confirm": "加蓋",
+      "decline": "不蓋"
+    },
+    "facility": {
+      "titleBuild": "興建設施",
+      "titleFree": "免費興建設施",
+      "cost": "興建費用",
+      "types": "設施種類",
+      "freeNote": "這次興建不用花錢，選一種設施吧。",
+      "cap": "最高 {{n}} 級",
+      "fee": "收費",
+      "pickFirst": "先選一種設施",
+      "build": "興建{{name}}",
+      "choose": "就蓋{{name}}",
+      "decline": "不建",
+      "desc": {
+        "park": "綠化市容，不收費。",
+        "hotel": "停下的人要住宿付費，最高 5 級。",
+        "mall": "停下的人要購物付費，最高 5 級。",
+        "gas": "停下的人要加油付費。",
+        "lab": "研發高科技道具，最高 5 級。"
+      }
+    },
+    "research": {
+      "title": "研究所",
+      "current": "正在研發「{{item}}」，還剩 {{days}} 天。",
+      "none": "目前沒有研發專案。",
+      "days": "{{n}} 天完成",
+      "free": "研發不收費，完成後道具直接送到背包。",
+      "switchWarn": "改選其他專案會放棄目前的研發進度。",
+      "confirm": "開始研發",
+      "skip": "維持現狀"
+    },
+    "shop": {
+      "title": "百貨公司",
+      "hand": "手牌 {{n}}/{{max}}",
+      "handFull": "手牌已滿（{{max}} 張），不能再買卡。",
+      "fullDeck": "電腦座位：可以挑選牌堆裡剩下的任何卡。",
+      "emptyShelf": "貨架上沒有卡片了。",
+      "shelf": "貨架",
+      "items": "道具",
+      "stock": "庫存 {{n}}",
+      "qty": "數量",
+      "buyFor": "買下",
+      "sellFor": "賣出",
+      "sellValue": "回收",
+      "unitValue": "每個",
+      "sellCards": "賣出卡片",
+      "sellItems": "賣出道具",
+      "noCards": "沒有可賣的卡片。",
+      "noItems": "沒有可賣的道具。",
+      "tabBuyCard": "買卡片",
+      "tabBuyItem": "買道具",
+      "tabSellCard": "賣卡片",
+      "tabSellItem": "賣道具",
+      "leave": "離開",
+      "tradeLimit": "本次進店的交易次數已用完，只能離開。"
+    },
+    "lottery": {
+      "title": "樂透彩券",
+      "pool": "獎池",
+      "price": "每張",
+      "mine": "我已買 {{n}} 張",
+      "numbers": "號碼",
+      "ballFree": "{{n}} 號",
+      "ballSold": "{{n}} 號（{{name}} 已買）",
+      "quick": "機選",
+      "pickFirst": "先選一個號碼",
+      "buy": "買 {{n}} 號",
+      "rule": "每月 15 日開獎，中獎者獨得整個獎池。",
+      "skip": "不買"
+    },
+    "bail": {
+      "titleJail": "監獄",
+      "titleHospital": "醫院",
+      "inmatesJail": "在押的玩家",
+      "inmatesHospital": "住院的玩家",
+      "noInmates": "現在沒有人。",
+      "remaining": "還有 {{n}} 天",
+      "bailFor": "保釋",
+      "hireFor": "僱用",
+      "villains": "可以僱用的惡人",
+      "villainAway": "點券不足，暫時僱不起",
+      "villainDesc": {
+        "thief": "碰到人就偷走他一半的點券，路上的物件也順手拿走。",
+        "robber": "碰到人就搶一張卡，路過銀行時搶走其他人兩成存款。",
+        "thug": "停在別人的地產上，按整條路段的地價向地主勒索。",
+        "spy": "停在別人的地產上截走上一筆過路費，停在企業門口竊走本月盈餘。"
+      },
+      "skip": "離開"
+    },
+    "minigame": {
+      "subtitle": "遊樂園小遊戲",
+      "startsIn": "秒後開始",
+      "maxScore": "最高分",
+      "noMax": "不限",
+      "reward": "獎勵",
+      "rewardText": "按得分換點券",
+      "ready": "準備好了嗎？",
+      "started": "遊戲已經開始",
+      "decline": "不玩了"
+    },
+    "magic": {
+      "title": "魔法屋",
+      "condition": "女巫點名：{{cond}}",
+      "includesMe": "名單裡有你自己，小心選擇！",
+      "pickFirst": "先選一種魔法",
+      "cast": "施放「{{name}}」"
+    },
+    "construction": {
+      "title": "建設公司",
+      "chairman": "你是董事長：免費加蓋 {{n}} 級！",
+      "levels": "請建設公司加蓋 {{n}} 級，工程費付給公司（現金不夠時從存款扣）。",
+      "rent": "租金 {{rent}}",
+      "free": "免費",
+      "none": "沒有可以加蓋的地產。",
+      "pickFirst": "選一塊要加蓋的地",
+      "confirm": "加蓋 {{name}}",
+      "skip": "不需要"
+    },
+    "subscribe": {
+      "title": "認購股票",
+      "unitPrice": "認購價（每股）",
+      "reserved": "公司保留股",
+      "max": "本次最多",
+      "shares": "認購股數",
+      "total": "合計",
+      "note": "現場認購只收現金，本次造訪最多認購 1000 股。",
+      "confirm": "認購 {{n}} 股",
+      "skip": "不認購"
+    },
+    "passive": {
+      "freeTitle": "使用免費卡？",
+      "useFree": "使用免費卡",
+      "pay": "照付",
+      "scapegoatTitle": "使用嫁禍卡？",
+      "noScapegoat": "認了",
+      "pickFirst": "選一個倒霉鬼",
+      "scapegoatTo": "嫁禍給 {{name}}",
+      "ctx": {
+        "toll": "要付 {{lot}} 的過路費 {{amount}} 元。",
+        "fee": "要付 {{lot}} 的設施費 {{amount}} 元。",
+        "taxAudit": "被查稅，要繳 {{amount}} 元。",
+        "fine": "要繳罰款 {{amount}} 元。",
+        "frame": "你被陷害了！",
+        "sleepwalk": "你被下了夢遊咒！",
+        "confine": "你要被關起來了！"
+      },
+      "ctxDays": {
+        "frame": "你被陷害了，要坐牢 {{days}} 天！",
+        "sleepwalk": "你被下了夢遊咒，要夢遊 {{days}} 天！",
+        "confine": "你要被關 {{days}} 天！"
+      }
+    },
+    "auction": {
+      "title": "拍賣",
+      "startPrice": "起拍價",
+      "current": "目前出價",
+      "noLeader": "還沒有人出價",
+      "seller": "賣方",
+      "noSeller": "無（公開拍賣）",
+      "start": "起拍價",
+      "bids": "加價",
+      "bidStart": "按起拍價出價",
+      "bidTo": "出價到 {{price}} 元",
+      "pass": "這輪不加價",
+      "quit": "退出競拍",
+      "rule": "有人加價後，選擇「這輪不加價」的人可以再次出價；退出後不能再回來。",
+      "sourceLabel": "來源",
+      "source": {
+        "card": "拍賣卡",
+        "bankrupt": "破產清算",
+        "surrender": "投降清算",
+        "news": "新聞：法院公開標售",
+        "magic": "魔法屋"
+      },
+      "others": "其他競拍者",
+      "othersN": "還有 {{n}} 人可以出價"
+    },
+    "birthday": {
+      "title": "生日快樂！",
+      "body": "每位有卡的玩家都要送你一張卡，從他們的手牌裡挑吧。",
+      "none": "大家都沒有卡片。",
+      "confirm": "收下禮物"
+    },
+    "discard": {
+      "title": "手牌滿了",
+      "incoming": "新得到：",
+      "hand": "手牌",
+      "pickFirst": "選一張要丟掉的卡",
+      "confirm": "丟掉 {{name}}"
+    },
+    "deathGod": {
+      "title": "死神附身",
+      "body": "你已經投降。選一位對手，讓死神附身在他身上。",
+      "pickFirst": "選擇一位對手",
+      "confirm": "送給 {{name}}"
+    },
+    "bank": {
+      "atmTitle": "銀行 ATM",
+      "counterTitle": "銀行櫃檯",
+      "pass": "路過銀行",
+      "stop": "停在銀行",
+      "op": "業務",
+      "amount": "金額",
+      "deposit": "存款",
+      "withdraw": "取款",
+      "doDeposit": "存入",
+      "doWithdraw": "取出",
+      "noCash": "身上沒有現金",
+      "noDeposit": "沒有存款",
+      "bankRun": "擠兌期間只能存款",
+      "shortfall": "取款後若銀行準備金不足，差額由董事長 {{name}} 墊付。",
+      "skip": "不辦了",
+      "leave": "離開櫃檯",
+      "loan": "貸款",
+      "repay": "還款",
+      "finance": "特別融資",
+      "loanNow": "目前貸款",
+      "due": "到期日",
+      "duePreview": "新借款 {{date}} 到期",
+      "limit": "可貸額度",
+      "financeNow": "融資餘額",
+      "financeLimit": "融資上限",
+      "noLimit": "沒有額度",
+      "noLoan": "沒有貸款",
+      "noMoney": "沒有錢可以還",
+      "loanBlocked": {
+        "bankRun": "擠兌期間停止放款",
+        "rejected": "你被銀行拒絕往來",
+        "sunday": "星期日銀行休息"
+      },
+      "do": {
+        "loan": "借",
+        "repay": "還",
+        "finance": "融資"
+      },
+      "hint": {
+        "loan": "借款進存款；貸款期間存款不計利息。到期未還會被強制扣款。",
+        "repay": "先扣存款、再扣現金；還清後到期日清零。",
+        "finance": "董事長特權：無利息、無期限，額度是其他玩家的存款合計。"
+      }
+    }
+  },
+  "pnl": {
+    "inventory": {
+      "title": "背包",
+      "points": "點券",
+      "cardCount": "{{n}} 張卡",
+      "cards": "卡片",
+      "items": "道具",
+      "cardsUsable": "卡片 {{n}}/{{total}}",
+      "itemsUsable": "道具 {{n}}/{{total}}",
+      "noCards": "沒有卡片",
+      "noItems": "沒有道具",
+      "hidden": "手牌不公開（{{n}} 張）",
+      "vehicle": "正在使用：{{name}}",
+      "anchor": "可回到第 {{n}} 回合"
+    },
+    "stock": {
+      "title": "股市",
+      "open": "開市中",
+      "closed": {
+        "sunday": "星期日休市",
+        "holiday": "節日休市",
+        "halted": "全面停市"
+      },
+      "totalValue": "持股市值",
+      "deposit": "存款",
+      "name": "股票",
+      "price": "現價",
+      "change": "漲跌",
+      "trend": "{{n}} 日走勢",
+      "trendOf": "{{name}} 走勢",
+      "shares": "持股",
+      "avg": "均價",
+      "pnl": "盈虧",
+      "chairman": "董事長",
+      "side": "買賣",
+      "buy": "買入",
+      "sell": "賣出",
+      "qty": "股數",
+      "maxBuy": "最多可買 {{n}} 股",
+      "maxSell": "最多可賣 {{n}} 股",
+      "amount": "金額",
+      "depositAfter": "交易後存款",
+      "doBuy": "買入 {{n}} 股",
+      "doSell": "賣出 {{n}} 股",
+      "noFee": "買入從存款扣款、賣出進存款，沒有手續費。",
+      "readOnly": "只能在自己回合的行動階段交易。",
+      "cannotBuy": "現在不能買（額度或存款不足）",
+      "cannotSell": "沒有可賣的股票"
+    },
+    "bank": {
+      "title": "銀行",
+      "cash": "現金",
+      "deposit": "存款",
+      "loan": "貸款",
+      "finance": "特別融資",
+      "interest": "每月 1 日計息（月息 10%，有貸款時不計），下次 {{date}}",
+      "loanDue": "貸款 {{date}} 到期，有貸款時存款不計息",
+      "bankRun": "銀行擠兌中，還有 {{n}} 天：停止放款、只能存款",
+      "rejected": "被銀行拒絕往來，還有 {{n}} 天"
+    },
+    "player": {
+      "title": "{{name}} 的資料",
+      "ai": "電腦",
+      "out": {
+        "bankrupt": "已破產",
+        "surrender": "已投降"
+      },
+      "stockValue": "股票市值",
+      "netWorth": "總資產",
+      "cards": "卡片 {{n}} 張",
+      "items": "道具 {{n}} 個",
+      "lots": "地產 {{n}} 處（房屋 {{houses}} 層）",
+      "days": "{{n}} 天",
+      "alliance": "與 {{name}} 同盟 {{n}} 天",
+      "bomb": "炸彈 {{n}} 步",
+      "insurance": "保險 {{n}} 天"
+    },
+    "property": {
+      "title": "地產一覽",
+      "filter": "地主",
+      "all": "全部",
+      "unowned": "無主",
+      "count": "共 {{n}} 處",
+      "name": "名稱",
+      "kind": "種類",
+      "level": "等級",
+      "owner": "地主",
+      "landPrice": "地價",
+      "toll": "過路費",
+      "mark": "標記",
+      "tenure": "地契到期",
+      "markRaise": "漲價",
+      "markSeal": "查封"
+    },
+    "tile": {
+      "title": "格子資訊",
+      "facility": "設施",
+      "price": "標價",
+      "beggar": "乞丐（{{name}}）"
+    },
+    "board": {
+      "title": "公佈欄",
+      "empty": "目前沒有掛牌。",
+      "seller": "賣家",
+      "asset": "物品",
+      "price": "價格",
+      "buy": "買下",
+      "delist": "撤下",
+      "list": "我要掛牌（已掛 {{n}} 件）",
+      "cannotList": "現在不能掛牌。",
+      "kind": "類型",
+      "kindLot": "地產",
+      "kindStock": "股票",
+      "kindCard": "卡片",
+      "kindItem": "道具",
+      "shares": "股數",
+      "qty": "數量",
+      "cap": "上限 {{cap}} 元",
+      "doList": "掛牌"
+    }
+  },
+  "nav": {
+    "home": "首頁",
+    "solo": "單機",
+    "devMap": "地圖預覽",
+    "devGallery": "美術畫廊",
+    "devDecisions": "對話方塊樣板"
+  },
+  "home": {
+    "title": "大富翁4 連線版",
+    "createRoom": "建立房間",
+    "joinRoom": "輸入房間號加入",
+    "solo": "單機對戰電腦",
+    "wip": "大廳、建房與選角正在施工中（M3 後續）。先去開發頁看看棋盤渲染吧。"
+  },
+  "room": {
+    "title": "房間 {{code}}",
+    "wip": "房間頁正在施工中：連線伺服器、選座、選角色、準備與開始。"
+  },
+  "solo": {
+    "title": "單機對戰",
+    "wip": "單機模式會自動建私密房間並補 3 個電腦（M3 後續）。"
+  },
+  "notFound": {
+    "title": "找不到這個頁面",
+    "body": "地址 {{path}} 不存在。"
+  },
+  "dev": {
+    "map": {
+      "title": "地圖預覽",
+      "map": "地圖",
+      "rotateLeft": "向左旋轉",
+      "rotateRight": "向右旋轉",
+      "rotation": "方向 {{n}}/4",
+      "zoomIn": "放大",
+      "zoomOut": "縮小",
+      "zoom": "縮放 {{z}}",
+      "fitAll": "顯示全圖",
+      "walkStart": "4 人隨機行走",
+      "walkStop": "停止行走",
+      "randomLots": "隨機地產狀態",
+      "clearLots": "清空地產",
+      "selected": "選中",
+      "hint": "拖動平移、滾輪或雙指縮放、點選格子檢視 TileDef。",
+      "none": "點選棋盤上的格子檢視詳情",
+      "loading": "正在載入地圖…",
+      "loadFailed": "地圖載入失敗：{{reason}}",
+      "taiwanHint": "台灣圖需要本機資料包：啟動服務端（RICH4_DATA_DIR=./rich4-data npm run dev:server），或在 rich4-data/maps/ 下放置 taiwan.map.json 供開發伺服器直讀。",
+      "issues": "校驗：{{errors}} 個錯誤，{{warns}} 個警告",
+      "stats": "{{tiles}} 格 · {{lots}} 地塊 · {{companies}} 企業 · {{landmarks}} 地標 · {{via}} 連線格",
+      "cell": "網格",
+      "terrain": "地形",
+      "road": "連線格（via）",
+      "empty": "空地"
+    },
+    "gallery": {
+      "title": "美術畫廊",
+      "buildings": "建築",
+      "houses": "住宅 0–5 級",
+      "facilities": "設施",
+      "companies": "企業",
+      "landmarks": "地標",
+      "characters": "角色",
+      "portraits": "頭像",
+      "gods": "神明（佔位）",
+      "poses": "姿勢",
+      "front": "正面",
+      "back": "背面",
+      "mirrored": "映象"
+    },
+    "decisions": {
+      "title": "決策對話方塊預覽",
+      "isMine": "我的決策（取消勾選為只讀等待態）",
+      "limit": "時限",
+      "expired": "已超時",
+      "nack": "提交後模擬 nack（0.6 秒後解鎖）",
+      "only": "只看",
+      "all": "全部 23 種",
+      "reset": "重新發牌",
+      "log": "提交記錄",
+      "highlight": "棋盤高亮（BoardBridge）",
+      "panels": "資訊面板"
+    }
+  },
+  "board": {
+    "forSale": "出售",
+    "forLease": "招商"
+  },
+  "social": {
+    "tabAll": "全部",
+    "tabSpectators": "觀戰",
+    "quick": "快捷語",
+    "quickPhrases": {
+      "0": "快點啦～",
+      "1": "哈哈哈",
+      "2": "我要破產了",
+      "3": "手下留情！",
+      "4": "好運來！",
+      "5": "這塊地是我的",
+      "6": "謝謝老闆",
+      "7": "下次再來找我玩"
+    },
+    "muteTitle": "遮蔽 {{name}}（不再顯示他的訊息與表情）",
+    "mutedToast": "已遮蔽 {{name}}",
+    "mutedN": "已遮蔽 {{n}} 人",
+    "unmute": "取消遮蔽",
+    "audienceAll": "你的訊息所有人可見",
+    "audienceSpectators": "你的訊息只有觀戰者可見",
+    "emptySpectators": "觀戰頻道還沒有訊息",
+    "follow": "跟隨",
+    "followAuto": "自動（當前行動者）",
+    "allowSpectators": "允許觀戰",
+    "spectatorChat": "觀戰者聊天",
+    "spectatorChatMode": {
+      "all": "所有人可見",
+      "spectators": "僅觀戰者可見",
+      "off": "關閉"
+    },
+    "hostOptions": "觀戰設定"
+  },
+  "saveMenu": {
+    "import": "匯入存檔檔案",
+    "export": "匯出",
+    "imported": "已匯入存檔「{{name}}」",
+    "importedUnofficial": "已匯入「{{name}}」：簽名無效，標記為非官方存檔（仍可讀取）",
+    "exported": "已匯出「{{name}}」",
+    "savedAt": "保存於 {{time}}",
+    "deleteConfirm": "確認刪除",
+    "cancel": "取消",
+    "unofficialNote": "簽名無效：檔案被修改過或來自其他伺服器，資料不保證與原對局一致",
+    "warn": {
+      "needsMigration": "舊版本存檔（將自動升級）",
+      "chatTailDropped": "部分聊天記錄已丟棄",
+      "unknown": "相容性提示"
+    },
+    "err": {
+      "gameInProgress": "這個存檔所在的對局還在進行中，請先結束或解散那個房間",
+      "incompatibleWhy": "存檔無法讀取：{{reason}}",
+      "tooLarge": "檔案太大（上限 2 MB）",
+      "empty": "檔案是空的",
+      "network": "網路錯誤，請稍後再試",
+      "unreadable": "無法讀取所選檔案",
+      "listFailed": "存檔列表載入失敗：{{reason}}"
+    },
+    "incompat": {
+      "badEncoding": "不是有效的 .r4save 檔案",
+      "badJson": "檔案內容損壞",
+      "tooLarge": "解壓後資料過大",
+      "badFormat": "存檔格式不正確",
+      "newerFormat": "存檔來自更新的版本",
+      "newerState": "存檔來自更新的版本",
+      "mapHashMismatch": "伺服器上沒有存檔用的地圖版本",
+      "migrationFailed": "舊存檔升級失敗",
+      "invalidState": "存檔資料校驗不通過",
+      "mapRefMismatch": "存檔的地圖資訊前後不一致",
+      "seatMismatch": "存檔的座位與角色不一致"
+    },
+    "loadedNewRoom": "已讀取存檔：房間 {{code}} 已建好，把邀請連結發給原來的玩家吧"
+  },
+  "trustee": {
+    "title": "託管設定",
+    "intro": "託管時由電腦按下面的設定替你行動；隨時可以解除。",
+    "statusOn": "託管中（{{reason}}）",
+    "statusOff": "未託管",
+    "personality": "個性",
+    "personalities": {
+      "0": "乖寶寶",
+      "1": "普通人",
+      "2": "大老奸"
+    },
+    "usage": "卡片與道具",
+    "useCards": "使用卡片",
+    "useItems": "使用道具",
+    "cashRatio": "現金比例",
+    "stockRatio": "股票比例",
+    "ratioHelp": "現金比例：手頭保留現金佔資產的比例；股票比例：投資股票佔資產的比例（0–100%，每檔 10%）。",
+    "on": "開始託管",
+    "off": "解除託管",
+    "save": "儲存設定",
+    "onDone": "已開始託管",
+    "offDone": "已解除託管",
+    "saved": "託管設定已儲存",
+    "openSettings": "託管設定…",
+    "toggleHint": "點按切換託管；長按或點旁邊的 ⚙ 開啟託管設定"
+  },
+  "conn": {
+    "graceLeft": "{{n}} 秒後由電腦託管你的角色；重連後自動恢復。",
+    "autopiloted": "你的角色已由電腦託管，重新連上後自動恢復。",
+    "spectatorNote": "重連後自動回到觀戰畫面。",
+    "restored": "已重新連線",
+    "restoredGame": "已重新連線，對局已同步"
+  },
+  "menu": {
+    "dissolveAsk": "確定解散房間？所有人都會回到首頁。",
+    "dissolveInGame": "確定解散房間？對局會先自動存檔，所有人回到首頁。",
+    "dissolveConfirm": "解散"
+  }
+}

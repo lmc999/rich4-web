@@ -148,3 +148,21 @@ describe('socketTransport：服务器主动断开', () => {
     expect(fake.connectCalls).toBe(calls);
   });
 });
+
+describe('socketTransport：握手被访问门禁拒绝', () => {
+  it('ACCESS_REQUIRED：断开并停在 closed（带错误码），不再自动重试', () => {
+    const { t } = make();
+    const errors: (string | undefined)[] = [];
+    t.onStatus((_s, info) => errors.push(info.error?.code));
+    t.connect();
+    const calls = fake.connectCalls;
+    const err = Object.assign(new Error('access'), {
+      data: { code: 'ACCESS_REQUIRED', details: { reason: 'missing' } },
+    });
+    fake.fire('connect_error', err);
+    expect(t.status).toBe('closed');
+    expect(errors).toContain('ACCESS_REQUIRED');
+    vi.advanceTimersByTime(60_000);
+    expect(fake.connectCalls).toBe(calls);
+  });
+});

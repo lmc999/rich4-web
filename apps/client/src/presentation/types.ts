@@ -72,8 +72,41 @@ export interface AudioPort {
   play(id: string): void;
 }
 
+/**
+ * 事件的声音钩子（原版皮肤 A9）：GameClient 在每个事件 handler 外层调用（audio/ 的 AudioDirector 经 app/audio.ts 接入，
+ * ?audio=off 或音频模块尚未加载时为 null）。音效与语音在事件开始时触发，事件期间的场景曲在 handler 结束（含中止）时收起。
+ */
+export interface EventAudioHook {
+  /** 事件 handler 开始前调用；返回的函数在该事件演出结束（自然结束、封顶或中止）时调用 */
+  onEvent(e: GameEvent, ctx: PresentationContext): () => void;
+  /** PresentationContext.audio 的实现 */
+  readonly port: AudioPort;
+  /** 演出被中止（reset / skipAll）或离开房间：收起事件场景曲、停掉语音 */
+  reset(): void;
+  /**
+   * 事件没有播放演出就直接提交（instant、后台标签页、skipAll 追帧）时调用：不放声音，只收起以它为终点的跨事件场景曲
+   * （拍卖曲到 AUCTION_ENDED 为止）
+   */
+  observe?(e: GameEvent): void;
+}
+
+/**
+ * 事件在权威流里的位置（original-skin.md §3 修正 7）：同一批事件在所有客户端与观战者上完全相同，
+ * 需要随机的演出（原版语音的 1/3、1/2、二选一）用 hash32(epoch, seq, eventIndex, seat) 取值，保证大家听到同一句。
+ */
+export interface EventStamp {
+  /** 房间 epoch（读档 / 重开后变化） */
+  epoch: number;
+  /** 批次 seq */
+  seq: number;
+  /** 事件在批内的下标（0 起） */
+  eventIndex: number;
+}
+
 export interface PresentationContext {
   signal: AbortSignal;
+  /** 当前事件的位置（EventPlayer 调 handler 时总会给出；测试替身可省略） */
+  at?: EventStamp;
   /** 由动画时钟驱动的等待（倍速、中止、instant 即刻完成） */
   wait(ms: number): Promise<void>;
   board: BoardPort;

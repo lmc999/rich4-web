@@ -18,6 +18,8 @@ import {
 } from '@rich4/shared/net';
 import type { GameView } from '@rich4/shared/view';
 import { AnimClock } from '../game/anim/AnimClock';
+import { onUiLanguageChanged, uiLanguage } from '../i18n';
+import { withEventAudio } from '../presentation/audioHook';
 import { EventPlayer } from '../presentation/EventPlayer';
 import { HANDLERS } from '../presentation/handlers';
 import { formatEvent } from '../presentation/logFormat';
@@ -25,6 +27,7 @@ import { type LooseT, makeNames } from '../presentation/names';
 import { systemText, TOAST_SYSTEM_KEYS } from '../presentation/systemText';
 import {
   type BoardPort,
+  type EventAudioHook,
   type HandlerMap,
   NULL_AUDIO,
   NULL_BOARD,
@@ -106,6 +109,8 @@ export class GameClient {
   readonly anim = new AnimClock();
   readonly player: EventPlayer;
   private board: BoardPort = NULL_BOARD;
+  /** 事件声音（app/audio.ts 懒加载后接入；?audio=off 时一直为 null） */
+  private audio: EventAudioHook | null = null;
   private map: MapIndex | null = null;
   private roomCode: string | null = null;
   private entering: { code: string; p: Promise<Result<{ role: EnterRole; fellBack: boolean }>> } | null = null;
@@ -134,7 +139,8 @@ export class GameClient {
       () => this.transport.status === 'open',
     );
     this.player = new EventPlayer({
-      handlers: o.handlers ?? HANDLERS,
+      // 最外层是声音钩子：音效 / 语音在 handler 开始时触发，事件场景曲在 handler 结束（含封顶、中止）后收起
+      handlers: withEventAudio(o.handlers ?? HANDLERS, () => this.audio),
       clock: this.anim,
       dev: o.dev ?? false,
       maxHandlerMs: o.maxHandlerMs ?? 20_000,
@@ -148,7 +154,10 @@ export class GameClient {
       onAbort: () => {
         this.board.clearFx();
         this.ui.closeTransient();
+        this.audio?.reset();
       },
+      // 不播放直接提交的事件（后台标签页、instant、追帧）：声音层只收起以它为终点的场景曲
+      onSkipEvent: (e) => this.audio?.observe?.(e),
       context: (signal, view) => this.makeContext(signal, view),
       sink: {
         reset: (s) => {
@@ -162,7 +171,12 @@ export class GameClient {
             e,
             this.names(() => view),
           );
-          if (line) useGameStore.getState().pushLog([{ seq, type: e.type, text: line, date: view.clock.date }]);
+          if (line) {
+            // 带上来源：界面语言切换（原版皮肤判定完成、zh-TW 语言包就绪）时按新语言重排已有的行
+            useGameStore
+              .getState()
+              .pushLog([{ seq, type: e.type, text: line, date: view.clock.date, src: { event: e, view } }]);
+          }
         },
         commitBatch: (b) => {
           useGameStore.getState().commitBatch(b);
@@ -190,6 +204,15 @@ export class GameClient {
         void this.onConnected();
       }),
       this.clock.onChange((offset, rtt) => useConnectionStore.getState().setClock(offset, rtt)),
+      // 界面语言切换（原版皮肤 → 繁体）之前生成的日志行按新语言重排（U5：原版皮肤下日志一律繁体）
+      onUiLanguageChanged(() =>
+        useGameStore.getState().relocalizeLog((src) =>
+          formatEvent(
+            src.event,
+            this.names(() => src.view),
+          ),
+        ),
+      ),
       useSettingsStore.subscribe((s, prev) => {
         if (s.speed !== prev.speed) this.player.setSpeed(s.speed);
         if (s.nickname !== prev.nickname) this.onNicknameChanged();
@@ -280,6 +303,12 @@ export class GameClient {
 
   setMap(map: MapIndex | null): void {
     this.map = map;
+  }
+
+  /** 接入 / 撤下事件声音（null = 静音；之后开始的事件生效） */
+  setAudio(audio: EventAudioHook | null): void {
+    this.audio?.reset();
+    this.audio = audio;
   }
 
   /** 镜头移到地块（信息面板「定位」） */
@@ -505,7 +534,7 @@ export class GameClient {
   // ───────────────────────── 内部 ─────────────────────────
 
   private names(view: () => GameView | null) {
-    return makeNames({ t: this.t, view, map: () => this.map });
+    return makeNames({ t: this.t, view, map: () => this.map, lang: uiLanguage });
   }
 
   private makeContext(signal: AbortSignal, view: () => GameView): PresentationContext {
@@ -525,7 +554,7 @@ export class GameClient {
         return signal.aborted || self.player.abortEpoch !== epoch ? NULL_UI : self.ui;
       },
       animSpeed: () => this.anim.speed,
-      audio: NULL_AUDIO,
+      audio: this.audio?.port ?? NULL_AUDIO,
       me: mySeat(room),
       role: room?.you.role === 'player' ? 'player' : 'spectator',
       view,
@@ -587,6 +616,7 @@ export class GameClient {
     this.roomCode = null;
     if (this.mgBacklog !== null) this.mgBacklog = [];
     this.player.dispose();
+    this.audio?.reset();
     useGameStore.getState().clear();
     useChatStore.getState().clear();
     useRoomStore.getState().clear();

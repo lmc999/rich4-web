@@ -1,7 +1,7 @@
 // 网络层：身份与 token、时钟校准、路由穷举、GameClient 的房间 / 对局操作（假传输）
 import { S2C_EVENTS, TOKEN_RE } from '@rich4/shared/net';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { initI18n } from '../i18n';
+import { initI18n, setUiLanguage } from '../i18n';
 import { NULL_BOARD } from '../presentation/types';
 import { useChatStore } from '../store/chatStore';
 import { useGameStore } from '../store/gameStore';
@@ -195,6 +195,32 @@ describe('GameClient', () => {
     await client.act({ type: 'ROLL', dice: 1 });
     expect(useGameStore.getState().submitting).toBe(d!.decisionId);
     client.stop();
+  });
+
+  it('界面语言切换（原版皮肤判定完成、zh-TW 就绪）之前生成的日志行按新语言重排；stop 之后不再跟随', async () => {
+    const sp = selfPlay({ seed: 2, steps: 30 });
+    const { client, transport } = makeTestClient({ storage: memoryStorage(), instant: true });
+    client.start();
+    transport.push('game:snapshot', { ...sp.initial, serverNow: 0 });
+    for (const b of sp.batches.slice(0, 12)) transport.push('game:batch', b);
+    await client.player.whenIdle();
+    const before = useGameStore.getState().log.map((l) => l.text);
+    expect(before.length).toBeGreaterThan(3);
+    try {
+      expect(await setUiLanguage('zh-TW')).toBe(true);
+      const after = useGameStore.getState().log.map((l) => l.text);
+      expect(after).toHaveLength(before.length);
+      expect(after).not.toEqual(before);
+      expect(after.filter((t, i) => t !== before[i]).length).toBeGreaterThan(0);
+      // 切回简体：与最初一致（重排是纯函数，不累积）
+      await setUiLanguage('zh-CN');
+      expect(useGameStore.getState().log.map((l) => l.text)).toEqual(before);
+      client.stop();
+      await setUiLanguage('zh-TW');
+      expect(useGameStore.getState().log.map((l) => l.text)).toEqual(before);
+    } finally {
+      await setUiLanguage('zh-CN');
+    }
   });
 
   it('断档的 batch 触发 game:resync；room:closed 清空并记录原因', async () => {

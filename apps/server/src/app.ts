@@ -3,20 +3,30 @@
  * 引擎、AI 策略、时钟、调度器、日志、持久化都可以注入：集成测试注入 stubEngine / ManualScheduler / 缩短的计时 /
  * 内存 SQLite。启动时从快照 + journal 恢复房间（restoreReport）；close() 默认刷快照与自动存档（优雅停机），
  * close({flush:false}) 模拟崩溃（只剩逐条写入的 journal）。
+ * 原版皮肤（docs/design/original-skin.md）：/pack/* 素材包（assets/PackRegistry + http/pack）与访问门禁
+ * （access/AccessControl + http/access + io.use 握手守卫）。
  */
 import { randomBytes, randomInt } from 'node:crypto';
+import type { DatabaseSync } from 'node:sqlite';
 import { getHeapStatistics } from 'node:v8';
 import { type AiPolicy, BasicAiPolicy, OriginalAiPolicy } from '@rich4/shared/ai';
 import { createEngine, type EngineApi } from '@rich4/shared/engine';
 import { type RoomSettings, SAVE_IMPORT_MAX_BYTES } from '@rich4/shared/net';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance, LogController } from 'fastify';
-import type { AppConfig } from './config';
+import { AccessControl, type AccessControlDeps } from './access/AccessControl';
+import { type AccessStore, accessDbPath, openAccessStore, SqliteAccessStore } from './access/AccessStore';
+import { AccessLimiter } from './access/limiter';
+import { belowRecommendedScrypt, RECOMMENDED_SCRYPT } from './access/passcode';
+import { loadPackRegistry, type PackRegistry } from './assets/PackRegistry';
+import { type AppConfig, ConfigError, isLocalhostUrl } from './config';
 import type { MapCatalog } from './data/DataRegistry';
 import { AiDriver } from './game/AiDriver';
 import { DEFAULT_TIMING, type TimingOptions } from './game/Deadlines';
-import { EventLoopMonitor, registerAdmin } from './http/admin';
+import { registerAccess } from './http/access';
+import { AdminAuth, EventLoopMonitor, registerAdmin } from './http/admin';
 import { registerHealth } from './http/health';
 import { registerMaps } from './http/maps';
+import { registerPack } from './http/pack';
 import { registerSavesHttp } from './http/saves';
 import { registerStatic } from './http/static';
 import { type Clock, RealScheduler, realClock, type Scheduler } from './infra/clock';
@@ -62,6 +72,12 @@ export interface AppDeps {
   badWords?: readonly string[];
   /** 重启恢复的时间窗（默认 24 小时） */
   restoreMaxAgeMs?: number;
+  /** 注入素材包注册表（测试用）；缺省按 config.assets 加载 */
+  pack?: PackRegistry;
+  /** 门禁的时钟、限流器等（测试用） */
+  accessOptions?: Partial<Pick<AccessControlDeps, 'now' | 'sleep' | 'limiter' | 'redeemLimiter' | 'epochCacheMs'>>;
+  /** 管理接口鉴权失败的退避（测试用；缺省新建） */
+  adminLimiter?: AccessLimiter;
 }
 
 export interface App {
@@ -76,6 +92,10 @@ export interface App {
   readonly saves: SaveService;
   /** 启动时恢复的房间 */
   readonly restoreReport: readonly RestoreReport[];
+  /** 原版皮肤素材包（未启用时 enabled=false） */
+  readonly pack: PackRegistry;
+  /** 访问门禁（ACCESS_MODE=off 时 enabled=false） */
+  readonly access: AccessControl;
   listen(port?: number, host?: string): Promise<{ port: number; url: string }>;
   isReady(): boolean;
   /** 优雅停机：readyz 转 503、server:notice{shutdown}、刷快照与自动存档、关闭连接与数据库 */
@@ -121,6 +141,72 @@ export async function resolveEngine(
   } catch (err) {
     log.error({ err }, '真实引擎不可用：room:start 将返回 INTERNAL（可设 RICH4_TEST_ENGINE=stub 联调）');
     return { engine: null, policy: aiPolicyOf(aiPolicy) };
+  }
+}
+
+/**
+ * 纵深防御：素材包已启用而门禁关闭时，只有配置里显式的本机例外（config.assets.ungated，由 loadConfig 的启动守卫判定）
+ * 才允许继续；否则（manifest 在 loadConfig 之后才出现、调用方自行构造的 config 与实际不符等）拒绝启动。
+ */
+export function assertPackGated(
+  config: Pick<AppConfig, 'access' | 'assets'>,
+  pack: Pick<PackRegistry, 'enabled' | 'dir'>,
+): void {
+  if (pack.enabled && config.access.mode === 'off' && !config.assets.ungated) {
+    throw new ConfigError(
+      `原版素材包已启用（${pack.dir}）而访问门禁关闭：拒绝启动。请设置 ACCESS_MODE=passcode 或 invite（见 deploy/.env.example）`,
+    );
+  }
+}
+
+/**
+ * 启动时的门禁态势提示：未设门禁的素材包（本机显式例外）高亮告警；门禁开启但没有 TRUST_PROXY 时提醒限流按直连 IP 计；
+ * 生产环境门禁开启而 PUBLIC_URL 不是 https（cookie 不带 Secure）记 error；口令哈希参数低于建议值、
+ * invite 模式没有 ADMIN_TOKEN（容器里无法签发邀请码）时提醒。
+ */
+export function warnAccessPosture(
+  log: Logger,
+  config: Pick<AppConfig, 'access' | 'trustProxy' | 'publicUrl' | 'host' | 'assets'> &
+    Partial<Pick<AppConfig, 'production' | 'adminToken'>>,
+  pack: Pick<PackRegistry, 'enabled' | 'dir'>,
+): void {
+  if (pack.enabled && config.access.mode === 'off' && config.assets.ungated) {
+    const bar = '!'.repeat(72);
+    log.warn(bar);
+    log.warn(
+      { publicUrl: config.publicUrl, host: config.host, dir: pack.dir },
+      '!!! 原版素材包未设访问门禁（RICH4_ASSETS_ALLOW_UNGATED=1，仅限本机开发）：能访问本端口的人都能下载素材 !!!',
+    );
+    log.warn(bar);
+  }
+  if (config.access.mode === 'off') return;
+  if (!config.trustProxy && !isLocalhostUrl(config.publicUrl)) {
+    log.warn(
+      { publicUrl: config.publicUrl },
+      'access: TRUST_PROXY=0，登录限流按直连 IP 计算；若服务器在反向代理之后，请设置 TRUST_PROXY=1',
+    );
+  }
+  if (
+    config.production === true &&
+    !config.publicUrl.toLowerCase().startsWith('https:') &&
+    !isLocalhostUrl(config.publicUrl)
+  ) {
+    log.error(
+      { publicUrl: config.publicUrl },
+      'access: 生产环境开启了访问门禁但 PUBLIC_URL 不是 https：访问 cookie 不带 Secure，会以明文发送；请改为 https 地址',
+    );
+  }
+  const h = config.access.passcodeHash;
+  if (h && belowRecommendedScrypt(h)) {
+    log.warn(
+      { N: h.N, r: h.r, p: h.p, recommended: RECOMMENDED_SCRYPT },
+      'access: ACCESS_PASSCODE_HASH 的 scrypt 参数低于建议值，建议用 npx tsx scripts/access.ts hash 重新生成',
+    );
+  }
+  if (config.access.mode === 'invite' && config.production === true && !config.adminToken) {
+    log.warn(
+      'access: ACCESS_MODE=invite 但没有设置 ADMIN_TOKEN：容器部署里无法签发邀请码（POST /admin/access/invites 需要它）',
+    );
   }
 }
 
@@ -172,6 +258,42 @@ export async function createApp(deps: AppDeps): Promise<App> {
     trustProxy: config.trustProxy ? (address: string) => isTrustedProxy(address) : false,
     bodyLimit: SAVE_IMPORT_MAX_BYTES,
   });
+  // 素材包与访问门禁（门禁钩子先于其他路由注册；/pack/* 无论是否启用都注册）
+  const pack =
+    deps.pack ??
+    (await loadPackRegistry({ dir: config.assets.dir, verify: config.assets.verify, log: log.child({ mod: 'pack' }) }));
+  let accessDb: DatabaseSync | null = null;
+  let accessStore: AccessStore | null = null;
+  if (config.access.mode !== 'off') {
+    if (persistence.db) accessStore = new SqliteAccessStore(persistence.db);
+    else {
+      const opened = openAccessStore(accessDbPath(config));
+      accessDb = opened.db;
+      accessStore = opened.store;
+    }
+  }
+  const access = new AccessControl({
+    config: config.access,
+    store: accessStore,
+    log: log.child({ mod: 'access' }),
+    roomExists: (code) => roomsRef?.get(code) !== undefined,
+    packId: pack.enabled ? pack.packId : null,
+    ...deps.accessOptions,
+  });
+  try {
+    assertPackGated(config, pack);
+  } catch (err) {
+    if (ownsPersistence) persistence.close();
+    throw err;
+  }
+  warnAccessPosture(log, config, pack);
+  const adminAuth = new AdminAuth({
+    token: config.adminToken,
+    log: log.child({ mod: 'admin' }),
+    limiter: deps.adminLimiter ?? new AccessLimiter(deps.accessOptions?.now ? { now: deps.accessOptions.now } : {}),
+  });
+  await registerAccess(fastify, { access, log, admin: adminAuth });
+  registerPack(fastify, { registry: pack });
   registerHealth(fastify, { isReady: () => ready && persistence.healthy(), startedAt });
   registerMaps(fastify, catalog);
   const limiter = new RateLimiter({ scale: deps.rateLimitScale ?? 1 });
@@ -216,7 +338,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   attachIo(
     io,
     { rooms, sessions, limiter, log, clock, testMode: config.testMode, saves },
-    { trustProxy: config.trustProxy, devCorsOrigin: config.devCorsOrigin },
+    { trustProxy: config.trustProxy, devCorsOrigin: config.devCorsOrigin, access },
   );
 
   // 启动恢复：快照 + journal 尾部重放（epoch+1，全员断线，暂停）
@@ -228,7 +350,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   });
 
   registerAdmin(fastify, {
-    token: config.adminToken,
+    auth: adminAuth,
     stats: () => ({
       uptimeMs: Date.now() - startedAt,
       ready: ready && persistence.healthy(),
@@ -264,6 +386,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     await fastify.close().catch(() => {});
     await backups?.stop();
     if (ownsPersistence) persistence.close();
+    accessDb?.close();
   };
 
   return {
@@ -277,6 +400,8 @@ export async function createApp(deps: AppDeps): Promise<App> {
     persistence,
     saves,
     restoreReport,
+    pack,
+    access,
     async listen(port = config.port, host = config.host) {
       const addr = await fastify.listen({ port, host });
       ready = true;
@@ -288,6 +413,8 @@ export async function createApp(deps: AppDeps): Promise<App> {
           maps: catalog.list().map((m) => `${m.id}${m.playable ? '' : '(pending)'}`),
           store: `${persistence.kind}:${persistence.location}`,
           restored: restoreReport.length,
+          pack: pack.enabled ? pack.packId : null,
+          access: access.mode,
         },
         'rich4 server listening',
       );

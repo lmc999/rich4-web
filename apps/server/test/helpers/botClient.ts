@@ -43,6 +43,8 @@ export interface BotOptions {
   seed?: number;
   /** 使用 WebSocket 以外的传输（默认只用 websocket，测试更快） */
   transports?: ('websocket' | 'polling')[];
+  /** 握手请求的额外头（访问门禁测试用 cookie） */
+  extraHeaders?: Record<string, string>;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -101,6 +103,7 @@ export class BotClient {
       reconnection: false,
       forceNew: true,
       timeout: 5000,
+      ...(this.opts.extraHeaders ? { extraHeaders: this.opts.extraHeaders } : {}),
       auth: {
         token: this.token,
         nickname: this.nickname,

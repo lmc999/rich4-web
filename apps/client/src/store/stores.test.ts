@@ -12,7 +12,14 @@ import {
 import { useChatStore } from './chatStore';
 import { currentSeat, playerOf, useGameStore } from './gameStore';
 import { canStart, isHost, mySeat, seatDisplayName } from './roomStore';
-import { normalizeNickname, useSettingsStore } from './settingsStore';
+import {
+  DEFAULT_VOLUME,
+  migrateSettings,
+  normalizeNickname,
+  normalizeVolume,
+  SETTINGS_VERSION,
+  useSettingsStore,
+} from './settingsStore';
 import { TOAST_LIMIT, useUiStore } from './uiStore';
 
 describe('roomStore 派生查询', () => {
@@ -92,6 +99,23 @@ describe('gameStore', () => {
     expect(currentSeat(sp.initial.view)).toBe(0);
     useGameStore.getState().clear();
   });
+
+  it('relocalizeLog：只重排带来源的行；返回 null 或文字不变时保留原行（状态不变时不触发更新）', () => {
+    const g = useGameStore.getState();
+    g.clear();
+    const src = { event: { type: 'MONEY' } as never, view: {} as never };
+    g.pushLog([
+      { seq: 1, type: 'MONEY', text: '简体', date: 0, src },
+      { seq: 2, type: 'MONEY', text: '无来源', date: 0 },
+    ]);
+    useGameStore.getState().relocalizeLog(() => '繁體');
+    expect(useGameStore.getState().log.map((l) => l.text)).toEqual(['繁體', '无来源']);
+    const same = useGameStore.getState().log;
+    useGameStore.getState().relocalizeLog(() => '繁體');
+    useGameStore.getState().relocalizeLog(() => null);
+    expect(useGameStore.getState().log).toBe(same);
+    g.clear();
+  });
 });
 
 describe('settings', () => {
@@ -109,6 +133,41 @@ describe('settings', () => {
     s.setSpeed(3);
     expect(useSettingsStore.getState().speed).toBe(3);
     s.setSpeed(1);
+    s.setVolume({ ui: 5 });
+    expect(useSettingsStore.getState().volume.ui).toBe(1);
+    s.setVolume({ ...DEFAULT_VOLUME });
+  });
+
+  it('音频默认值：语音开、后台静音开、界面音 0.8', () => {
+    const st = useSettingsStore.getState();
+    expect(st.voiceEnabled).toBe(true);
+    expect(st.muteInBackground).toBe(true);
+    expect(DEFAULT_VOLUME.ui).toBe(0.8);
+  });
+
+  it('持久化 v1 → v2：界面音跟随音效，语音与后台静音缺省开启；已有值保留', () => {
+    expect(SETTINGS_VERSION).toBe(2);
+    const v1 = { nickname: '阿土', volume: { master: 0.5, bgm: 0.4, sfx: 0.3, voice: 0.2 }, muted: true };
+    expect(migrateSettings(v1, 1)).toEqual({
+      ...v1,
+      volume: { master: 0.5, bgm: 0.4, sfx: 0.3, voice: 0.2, ui: 0.3 },
+      voiceEnabled: true,
+      muteInBackground: true,
+    });
+    expect(migrateSettings({ voiceEnabled: false, muteInBackground: false }, 1)).toMatchObject({
+      volume: DEFAULT_VOLUME,
+      voiceEnabled: false,
+      muteInBackground: false,
+    });
+    const v2 = { volume: { ...DEFAULT_VOLUME, ui: 0.1 } };
+    expect(migrateSettings(v2, 2)).toBe(v2);
+    expect(normalizeVolume({ master: 'x', bgm: 3, sfx: 0.5 })).toEqual({
+      master: DEFAULT_VOLUME.master,
+      bgm: 1,
+      sfx: 0.5,
+      voice: DEFAULT_VOLUME.voice,
+      ui: 0.5,
+    });
   });
 });
 

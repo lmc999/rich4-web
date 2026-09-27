@@ -1,6 +1,8 @@
 // 镜头（design/client.md §3.8）：跟随、平移、缩放、惯性、HUD insets、fitAll、手动拖动后暂停跟随。
 // 只依赖一个「可变换目标」接口（Pixi Container 天然满足），数学部分可在 node 下单测。
 // 约定：center 是 world 容器本地坐标中镜头对准的点；它显示在「有效可视区」（视口扣除 insets）的中心。
+// 缩放上下限参数化（original-skin.md §3 修正 7）：程序化棋盘沿用 MIN_ZOOM / MAX_ZOOM 且允许 fitAll 临时放宽下限；
+// 原版棋盘（A6）按源像素倍数设 1–3×，可关闭放宽。
 import type { AnimClock } from '../anim/AnimClock';
 import { cubicInOut, type Ease } from '../anim/easing';
 import { tweenValue } from '../anim/tween';
@@ -34,6 +36,15 @@ export const INERTIA_DECAY_PER_MS = 0.994;
 export const INERTIA_STOP = 0.01;
 const FRAME_MS = 1000 / 60;
 
+export interface CameraOptions {
+  /** 缩放下限（缺省 MIN_ZOOM） */
+  minZoom?: number;
+  /** 缩放上限（缺省 MAX_ZOOM） */
+  maxZoom?: number;
+  /** 大地图 fitAll / setBounds 时允许把下限临时放宽到恰好容纳全图（缺省 true） */
+  relaxMinToFit?: boolean;
+}
+
 export class Camera {
   private cx = 0;
   private cy = 0;
@@ -55,17 +66,25 @@ export class Camera {
   private animating = 0;
   /** dispose 之后（棋盘已销毁）：仍在共享动画时钟上的镜头补间不再写 target */
   private disposed = false;
-  /** 最小缩放：通常为 MIN_ZOOM，大地图 fitAll 时会临时放宽到恰好容纳全图 */
-  private minZoomDyn = MIN_ZOOM;
-  readonly maxZoom = MAX_ZOOM;
+  /** 配置的缩放下限 */
+  private baseMin: number;
+  private maxZ: number;
+  private readonly relax: boolean;
+  /** 实际最小缩放：通常为 baseMin，大地图 fitAll 时会临时放宽到恰好容纳全图（relaxMinToFit） */
+  private minZoomDyn: number;
 
   constructor(
     private readonly target: Transformable,
     viewport: { w: number; h: number },
     private readonly clock: AnimClock | null = null,
+    opts: CameraOptions = {},
   ) {
     this.vw = viewport.w;
     this.vh = viewport.h;
+    this.baseMin = opts.minZoom ?? MIN_ZOOM;
+    this.maxZ = Math.max(this.baseMin, opts.maxZoom ?? MAX_ZOOM);
+    this.relax = opts.relaxMinToFit ?? true;
+    this.minZoomDyn = this.baseMin;
     this.apply();
   }
 
@@ -77,6 +96,20 @@ export class Camera {
 
   get minZoom(): number {
     return this.minZoomDyn;
+  }
+
+  get maxZoom(): number {
+    return this.maxZ;
+  }
+
+  /** 改缩放上下限（当前缩放随之夹紧） */
+  setZoomLimits(min: number, max: number): void {
+    this.baseMin = Math.max(0.01, min);
+    this.maxZ = Math.max(this.baseMin, max);
+    this.refreshMinZoom();
+    this.z = this.clampZoom(this.z);
+    this.clampCenter();
+    this.apply();
   }
 
   get center(): Pt {
@@ -143,7 +176,7 @@ export class Camera {
   }
 
   private refreshMinZoom(): void {
-    this.minZoomDyn = this.bounds ? Math.min(MIN_ZOOM, this.fitZoomFor(this.bounds)) : MIN_ZOOM;
+    this.minZoomDyn = this.bounds && this.relax ? Math.min(this.baseMin, this.fitZoomFor(this.bounds)) : this.baseMin;
     if (this.z < this.minZoomDyn) this.z = this.minZoomDyn;
   }
 
@@ -235,7 +268,7 @@ export class Camera {
     const r = rect ?? this.bounds;
     if (!r) return Promise.resolve();
     const z = this.fitZoomFor(r);
-    this.minZoomDyn = Math.min(this.minZoomDyn, z);
+    if (this.relax) this.minZoomDyn = Math.min(this.minZoomDyn, z);
     const center = { x: r.x + r.w / 2, y: r.y + r.h / 2 };
     if (ms <= 0 || !this.clock) {
       this.z = this.clampZoom(z);
