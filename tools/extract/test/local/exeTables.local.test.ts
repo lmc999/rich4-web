@@ -82,4 +82,23 @@ describe.skipIf(!available)('exe 固定表（本机原版 exe）', () => {
       expect(canonicalJson(holidaysForMap(v206, 0))).toBe(canonicalJson(holidaysForMap(v311, 0)));
     },
   );
+
+  it('视角表 cellScreen 轴序（types.ts 注释）：按 [dy+14][dx+14] 展平、每项 (sy, sx)', T, async () => {
+    const { v206 } = await both();
+    const t = v206.view!.cellScreen.data[0]!;
+    expect(t).toHaveLength(29 * 29);
+    const at = (dx: number, dy: number) => t[(dy + 14) * 29 + (dx + 14)]!;
+    // 视角 0 的仿射（projection-fit.v206.json，按格 = 32 世界像素）：a=36.012 c=14.864 b=−10.527 d=25.524
+    const step = (dx: number, dy: number) => {
+      const [sy1, sx1] = at(dx, dy);
+      const [sy0, sx0] = at(0, 0);
+      return { sx: sx1 - sx0, sy: sy1 - sy0 };
+    };
+    const ex = step(10, 0);
+    const ey = step(0, 10);
+    expect(Math.abs(ex.sx / 10 - 36.012)).toBeLessThan(1);
+    expect(Math.abs(ex.sy / 10 + 10.527)).toBeLessThan(1);
+    expect(Math.abs(ey.sx / 10 - 14.864)).toBeLessThan(1);
+    expect(Math.abs(ey.sy / 10 - 25.524)).toBeLessThan(1);
+  });
 });

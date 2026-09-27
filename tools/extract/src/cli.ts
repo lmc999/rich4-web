@@ -3,6 +3,7 @@ import { readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { cmdAssetsBuild, cmdAssetsLs, cmdAssetsPreview, cmdAssetsSynth, cmdAssetsVerify } from './commands/assets';
 import { cmdExeConstants, cmdVerifyConstants } from './commands/constants';
 import { cmdExeDiff, cmdExeTables, cmdVerifyTables } from './commands/exe';
 import { cmdMapBuild, cmdOverridesSchema, cmdPack } from './commands/mapBuild';
@@ -47,6 +48,15 @@ const USAGE = `用法: rich4-extract <命令> [选项]
                                                      并写 docs/research/provenance-summary.md（--preview 另写 .cache/extract/preview/taiwan.svg）
   pack [--out rich4-data/] [--map taiwan]            部署数据包 → <out>/manifest.json、<out>/maps/*.map.json
   overrides schema                                   由 zod 导出 tools/extract/maps/overrides.schema.json
+  assets build [--out rich4-assets/] [--only board,ui,fx,minigame,audio,music,video] [--video]
+               [--audio opus,m4a] [--media <Steam Media 目录>] [--map-data <taiwan.map.json>] [--jobs 4] [--allow-unknown]
+                                                     原版皮肤素材包（仅供私人游玩；只写入已被 git 忽略的 rich4-assets/ 或 .cache/）
+  assets verify [--out rich4-assets/] [--full]       逐文件复算 sha256、契约与交叉引用（--full 另解码 PNG/FLC）
+  assets ls [--out rich4-assets/] [--group <分组>]   列出资源目录项及其构建结果
+  assets preview [--pack rich4-assets/] [--out .cache/assets-preview/] [--group <分组>]
+                                                     本机浏览用联系表、棋盘渲染与 index.html
+  assets synth [--out .cache/synthetic-pack/]        fixture 地图的合成素材包（CI 用，不入库）
+                                                     （build / preview / synth 输出到仓库外须加 --allow-outside-repo）
 通用: --src <dir>（默认 original/） --cache <dir>（默认 .cache/extract） --lock <file> --json --verbose
 退出码: 0 成功；1 结构/校验失败；2 缺少输入；3 指纹未知；4 规则字段差异需选基线；5 override 错误`;
 
@@ -60,6 +70,7 @@ const OPTIONS = {
   sources: { type: 'string' },
   json: { type: 'boolean' },
   'allow-unknown': { type: 'boolean' },
+  'allow-outside-repo': { type: 'boolean' },
   'dump-bin': { type: 'boolean' },
   'write-anchors': { type: 'boolean' },
   r2: { type: 'boolean' },
@@ -74,6 +85,15 @@ const OPTIONS = {
   strict: { type: 'boolean' },
   preview: { type: 'boolean' },
   verbose: { type: 'boolean' },
+  only: { type: 'string' },
+  video: { type: 'boolean' },
+  audio: { type: 'string' },
+  media: { type: 'string' },
+  'map-data': { type: 'string' },
+  jobs: { type: 'string' },
+  full: { type: 'boolean' },
+  group: { type: 'string' },
+  pack: { type: 'string' },
   help: { type: 'boolean', short: 'h' },
 } as const;
 
@@ -431,6 +451,11 @@ export async function main(argv: readonly string[], opts: MainOptions = {}): Pro
     if (cmd === 'map build') return await cmdMapBuild(ctx, v);
     if (pos[0] === 'pack') return await cmdPack(ctx, v);
     if (cmd === 'overrides schema') return await cmdOverridesSchema(ctx);
+    if (cmd === 'assets build') return await cmdAssetsBuild(ctx, v);
+    if (cmd === 'assets verify') return await cmdAssetsVerify(ctx, v);
+    if (cmd === 'assets ls') return await cmdAssetsLs(ctx, v);
+    if (cmd === 'assets preview') return await cmdAssetsPreview(ctx, v);
+    if (cmd === 'assets synth') return await cmdAssetsSynth(ctx, v);
     ctx.log.err(`未知命令：${pos.join(' ')}\n${USAGE}`);
     return ExitCode.STRUCTURE;
   } catch (e) {

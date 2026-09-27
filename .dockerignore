@@ -28,3 +28,8 @@ playwright-report
 .env
 deploy/.env
 **/.DS_Store
+
+# 原版素材包
+rich4-assets
+**/*.flc
+**/*.fli

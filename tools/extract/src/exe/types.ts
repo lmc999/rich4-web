@@ -245,7 +245,12 @@ export interface EventTablesInfo {
 
 /** 视野投影表（V-E10）：8 个视角 */
 export interface ViewTables {
-  /** 29×29 相对格（dx, dy ∈ −14..14，行主序 dx 外层）→ 屏幕像素偏移 (x, y)，每视角一张（v3.11 0x46ccf0） */
+  /**
+   * 29×29 相对格（dx, dy ∈ −14..14）→ 屏幕像素偏移，每视角一张（v3.11 0x46ccf0）。data[view] 按 [dy+14][dx+14] 展平
+   * （**dy 在外层**，下标 (dy+14)·29 + (dx+14)），每项为 **(sy, sx)**（先纵后横，int16）。
+   * 在台湾皮肤上核对：按此轴序拟合的仿射对 8 视角 × 841 格点最大误差约 2 px；按 dx 外层、(sx, sy) 读误差上千 px。
+   * 用法见 assets/skin.ts（fitViewAffines、exactTables）与 shared mapskin ExactTablesSchema。
+   */
   cellScreen: { va: string; dirs: number; size: number; data: [number, number][][] };
   /** 格内亚像素（x & 31, y & 31）的 2×2 投影矩阵 [a, b, c, d]：sx = (a·x + c·y) >> 5，sy = (b·x + d·y) >> 5（v3.11 0x474910） */
   subcell: { va: string; data: [number, number, number, number][] };

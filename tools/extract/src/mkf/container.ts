@@ -1,10 +1,18 @@
 import { BinReader } from '../bin/reader';
 import { ExtractError } from '../context';
+import { classifyMkfResource, KIND_SNIFF_BYTES, type MkfKind } from './kind';
+import { LzhufError, lzhufDecompress } from './lzhuf';
+
+export type { MkfKind } from './kind';
 
 /** 资源头：{ rawSize, storedSize, imageOffset, imageSize } 四个 u32。 */
 export const MKF_ENTRY_HEADER_SIZE = 16;
 
-export type MkfKind = 'SPR' | 'SMP' | 'GND' | 'data' | 'unknown';
+/**
+ * read() 解压失败时的错误码。沿用旧名以保持兼容：含义是「压缩流不符合严格 LZHUF 规格，无法解码」；
+ * 细分原因（E_LZHUF_*）写在 message 里，原始 LzhufError 放在 cause。
+ */
+export const MKF_DECOMPRESS_FAILED = 'COMPRESSED_NOT_SUPPORTED';
 
 export interface MkfEntry {
   index: number;
@@ -15,6 +23,7 @@ export interface MkfEntry {
   imageOffset: number;
   imageSize: number;
   compressed: boolean;
+  /** 按解压后内容的魔数与大小规则判定（见 kind.ts）；压缩流损坏时为 UNKNOWN */
   kind: MkfKind;
   /** 本项与下一项起点之间的空隙字节数（正常为 0） */
   gap: number;
@@ -27,25 +36,33 @@ export interface MkfWarning {
 }
 
 export class MkfError extends ExtractError {
-  constructor(code: string, message: string) {
+  constructor(code: string, message: string, options?: { cause?: unknown }) {
     super(code, message);
     this.name = 'MkfError';
+    if (options && 'cause' in options) this.cause = options.cause;
   }
 }
 
-const MAGIC_KINDS: readonly (readonly [string, MkfKind])[] = [
-  ['SPR\0', 'SPR'],
-  ['SMP\0', 'SMP'],
-  ['GND\0', 'GND'],
-];
-
-function sniffKind(r: BinReader, body: number, e: Omit<MkfEntry, 'kind' | 'gap'>): MkfKind {
-  if (e.compressed) return 'unknown';
-  if (e.storedSize >= 4) {
-    const magic = String.fromCharCode(...r.u8Array(body, 4));
-    for (const [m, k] of MAGIC_KINDS) if (magic === m) return k;
+/** 压缩资源只解出前 KIND_SNIFF_BYTES 字节来判定类型；只有可能是 TEXT 时才整段解压。解压失败 → UNKNOWN。 */
+function sniffKind(stored: Uint8Array, e: Omit<MkfEntry, 'kind' | 'gap'>): MkfKind {
+  const base = { rawSize: e.rawSize, imageOffset: e.imageOffset, imageSize: e.imageSize };
+  if (!e.compressed) return classifyMkfResource({ ...base, head: stored, body: stored });
+  let head: Uint8Array;
+  try {
+    head = lzhufDecompress(stored, e.rawSize, { limit: KIND_SNIFF_BYTES });
+  } catch (err) {
+    if (err instanceof LzhufError) return 'UNKNOWN';
+    throw err;
   }
-  return e.imageOffset === 0 && e.imageSize === 0 ? 'data' : 'unknown';
+  const body = (): Uint8Array | null => {
+    try {
+      return lzhufDecompress(stored, e.rawSize);
+    } catch (err) {
+      if (err instanceof LzhufError) return null;
+      throw err;
+    }
+  };
+  return classifyMkfResource({ ...base, head, body });
 }
 
 /**
@@ -144,7 +161,8 @@ export class MkfArchive {
         imageSize,
         compressed: storedSize !== rawSize,
       };
-      list.push({ ...base, kind: sniffKind(r, off + MKF_ENTRY_HEADER_SIZE, base), gap: next - end });
+      const stored = r.slice(off + MKF_ENTRY_HEADER_SIZE, storedSize);
+      list.push({ ...base, kind: sniffKind(stored, base), gap: next - end });
     }
     return new MkfArchive(name, r, x, sentinel, list, warnings);
   }
@@ -165,15 +183,29 @@ export class MkfArchive {
     return e;
   }
 
-  /** 读取资源体（零拷贝）。压缩资源本期不支持解码。 */
+  /** 资源体原样字节（压缩资源即压缩流；零拷贝）。 */
+  readStored(i: number): Uint8Array {
+    const e = this.entry(i);
+    return this.reader.slice(e.offset + MKF_ENTRY_HEADER_SIZE, e.storedSize);
+  }
+
+  /**
+   * 读取资源内容：未压缩资源零拷贝返回；压缩资源用严格 LZHUF 解压（每次调用都重新解压，返回新缓冲）。
+   * 压缩流不符合规格时抛 MkfError(MKF_DECOMPRESS_FAILED)。
+   */
   read(i: number): Uint8Array {
     const e = this.entry(i);
-    if (e.compressed) {
+    const stored = this.readStored(i);
+    if (!e.compressed) return stored;
+    try {
+      return lzhufDecompress(stored, e.rawSize);
+    } catch (err) {
+      if (!(err instanceof LzhufError)) throw err;
       throw new MkfError(
-        'COMPRESSED_NOT_SUPPORTED',
-        `${this.name}: 资源 ${i} 为私有压缩（stored=${e.storedSize} raw=${e.rawSize}），LZHUF 解码器尚未实现`,
+        MKF_DECOMPRESS_FAILED,
+        `${this.name}: 资源 ${i} 的压缩流无法严格解码（stored=${e.storedSize} raw=${e.rawSize}）：${err.message}`,
+        { cause: err },
       );
     }
-    return this.reader.slice(e.offset + MKF_ENTRY_HEADER_SIZE, e.storedSize);
   }
 }

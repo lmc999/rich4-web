@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { check, classifyFile, parseImports, resolveTarget, scan } from '../check-deps';
+import {
+  check,
+  classifyFile,
+  DEFAULT_SHARED_EXPORTS,
+  parseImports,
+  readSharedExports,
+  resolveTarget,
+  SHARED_ALLOW,
+  scan,
+} from '../check-deps';
+import { REPO_ROOT } from '../lib/cli';
 import { makeTempRepo, runScript } from './helpers';
 
 /** 用 路径 → 源码 构造文件集并返回违规的「文件 ← 说明符」列表 */
@@ -195,6 +205,77 @@ describe('check：分层表', () => {
       `${S}/engine/rules/x.test.ts ← @rich4/extract/anchors`,
       `${S}/view/x.test.ts ← ../../../../apps/server/src/rooms/Room`,
     ]);
+  });
+});
+
+describe('check：shared/assets 层（原版皮肤素材包契约）', () => {
+  const ASSETS = `${S}/assets`;
+
+  it('shared/assets 只依赖 util 与 zod；extract、client、server 可以依赖它', () => {
+    expect(
+      violationsOf({
+        [`${ASSETS}/pack.ts`]:
+          "import { z } from 'zod';\nimport { canonicalJson } from '../util/canonicalJson';\nimport { sha256Hex } from '../util/sha256';\nimport { MapSkinBindingSchema } from './mapskin';",
+        [`${ASSETS}/mapskin.ts`]: "import { canonicalJson } from '../util';",
+        [`${ASSETS}/index.ts`]: "export * from './pack';\nexport * from './mapskin';",
+        [`${S}/util/index.ts`]: "export * from './canonicalJson';",
+        'tools/extract/src/assets/manifest.ts':
+          "import { withPackId, type PackManifestV1 } from '@rich4/shared/assets';\nimport { writeFile } from 'node:fs/promises';",
+        'apps/client/src/skin/pack/PackClient.ts':
+          "import { safeParsePackManifest } from '@rich4/shared/assets';\nimport type { MapSkinV1 } from '@rich4/shared/assets';",
+        'apps/server/src/assets/PackRegistry.ts':
+          "import { packServablePaths } from '@rich4/shared/assets';\nimport { readFile } from 'node:fs/promises';",
+        'apps/server/src/game/GameRunner.ts': "import type { MusicScene } from '@rich4/shared/assets';",
+      }),
+    ).toEqual([]);
+  });
+
+  it('shared/assets 不得依赖 data/engine/view/net 等，不得引入 node:*；其他 shared 模块不得依赖它', () => {
+    expect(
+      violationsOf({
+        [`${ASSETS}/mapskin.ts`]: "import type { MapDef } from '../data/maps/types';",
+        [`${ASSETS}/audio.ts`]: "import type { GameEvent } from '../engine/types/events';",
+        [`${ASSETS}/net.ts`]: "import { ERROR_CODES } from '../net/errors';",
+        [`${ASSETS}/io.ts`]: "import { readFileSync } from 'node:fs';",
+        [`${S}/engine/core/skin.ts`]: "import { buildingFrame } from '../../assets/frames';",
+        [`${S}/view/skin.ts`]: "import { VOICE_SLOTS } from '../assets';",
+        [`${S}/data/maps/skin.ts`]: "import { mapGeometryDigest } from '../../assets/mapskin';",
+        [`${S}/net/pack.ts`]: "import type { PackManifestV1 } from '../assets/pack';",
+      }),
+    ).toEqual([
+      `${ASSETS}/audio.ts ← ../engine/types/events`,
+      `${ASSETS}/io.ts ← node:fs`,
+      `${ASSETS}/mapskin.ts ← ../data/maps/types`,
+      `${ASSETS}/net.ts ← ../net/errors`,
+      `${S}/data/maps/skin.ts ← ../../assets/mapskin`,
+      `${S}/engine/core/skin.ts ← ../../assets/frames`,
+      `${S}/net/pack.ts ← ../assets/pack`,
+      `${S}/view/skin.ts ← ../assets`,
+    ]);
+  });
+
+  it('shared/assets 的测试与 testing/ 豁免分层表（仍受包边界约束）', () => {
+    expect(
+      violationsOf({
+        [`${ASSETS}/contract.test.ts`]:
+          "import { FACILITY_TYPES } from '../data/tables/ids';\nimport { readFileSync } from 'node:fs';",
+        [`${ASSETS}/testing/synthetic.ts`]: "import { sha256Hex } from '../../util/sha256';",
+        [`${ASSETS}/bad.test.ts`]: "import { build } from '@rich4/extract';",
+      }),
+    ).toEqual([`${ASSETS}/bad.test.ts ← @rich4/extract`]);
+  });
+
+  it('@rich4/shared/assets 解析到 shared/assets/index，默认导出表与 package.json 一致', () => {
+    const ctx = { files: new Set([`${ASSETS}/index.ts`]), sharedExports: DEFAULT_SHARED_EXPORTS };
+    expect(resolveTarget('apps/client/src/a.ts', '@rich4/shared/assets', ctx)).toEqual({
+      kind: 'internal',
+      pkg: 'shared',
+      unit: 'shared/assets/index',
+    });
+    expect(classifyFile(`${ASSETS}/pack.ts`)).toMatchObject({ module: 'shared/assets', isTest: false });
+    expect(classifyFile(`${ASSETS}/testing/synthetic.ts`)).toMatchObject({ module: 'shared/assets', isTest: true });
+    expect(SHARED_ALLOW['shared/assets']).toEqual(['shared/util']);
+    expect(readSharedExports(REPO_ROOT)['./assets']).toBe(DEFAULT_SHARED_EXPORTS['./assets']);
   });
 });
 

@@ -16,7 +16,8 @@
     "./net": "./src/net/index.ts",
     "./minigames": "./src/minigames/index.ts",
     "./ai": "./src/ai/index.ts",
-    "./save": "./src/save/index.ts"
+    "./save": "./src/save/index.ts",
+    "./assets": "./src/assets/index.ts"
   },
   "scripts": { "typecheck": "tsc -p tsconfig.json" },
   "dependencies": { "zod": "4.6.5" }

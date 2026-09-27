@@ -6,7 +6,8 @@ const body = (n: number, fill = 0x11) => new Uint8Array(n).fill(fill);
 
 describe('MkfArchive 解析', () => {
   it('列出资源并读取未压缩资源体', () => {
-    const a = body(10, 0xaa);
+    // 含控制字节 → DATA（全 0xAA 是合法 Big5「文本」，会判成 TEXT）
+    const a = Uint8Array.from([0xaa, 0x01, 0xaa, 0x02, 0xaa, 0x03, 0xaa, 0x04, 0xaa, 0x05]);
     const b = body(3, 0xbb);
     const mkf = MkfArchive.open(buildMkf([{ body: a }, { body: b }]), 't.mkf');
     expect(mkf.count).toBe(2);
@@ -19,7 +20,7 @@ describe('MkfArchive 解析', () => {
       rawSize: 10,
       storedSize: 10,
       compressed: false,
-      kind: 'data',
+      kind: 'DATA',
       gap: 0,
     });
     expect(e1).toMatchObject({ index: 1, offset: 30, rawSize: 3, storedSize: 3 });
@@ -34,7 +35,7 @@ describe('MkfArchive 解析', () => {
     expect(mkf.count).toBe(2);
   });
 
-  it('按魔数识别 SPR/SMP/GND，图像字段合法', () => {
+  it('按魔数识别 SPR/SMP/GND，按图像字段识别 RAW16', () => {
     const spr = new Uint8Array(32);
     spr.set(ascii('SPR\0'));
     const gnd = new Uint8Array(32);
@@ -50,13 +51,13 @@ describe('MkfArchive 解析', () => {
       ]),
       'k.mkf',
     );
-    expect(mkf.entries().map((e) => e.kind)).toEqual(['SPR', 'GND', 'SMP', 'unknown']);
+    expect(mkf.entries().map((e) => e.kind)).toEqual(['SPR', 'GND', 'SMP', 'RAW16']);
   });
 
-  it('压缩资源：读取时抛 COMPRESSED_NOT_SUPPORTED', () => {
+  it('压缩流损坏：kind 为 UNKNOWN，读取时抛 COMPRESSED_NOT_SUPPORTED（兼容旧错误码）', () => {
     const mkf = MkfArchive.open(buildMkf([{ body: body(6), rawSize: 20 }]), 'z.mkf');
     expect(mkf.entry(0).compressed).toBe(true);
-    expect(mkf.entry(0).kind).toBe('unknown');
+    expect(mkf.entry(0).kind).toBe('UNKNOWN');
     expect(() => mkf.read(0)).toThrow(MkfError);
     expect(() => mkf.read(0)).toThrow(/COMPRESSED_NOT_SUPPORTED/);
   });

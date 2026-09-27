@@ -199,6 +199,7 @@ export const DEFAULT_SHARED_EXPORTS: Readonly<Record<string, string>> = {
   './minigames': './src/minigames/index.ts',
   './ai': './src/ai/index.ts',
   './save': './src/save/index.ts',
+  './assets': './src/assets/index.ts',
 };
 
 const PKG_SPEC: ReadonlyArray<readonly [string, string]> = [
@@ -280,6 +281,9 @@ export const SHARED_ALLOW: Readonly<Record<string, readonly string[]>> = {
   ],
   'shared/net': NET_SAVE_ALLOW,
   'shared/save': NET_SAVE_ALLOW,
+  // 原版皮肤素材包契约（docs/design/original-skin.md、design-draft §2.2）：只依赖 util；
+  // 其他 shared 模块不在各自的允许表里列它，因此都不能反向依赖它
+  'shared/assets': ['shared/util'],
 };
 
 export const CLIENT_ALLOW: readonly string[] = [
@@ -289,12 +293,14 @@ export const CLIENT_ALLOW: readonly string[] = [
   'shared/view',
   'shared/net',
   'shared/minigames',
+  'shared/assets',
   'shared/engine/types',
   'shared/engine/selectors',
   'shared/engine/index',
 ];
 
-export const EXTRACT_ALLOW: readonly string[] = ['shared/data', 'shared/util'];
+/** apps/server 对 shared 没有额外限制（shared/assets 同样可用）；tools/extract 只能用 data、util 与 assets */
+export const EXTRACT_ALLOW: readonly string[] = ['shared/data', 'shared/util', 'shared/assets'];
 
 /** 经由 engine 入口取用时仍视为「引擎实现」的导出名 */
 export const FORBIDDEN_ENGINE_NAMES: readonly string[] = ['createEngine', 'engine', 'internal'];
@@ -368,10 +374,10 @@ export function checkImport(from: FileInfo, imp: ImportRef, target: Target): str
   }
   const rootHint = target.unit === 'shared/index' ? '（请改用 @rich4/shared/<子路径>，不要用根入口）' : '';
   if (from.module === 'client/src' && target.pkg === 'shared' && !underAny(target.unit, CLIENT_ALLOW)) {
-    return `apps/client 只能依赖 shared 的 util/geom/data/view/net/minigames/engine(types,selectors)，不得依赖 ${target.unit}${rootHint}`;
+    return `apps/client 只能依赖 shared 的 util/geom/data/view/net/minigames/assets/engine(types,selectors)，不得依赖 ${target.unit}${rootHint}`;
   }
   if (from.module === 'extract/src' && target.pkg === 'shared' && !underAny(target.unit, EXTRACT_ALLOW)) {
-    return `tools/extract 只能依赖 shared/data 与 shared/util，不得依赖 ${target.unit}${rootHint}`;
+    return `tools/extract 只能依赖 shared/data、shared/assets 与 shared/util，不得依赖 ${target.unit}${rootHint}`;
   }
   return null;
 }
