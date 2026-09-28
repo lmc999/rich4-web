@@ -1,17 +1,47 @@
 // 访问门禁的 E2E 助手（docs/design/original-skin.md U4；契约见 packages/shared/src/net/access.ts）。
 // - 现有 spec 默认跑在 ACCESS_MODE=off 的服务器上，不需要口令；服务器开启门禁时设置 RICH4_E2E_PASSCODE，
 //   room.ts 的 newPlayer 会在打开页面前用同一个 BrowserContext 调 POST /api/access 注入 cookie。
+// - 远程模式（E2E_BASE_URL，见 remote.ts）：部署实例可能开着门禁（ACCESS_MODE=passcode）。口令取 E2E_PASSCODE；
+//   newPlayer 先读 GET /api/access，门禁开着且未通过时才换 cookie（ensureAccess），没有门禁时不受影响；
+//   实例开着门禁而没设口令时直接报错说明，而不是停在门禁页上等超时。
 // - 门禁页（前端 AccessGate，A5）约定的 data-testid：access-gate（容器）、access-passcode（输入框）、
 //   access-submit（提交按钮）、access-error（错误提示）。页面上还没有门禁页时，助手退回到在页面里直接调接口。
 import { type BrowserContext, expect, type Page } from '@playwright/test';
+import { E2E_REMOTE } from './remote';
 
-/** 服务器开启门禁时 E2E 使用的口令（未设置表示服务器 ACCESS_MODE=off） */
-export const E2E_PASSCODE: string | null = process.env.RICH4_E2E_PASSCODE || null;
+/**
+ * 服务器开启门禁时 E2E 使用的口令（未设置表示服务器 ACCESS_MODE=off）：本机原版皮肤配置设 RICH4_E2E_PASSCODE；
+ * 远程模式取 E2E_PASSCODE（只在部署实例开着门禁时设置——lobby.spec 等据此判断邀请框是不是授权链接）
+ */
+export const E2E_PASSCODE: string | null =
+  process.env.RICH4_E2E_PASSCODE || (E2E_REMOTE ? process.env.E2E_PASSCODE || null : null);
 
 /** 在打开页面之前为整个 BrowserContext 取得访问 cookie（context.request 与页面共用 cookie） */
 export async function grantAccess(context: BrowserContext, passcode: string): Promise<void> {
   const res = await context.request.post('/api/access', { data: { passcode } });
   expect(res.status(), `POST /api/access → ${res.status()} ${await res.text()}`).toBe(200);
+}
+
+/** 用 BrowserContext 的请求上下文读门禁状态（GET /api/access，与页面共用 cookie） */
+async function contextAccess(context: BrowserContext): Promise<{ mode: string; granted: boolean }> {
+  const res = await context.request.get('/api/access');
+  const text = await res.text();
+  expect(res.status(), `GET /api/access → ${res.status()} ${text}`).toBe(200);
+  return (JSON.parse(text) as { data: { mode: string; granted: boolean } }).data;
+}
+
+/**
+ * 远程模式：门禁开着且本上下文还没通过时用口令换 cookie，换完再读一次确认已通过；门禁关闭（mode=off）或已通过时什么都不做。
+ * passcode 为 null 而实例开着门禁时报错，提示设置 E2E_PASSCODE。
+ */
+export async function ensureAccess(context: BrowserContext, passcode: string | null): Promise<void> {
+  const st = await contextAccess(context);
+  if (st.mode === 'off' || st.granted) return;
+  if (!passcode) {
+    throw new Error(`实例开着访问门禁（ACCESS_MODE=${st.mode}）：请用 E2E_PASSCODE 提供口令（或邀请码）`);
+  }
+  await grantAccess(context, passcode);
+  expect(await contextAccess(context), '换取 cookie 后门禁状态').toMatchObject({ granted: true });
 }
 
 /** 页面在导航途中（门禁页通过后重新载入）：执行上下文被销毁的错误可以等页面载入后重试 */

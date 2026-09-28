@@ -16,8 +16,18 @@ test-results/
 playwright-report/
 *.tsbuildinfo
 .DS_Store
+# 口令、密钥与本机数据（与 .dockerignore 一致）：部署用的 .env 及其副本（.env.bak、.env.prod、prod.env……）、
+# sqlite 库与备份（rich4-YYYYMMDD.db，含门禁邀请码与授权、全部存档）、存档导出
 .env
+.env.*
+*.env
+!.env.example
+!deploy/.env.example
 deploy/.env
+*.db
+*.db-wal
+*.db-shm
+*.r4save
 
 # vitest 附件
 .vitest/

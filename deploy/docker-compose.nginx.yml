@@ -1,0 +1,24 @@
+# 已经在用 nginx（或别的反向代理）的主机：不启动 caddy，app 只发布到宿主的 127.0.0.1:3000，由 nginx 反代到它
+# （nginx 配置见 nginx.conf.example；证书、80/443 端口、HTTP→HTTPS 跳转都由 nginx 那边负责）。仓库根目录：
+#
+#   echo 'COMPOSE_FILE=deploy/docker-compose.yml:deploy/docker-compose.nginx.yml' > .env
+#   docker compose up -d --build --wait
+#
+# - **此后每一条 compose 命令都必须叠加本文件**（docs/deploy.md 的所有命令都按「仓库根目录的 .env 里写 COMPOSE_FILE、
+#   命令不写 -f」的约定书写；.env 已被 .gitignore / .dockerignore 排除，插值变量照旧从 deploy/.env 读）。命令里一旦显式写了
+#   -f，COMPOSE_FILE 就不起作用：只带 -f deploy/docker-compose.yml 的 up 会按基础文件重建 app——撤掉 127.0.0.1:3000 的
+#   端口发布（nginx 全站 502），还会启动 caddy 去抢 nginx 占着的 80/443。
+# - caddy 服务放进 caddy profile，默认不启动；deploy/.env 里的 SITE_ADDRESS、HTTP_PORT、HTTPS_PORT、BIND_ADDR 不再起作用。
+# - 换回 Caddy：先让 nginx 让出 80/443，把仓库根目录的 .env 改成 COMPOSE_FILE=deploy/docker-compose.yml，再 docker compose up -d --wait。
+# - APP_BIND（deploy/.env 或命令行环境变量，缺省 127.0.0.1:3000）：app 在宿主上的监听地址与端口，与 nginx.conf.example 的
+#   upstream 一致。**不要**写成 0.0.0.0 或公网地址：app 直接暴露出去就绕过了 nginx 的 TLS 与安全响应头。
+# - app 的 TRUST_PROXY=1 不变：nginx 经 docker 网桥（私有网段）连进容器，它设置的 X-Forwarded-For 才被采信；
+#   nginx 必须把 X-Forwarded-For **覆盖**为 $remote_addr（nginx.conf.example 已这样写），否则客户端能伪造 IP 绕过限流。
+# - PUBLIC_URL 照常写对外的 https 地址（访问 cookie 的 Secure 取决于它）。
+services:
+  app:
+    ports:
+      - '${APP_BIND:-127.0.0.1:3000}:3000'
+
+  caddy:
+    profiles: ['caddy']

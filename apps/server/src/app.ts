@@ -7,11 +7,13 @@
  * （access/AccessControl + http/access + io.use 握手守卫）。
  */
 import { randomBytes, randomInt } from 'node:crypto';
+import type { IncomingMessage } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
+import type { Duplex } from 'node:stream';
 import { getHeapStatistics } from 'node:v8';
 import { type AiPolicy, BasicAiPolicy, OriginalAiPolicy } from '@rich4/shared/ai';
 import { createEngine, type EngineApi } from '@rich4/shared/engine';
-import { type RoomSettings, SAVE_IMPORT_MAX_BYTES } from '@rich4/shared/net';
+import { MAX_CONNECTIONS_PER_IP, type RoomSettings, SAVE_IMPORT_MAX_BYTES } from '@rich4/shared/net';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance, LogController } from 'fastify';
 import { AccessControl, type AccessControlDeps, GRANTS_PER_IP_PER_HOUR } from './access/AccessControl';
 import { type AccessStore, accessDbPath, openAccessStore, SqliteAccessStore } from './access/AccessStore';
@@ -47,6 +49,26 @@ import { RoomCodeAllocator } from './rooms/roomCode';
 
 /** 启动时恢复这么久之内更新过的房间（design/net.md §8.5 listActive(24h)） */
 export const RESTORE_MAX_AGE_MS = 24 * 60 * 60_000;
+
+/**
+ * 测试模式（RICH4_TEST_MODE=1）放宽的按 IP 额度倍率：E2E 与压测（npm run loadtest，200 个房间）的连接全部来自同一个 IP，
+ * 生产额度（同 IP 并发连接 30、每分钟建房 5 次）容不下。只放宽这两项；join / resume 失败额度（防扫房间号）、
+ * 按会话的令牌桶都不变。非测试模式不经过这里，生产行为不变。
+ */
+export const TEST_MODE_IP_RELAX = Object.freeze({ connections: 100, create: 100 });
+
+/**
+ * 停机时留给在途 HTTP 请求与 WebSocket 关闭握手的宽限，期满强制断开剩余连接（此前房间已刷快照、自动存档）。
+ * - 反代（Caddy）到 app 的 keep-alive 连接：server.close() 只断开当时空闲的连接，停机瞬间有请求在途的连接处理完后
+ *   仍按 keepAliveTimeout（Fastify 缺省 72s）挂着，客户端的重连请求还会经它进来（engine.io 关闭后照样受理新握手），
+ *   close 回调迟迟不来，一直拖到 shutdown.ts 的 25s 强制退出（M11 实机重启时出现过）。
+ * - 已升级为 WebSocket 的连接不在 http.Server 的连接跟踪里（closeAllConnections 断不开），server.close() 却要等它断开；
+ *   engine.io 关 ws 走正常关闭握手，对端不回关闭帧（手机浏览器被挂起、移动网络断了而 TCP 还挂着）时 ws 缺省等 30s。
+ *   这类连接在 'upgrade' 时单独登记，期满一并销毁（M11 审查：修复前实测停机卡满 25s）。
+ */
+export const SHUTDOWN_HTTP_GRACE_MS = 3000;
+/** 宽限期内断开「刚变空闲」的连接的间隔 */
+const SHUTDOWN_IDLE_SWEEP_MS = 100;
 
 export interface AppDeps {
   config: AppConfig;
@@ -298,11 +320,20 @@ export async function createApp(deps: AppDeps): Promise<App> {
   registerPack(fastify, { registry: pack });
   registerHealth(fastify, { isReady: () => ready && persistence.healthy(), startedAt });
   registerMaps(fastify, catalog);
-  const limiter = new RateLimiter({ scale: deps.rateLimitScale ?? 1 });
+  const limiter = new RateLimiter({
+    scale: deps.rateLimitScale ?? 1,
+    ...(config.testMode ? { ipScale: { create: TEST_MODE_IP_RELAX.create } } : {}),
+  });
   await registerSavesHttp(fastify, { saves, limiter, log });
   await registerStatic(fastify, { staticDir: config.staticDir, publicUrl: config.publicUrl });
 
   const io = createIo(fastify.server, { trustProxy: config.trustProxy, devCorsOrigin: config.devCorsOrigin });
+  // 已升级的连接（WebSocket）：停机宽限期满时要自己销毁（见 SHUTDOWN_HTTP_GRACE_MS）
+  const upgraded = new Set<Duplex>();
+  fastify.server.on('upgrade', (_req: IncomingMessage, socket: Duplex) => {
+    upgraded.add(socket);
+    socket.once('close', () => upgraded.delete(socket));
+  });
   const sessions = new SessionRegistry();
   const broadcaster = new RoomBroadcaster(ioEmitter(io));
   const think = deps.aiThinkMs;
@@ -340,7 +371,14 @@ export async function createApp(deps: AppDeps): Promise<App> {
   attachIo(
     io,
     { rooms, sessions, limiter, log, clock, testMode: config.testMode, saves },
-    { trustProxy: config.trustProxy, devCorsOrigin: config.devCorsOrigin, access },
+    {
+      trustProxy: config.trustProxy,
+      devCorsOrigin: config.devCorsOrigin,
+      access,
+      // 生产环境经反代时，客户端 IP 塌缩成网关 / 代理地址要让运维看得见（io.ts privateClientIpWarner）
+      warnPrivateClientIp: config.production,
+      ...(config.testMode ? { maxConnectionsPerIp: MAX_CONNECTIONS_PER_IP * TEST_MODE_IP_RELAX.connections } : {}),
+    },
   );
 
   // 启动恢复：快照 + journal 尾部重放（epoch+1，全员断线，暂停）
@@ -380,11 +418,36 @@ export async function createApp(deps: AppDeps): Promise<App> {
     rooms.draining = true;
     const flush = o.flush !== false;
     // 同步挂起全部房间（此后不再有 action）：刷快照、自动存档；不发 room:closed，客户端重连后由重启恢复接上
+    const before = rooms.stats();
+    const t0 = Date.now();
     rooms.suspendAll({ flush, autosave: flush });
+    // 运维核对优雅停机是否走完刷盘（M11：docker compose logs app）
+    log.info(
+      { rooms: before.rooms, playing: before.playing, snapshot: flush, autosave: flush, ms: Date.now() - t0 },
+      'shutdown: rooms suspended',
+    );
     persister.dispose();
     eventLoop.stop();
     io.disconnectSockets(true);
-    await new Promise<void>((r) => io.close(() => r()));
+    // HTTP 服务器关闭（见 SHUTDOWN_HTTP_GRACE_MS）：在途请求处理完就断开它的连接，宽限期满强制断开其余连接，
+    // 连同还没完成关闭握手的 WebSocket
+    const http = fastify.server;
+    const sweep = setInterval(() => http.closeIdleConnections(), SHUTDOWN_IDLE_SWEEP_MS);
+    const force = setTimeout(() => {
+      // 运维与排查用：宽限期满时还挂着几条连接、其中几条是 WebSocket（getConnections 取的是此刻的计数）
+      const websockets = upgraded.size;
+      http.getConnections((_err, connections) =>
+        log.info({ connections, websockets }, 'shutdown: grace period over, forcing connections closed'),
+      );
+      http.closeAllConnections();
+      for (const socket of upgraded) socket.destroy();
+    }, SHUTDOWN_HTTP_GRACE_MS);
+    try {
+      await new Promise<void>((r) => io.close(() => r()));
+    } finally {
+      clearInterval(sweep);
+      clearTimeout(force);
+    }
     await fastify.close().catch(() => {});
     await backups?.stop();
     if (ownsPersistence) persistence.close();

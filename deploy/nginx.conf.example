@@ -1,0 +1,128 @@
+# 大富翁4 联机版：给已经在用 nginx 的主机的反向代理示例（design/net.md §10.3；语义与 deploy/Caddyfile 一致）。
+#
+# 用法：
+# - 把本文件放进 nginx 的 http {} 上下文（例如 /etc/nginx/conf.d/rich4.conf），替换 rich4.example.com 与证书路径，
+#   nginx -t && nginx -s reload。证书可以用 certbot --webroot -w /var/www/certbot（下面的 80 端口已放行 ACME 校验路径）。
+# - app 只监听本机：叠加 docker-compose.nginx.yml（不启动 caddy，app 发布到 127.0.0.1:3000）。仓库根目录：
+#     echo 'COMPOSE_FILE=deploy/docker-compose.yml:deploy/docker-compose.nginx.yml' > .env
+#     docker compose up -d --build --wait
+#   此后的 compose 命令都不写 -f（写了 -f，COMPOSE_FILE 就不起作用，见 docker-compose.nginx.yml 文件头）。
+#   （或源码部署 node apps/server/dist/main.mjs，HOST=127.0.0.1）。
+# - app 的环境变量：TRUST_PROXY=1（只信任本机与私有网段来的 X-Forwarded-For）、PUBLIC_URL=https://rich4.example.com。
+# - 需要 nginx ≥ 1.25.1（`http2 on;`）；更老的版本删掉 `http2 on;`，改写成 `listen 443 ssl http2;`。
+#
+# 要点：
+# - Socket.IO：WebSocket 升级（Upgrade / Connection）与长轮询都走 /socket.io/；服务端 pingInterval 10s，
+#   读超时给到 120s，空闲的 WebSocket 不会被 nginx 掐断。
+# - X-Forwarded-For **覆盖**为 $remote_addr（不用 $proxy_add_x_forwarded_for）：服务器取最左边一段当客户端 IP，
+#   追加模式下客户端自带的 X-Forwarded-For 就能伪造 IP、绕过按 IP 的限流。前面还有 CDN 时先用 realip 模块还原真实 IP
+#   （set_real_ip_from <CDN 回源网段>; real_ip_header X-Forwarded-For; real_ip_recursive on;），$remote_addr 才是真实客户端，
+#   否则所有人都显示成 CDN 节点的地址、共用按 IP 的额度。
+# - /pack/*（原版皮肤素材包）：不缓冲、不再压缩（服务器已按 Accept-Encoding 返回 br/gzip 预压缩变体并带 Vary），
+#   Range / If-Range 原样透传（音视频要 206），缓存头原样透传；不要给它配 proxy_cache（门禁内容不能进共享缓存）。
+# - 请求体上限 3m：存档导入上限 2 MiB（shared/net/limits.ts SAVE_IMPORT_MAX_BYTES），略放宽，
+#   超过 2 MiB 的由服务器返回 JSON 形式的 tooLarge 错误。
+# - nginx 的 add_header / proxy_set_header 在 location 里一旦出现就不再继承 server 里的同名配置：
+#   这两类指令只写在 server 层，location 里不要再加（要加就得把 server 层的全部抄一遍）。
+
+# 有 Upgrade 头（WebSocket）时 Connection: upgrade；否则清空 Connection，让到 app 的长连接（keepalive）可复用
+map $http_upgrade $rich4_connection {
+    default upgrade;
+    ''      '';
+}
+
+upstream rich4_app {
+    server 127.0.0.1:3000;
+    keepalive 16;
+}
+
+# HTTP：只放行 ACME 校验，其余一律跳转 HTTPS
+server {
+    listen 80;
+    listen [::]:80;
+    server_name rich4.example.com;
+    server_tokens off;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name rich4.example.com;
+    server_tokens off;
+
+    ssl_certificate     /etc/letsencrypt/live/rich4.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/rich4.example.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:rich4_tls:10m;
+    ssl_session_timeout 1d;
+
+    client_max_body_size 3m;
+
+    # 安全响应头（always：错误响应也带）。HSTS 先只写 max-age；确认所有子域名都只走 https 后再考虑 includeSubDomains。
+    # 用 localhost 做本机测试时去掉 HSTS，否则浏览器会把 localhost 记成「只能 https」。
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy same-origin always;
+    add_header X-Frame-Options DENY always;
+    add_header Content-Security-Policy "frame-ancestors 'none'" always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    # /pack/* 的响应本来就带 nosniff：隐藏上游那份，避免重复
+    proxy_hide_header X-Content-Type-Options;
+
+    # 反代公共设置（location 里不要再写 proxy_set_header，见文件头）
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $rich4_connection;
+    # 显式透传条件请求与 Range（nginx 不配 proxy_cache 时本来就原样转发，这里写明意图）
+    proxy_set_header Range $http_range;
+    proxy_set_header If-Range $http_if_range;
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 60s;
+    proxy_send_timeout 60s;
+
+    # 前端、/api、/r/<房间码>、/healthz 等；压缩文本类响应（已带 Content-Encoding 的响应 nginx 不会再压）
+    location / {
+        proxy_pass http://rich4_app;
+        gzip on;
+        gzip_comp_level 5;
+        gzip_min_length 1024;
+        gzip_vary on;
+        gzip_types text/css text/javascript application/javascript application/json image/svg+xml text/plain;
+    }
+
+    # Socket.IO：WebSocket 与长轮询
+    location /socket.io/ {
+        proxy_pass http://rich4_app;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_buffering off;
+        gzip off;
+    }
+
+    # 原版皮肤素材包：流式转发，不缓冲、不再压缩、不缓存
+    location /pack/ {
+        proxy_pass http://rich4_app;
+        proxy_buffering off;
+        gzip off;
+        proxy_read_timeout 120s;
+    }
+
+    # /admin/*（Bearer ADMIN_TOKEN）：可以再用 allow / deny 限定来源 IP，例如只允许运维机器
+    # location /admin/ {
+    #     allow 203.0.113.10;
+    #     deny all;
+    #     proxy_pass http://rich4_app;
+    # }
+}

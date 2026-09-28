@@ -4,7 +4,7 @@
  *   迟到的观战者补收票据与积压帧；玩家重连补收自己的帧。
  * - 提交：服务器重放，MINIGAME_ENDED 的分数与重放一致（伪造的 claimedScore 不生效）。
  * - replay：不直播；结算后其他人收到带完整日志的观战票据。
- * 为了不等 17 秒，用种子推算出离起点最近的炸弹格，挖到即结束。
+ * 为了不等 17 秒，用种子推算出最快挖到炸弹的点格序列，挖到即结束。
  */
 import type { GameEvent } from '@rich4/shared/engine';
 import { InputCode, type InputEvent, type MinigameTicket, PENGUIN_SIM, penguin, replay } from '@rich4/shared/minigames';
@@ -41,21 +41,50 @@ function endedOf(b: BotClient): Extract<GameEvent, { type: 'MINIGAME_ENDED' }> |
   return undefined;
 }
 
-/** 离起点最近的炸弹格：点它 → 走过去 → 挖到炸弹立即结束 */
+/**
+ * 最快挖到炸弹的点格序列：点格 → 走过去 → 挖到炸弹立即结束。
+ * 企鹅按 DDA 直走，被无效格挡住或步数用完会提前停下来挖：约千分之一的种子里三颗炸弹都不能一步直达（种子随房间随机，
+ * 曾因此偶发失败），所以按「从 x 点 c → 在 digAt 挖」建图，Dijkstra 找耗时最少的点格序列（多半一步，最多约 4 秒）。
+ * 途中挖开的都不是炸弹、挖开只清宝物，图只由几何决定；相邻格一步可达、有效格连通，必有解。
+ */
 function bombRun(t: MinigameTicket): { log: InputEvent[]; score: number; endTick: number; hash: number } {
   const s = PENGUIN_SIM.init(t.seed, t.params);
-  let best = -1;
-  let bestLen = Number.POSITIVE_INFINITY;
-  for (const c of penguin.VALID_CELLS) {
-    if (s.board[c] !== penguin.ITEM_BOMB || c === s.cell) continue;
-    const p = penguin.tracePath(s.cell, c);
-    if (p.digAt === c && p.path.length < bestLen) {
-      best = c;
-      bestLen = p.path.length;
+  // dist：到达该格并挖完的 tick 数；via：上一格与这一步点的格
+  const dist = new Map<number, number>([[s.cell, 0]]);
+  const via = new Map<number, { from: number; pick: number }>();
+  const done = new Set<number>();
+  let goal = -1;
+  for (;;) {
+    let x = -1;
+    for (const [c, d] of dist) if (!done.has(c) && (x < 0 || d < dist.get(x)!)) x = c;
+    if (x < 0 || (x !== s.cell && s.board[x] === penguin.ITEM_BOMB)) {
+      goal = x;
+      break;
+    }
+    done.add(x);
+    for (const c of penguin.VALID_CELLS) {
+      if (c === x) continue;
+      const p = penguin.tracePath(x, c);
+      if (p.digAt === x) continue;
+      const d = dist.get(x)! + p.path.length * penguin.TICKS_PER_CELL + penguin.DIG_TICKS;
+      if (d < (dist.get(p.digAt) ?? Number.POSITIVE_INFINITY)) {
+        dist.set(p.digAt, d);
+        via.set(p.digAt, { from: x, pick: c });
+      }
     }
   }
-  expect(best).toBeGreaterThanOrEqual(0);
-  const log: InputEvent[] = [[t.introTicks, InputCode.PickCell, best]];
+  expect(goal).toBeGreaterThanOrEqual(0);
+  const picks: number[] = [];
+  for (let c = goal; c !== s.cell; c = via.get(c)!.from) picks.unshift(via.get(c)!.pick);
+  // 用 sim 本身排 tick：企鹅一可以接受点格就点下一格
+  const log: InputEvent[] = [];
+  while (!PENGUIN_SIM.isOver(s)) {
+    const e: InputEvent[] =
+      PENGUIN_SIM.accepting(s) && picks.length > 0 ? [[s.tick, InputCode.PickCell, picks.shift()!]] : [];
+    log.push(...e);
+    PENGUIN_SIM.step(s, e);
+  }
+  expect(s.endReason).toBe('bomb');
   return { log, ...replay(PENGUIN_SIM, t.seed, t.params, log) };
 }
 
@@ -111,7 +140,8 @@ describe('integration/minigame', () => {
       ok: true,
       data: undefined,
     });
-    await waitUntil(t.startsAt + (run.log[0]![0] + 1) * t.tickMs);
+    // 整段日志一帧上传：等最后一条输入的 tick 过去（服务器拒收未来 tick）
+    await waitUntil(t.startsAt + (run.log.at(-1)![0] + 1) * t.tickMs);
     expect((await host.req('game:minigameInput', { sessionId: t.sessionId, seq: 1, events: run.log })).ok).toBe(true);
     await spec.until(() => frames(spec).length >= 2, 3000, 'frames');
     expect(frames(spec)).toEqual([
@@ -174,7 +204,7 @@ describe('integration/minigame', () => {
     const run = bombRun(t);
     await waitUntil(t.startsAt);
     expect((await host.req('game:minigameInput', { sessionId: t.sessionId, seq: 0, events: [] })).ok).toBe(true);
-    await waitUntil(t.startsAt + (run.log[0]![0] + 1) * t.tickMs);
+    await waitUntil(t.startsAt + (run.log.at(-1)![0] + 1) * t.tickMs);
     expect((await host.req('game:minigameInput', { sessionId: t.sessionId, seq: 1, events: run.log })).ok).toBe(true);
     await sleep(50);
     expect(watches(spec)).toEqual([]);

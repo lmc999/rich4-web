@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { clientIp, isTrustedProxy } from '../../src/net/io';
+import { describe, expect, it, vi } from 'vitest';
+import { clientIp, isTrustedProxy, privateClientIpWarner } from '../../src/net/io';
 
 function sock(address: string, xff?: string | string[]) {
   return {
@@ -35,5 +35,18 @@ describe('clientIp（design/net.md §10.3）', () => {
     // 没有或无效的 XFF：用直连地址
     expect(clientIp(sock('127.0.0.1'), true)).toBe('127.0.0.1');
     expect(clientIp(sock('127.0.0.1', 'garbage'), true)).toBe('127.0.0.1');
+  });
+
+  it('客户端 IP 塌缩告警：第一次解析成本机或私有地址时 warn 一次，公网地址不告警', () => {
+    const warn = vi.fn();
+    const note = privateClientIpWarner({ warn });
+    note('203.0.113.7', '172.21.0.3');
+    note('2001:db8::1', '172.21.0.3');
+    expect(warn).not.toHaveBeenCalled();
+    // docker-proxy 转发的 IPv6 访客、未被 Caddy 信任的前置代理：都显示成 compose 网络的网关
+    note('172.21.0.1', '172.21.0.3');
+    note('10.0.0.8', '172.21.0.3');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toEqual({ ip: '172.21.0.1', peer: '172.21.0.3' });
   });
 });

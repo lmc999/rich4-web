@@ -3,6 +3,8 @@
  * - 记录收到的全部 S2C 消息（反作弊深度扫描用）与 game:batch；
  * - epoch 不同或 seq 不连续时记录缺口并发 game:resync；seq ≤ lastSeq 的重复 batch 忽略；
  * - autoPlay：收到 yourDecision 就提交（默认 pickIntent，失败时退回 defaultIntent）。
+ * - 压测（scripts/loadtest.ts）用的选项：history=false 不保留消息历史（只计数），onReq 回报每个请求的 ack 往返，
+ *   rejectUnauthorized=false 接受自签证书（只影响这个 bot 的连接）。
  */
 import { randomBytes } from 'node:crypto';
 import type { PlayerIntent } from '@rich4/shared/engine';
@@ -45,6 +47,15 @@ export interface BotOptions {
   transports?: ('websocket' | 'polling')[];
   /** 握手请求的额外头（访问门禁测试用 cookie） */
   extraHeaders?: Record<string, string>;
+  /** false：接受自签或不受信任的 TLS 证书（压测 https://localhost 用；缺省按 Node 默认校验） */
+  rejectUnauthorized?: boolean;
+  /**
+   * false：不保留 received / batches / acts 历史（长时间压测防止内存膨胀），只累计 receivedCount / batchCount；
+   * 此时 waitFor 不可用。缺省 true
+   */
+  history?: boolean;
+  /** 每个请求（req / act）结束时回报：耗时（毫秒）与结果；ack 超时或连接断开时 result 为 null */
+  onReq?: (event: C2SEventName, ms: number, result: Result<unknown> | null) => void;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -71,6 +82,9 @@ export class BotClient {
   /** seq 连续性问题（应当为空） */
   readonly gaps: string[] = [];
   readonly acts: { decisionId: string; intent: PlayerIntent; result: Result<unknown> }[] = [];
+  /** 收到的 S2C 消息数与按序接受的 game:batch 数（history=false 时也计数） */
+  receivedCount = 0;
+  batchCount = 0;
   lastSeq = 0;
   epoch = -1;
   view: GameView | undefined;
@@ -85,6 +99,7 @@ export class BotClient {
   private readonly rand: () => number;
   private actSeq = 0;
   private actDelayMs = 0;
+  private readonly history: boolean;
 
   constructor(
     readonly url: string,
@@ -93,6 +108,7 @@ export class BotClient {
     this.token = opts.token ?? newToken();
     this.nickname = opts.nickname ?? `bot-${this.token.slice(0, 4)}`;
     this.rand = lcg(opts.seed ?? 42);
+    this.history = opts.history !== false;
   }
 
   /** 建立连接；失败时抛出带 connect_error.data 的错误 */
@@ -104,6 +120,7 @@ export class BotClient {
       forceNew: true,
       timeout: 5000,
       ...(this.opts.extraHeaders ? { extraHeaders: this.opts.extraHeaders } : {}),
+      ...(this.opts.rejectUnauthorized !== undefined ? { rejectUnauthorized: this.opts.rejectUnauthorized } : {}),
       auth: {
         token: this.token,
         nickname: this.nickname,
@@ -113,7 +130,8 @@ export class BotClient {
     });
     this.socket = socket;
     socket.onAny((event: string, payload: unknown) => {
-      this.received.push({ event, payload });
+      this.receivedCount++;
+      if (this.history) this.received.push({ event, payload });
       this.onMessage(event, payload);
     });
     await new Promise<void>((resolve, reject) => {
@@ -157,7 +175,8 @@ export class BotClient {
           void this.req('game:resync', {});
           break;
         }
-        this.batches.push(m);
+        this.batchCount++;
+        if (this.history) this.batches.push(m);
         this.lastSeq = m.seq;
         this.view = m.view;
         this.pending = m.pending;
@@ -225,16 +244,19 @@ export class BotClient {
   async act(decisionId: string, intent: PlayerIntent, clientActionId?: string): Promise<Result<{ seq: number }>> {
     const id = clientActionId ?? `${this.token.slice(0, 6)}-${++this.actSeq}`;
     const r = await this.req('game:act', { decisionId, intent, clientActionId: id });
-    this.acts.push({ decisionId, intent, result: r });
+    if (this.history) this.acts.push({ decisionId, intent, result: r });
     return r;
   }
 
   req<E extends C2SEventName>(event: E, payload: C2SPayload<E>, timeoutMs = 5000): Promise<Result<C2SAckData<E>>> {
+    const onReq = this.opts.onReq;
+    const t0 = onReq ? performance.now() : 0;
     return new Promise((resolve, reject) => {
       const s = this.socket as unknown as {
         timeout(ms: number): { emit(ev: string, p: unknown, cb: (err: Error | null, r: unknown) => void): void };
       };
       s.timeout(timeoutMs).emit(event, payload, (err, res) => {
+        onReq?.(event, performance.now() - t0, err ? null : (res as Result<unknown>));
         if (err) reject(new Error(`${event} ack timeout`));
         else resolve(res as Result<C2SAckData<E>>);
       });

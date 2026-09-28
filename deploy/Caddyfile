@@ -1,8 +1,59 @@
 # 反向代理（design/net.md §10.3）：自动申请并续期证书（SITE_ADDRESS 为 localhost 时用 Caddy 内部 CA），
 # WebSocket 升级透明转发。/pack/* 只做透明反代：不缓存、不再压缩（服务器已按 Accept-Encoding 返回预压缩变体，
 # 音视频要保留 Range），缓存头与 Vary 原样透传。
+#
+# Socket.IO：WebSocket（Upgrade）与长轮询（普通 GET/POST）都由 reverse_proxy 原样转发，不需要额外配置；
+# Caddy 默认不缓冲响应、不设上游读超时，长轮询挂起期间（服务端 pingInterval 10s）不会被掐断。
+#
+# 客户端 IP（app 按它做限流、同 IP 连接数上限与门禁登录退避；app 在 compose 里 TRUST_PROXY=1，只信任私有网段来的这一跳）：
+# 发给 app 的 X-Forwarded-For 固定写成 Caddy 认定的客户端 IP（{client_ip}）。缺省不信任任何代理，{client_ip} 就是直连
+# Caddy 的对端，客户端自带的 X-Forwarded-For 一律丢弃，伪造不了。
+# Caddy 前面另有反代、隧道或 CDN 时，直连对端是那一跳：不配置的话所有玩家都会被当成同一个 IP（一个人输错口令，
+# 全部人被 429；同 IP 30 个连接、每分钟建房 5 次变成所有人共享的额度）。这时在 deploy/.env 里设置
+# CADDY_TRUSTED_PROXIES（空格分隔的网段，private_ranges 表示全部私有网段），Caddy 从右往左解析它们转来的
+# X-Forwarded-For，取第一个不可信的地址（trusted_proxies_strict，最左段可被客户端伪造）：
+#   - 本机的前置反代或隧道（BIND_ADDR=127.0.0.1，只有本机进程连得到 Caddy）：CADDY_TRUSTED_PROXIES=private_ranges
+#   - CDN：它的回源网段（例如 Cloudflare 公布的 IPv4 / IPv6 列表），并确认 CDN 转发 WebSocket
+# 端口对公网开放时不要写 private_ranges：经 docker-proxy 进来的连接也显示为私有地址，会被当成可信代理。
+{
+	servers {
+		trusted_proxies static {$CADDY_TRUSTED_PROXIES}
+		trusted_proxies_strict
+	}
+}
+
 {$SITE_ADDRESS:localhost} {
+	# 基本安全响应头（对所有响应生效，含反代回来的；块里有删除操作，整块延迟到写响应时执行，覆盖上游同名头）：
+	# - nosniff：/pack/* 服务器本来就带，这里对全站统一
+	# - Referrer-Policy same-origin：跨站请求不带 Referer（房间邀请页 /r/<房间码> 的路径不外泄）
+	# - 禁止被任何页面嵌入（X-Frame-Options 给旧浏览器，CSP frame-ancestors 给新浏览器；前端不用 iframe）
+	# - 去掉 Server / Via 指纹
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		X-Frame-Options DENY
+		# 只在上游没有给出 CSP 时补上（以后服务端自带完整 CSP 时以它为准，记得在里面保留 frame-ancestors）
+		?Content-Security-Policy "frame-ancestors 'none'"
+		-Server
+		-Via
+	}
+
+	# HSTS 只对真实域名生效：SITE_ADDRESS=localhost（本机验证、内部 CA）时不发，
+	# 否则浏览器会把 localhost 记成「只能 https」，坑到本机其他 http://localhost 开发服务器。
+	# 这里只写 max-age（1 年）；确认该域名的所有子域名都只走 https 之后再考虑加 includeSubDomains / preload。
+	@hsts not host localhost *.localhost 127.0.0.1
+	header @hsts Strict-Transport-Security "max-age=31536000"
+
+	# 请求体上限：略大于存档导入上限 2 MiB（shared/net/limits.ts SAVE_IMPORT_MAX_BYTES），
+	# 在 2 MiB 与这里之间的由服务器返回 JSON 形式的 tooLarge 错误；WebSocket 帧不受它影响
+	request_body {
+		max_size 4MB
+	}
+
 	@notpack not path /pack/*
 	encode @notpack zstd gzip
-	reverse_proxy app:3000
+	reverse_proxy app:3000 {
+		# 见文件头「客户端 IP」
+		header_up X-Forwarded-For {client_ip}
+	}
 }

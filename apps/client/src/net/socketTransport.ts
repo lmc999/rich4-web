@@ -79,6 +79,9 @@ export function createSocketTransport(o: SocketTransportOptions): Transport {
   const opts = {
     path: '/socket.io/',
     transports: ['websocket', 'polling'],
+    // WebSocket 握手失败（代理 / 防火墙拦掉 Upgrade）时本次连接改试长轮询；不开的话每次重连都只试 WebSocket，
+    // 永远连不上（M11 实机：经拦 Upgrade 的代理访问时建房一直超时）
+    tryAllTransports: true,
     autoConnect: false,
     reconnection: true,
     reconnectionDelay: 500,

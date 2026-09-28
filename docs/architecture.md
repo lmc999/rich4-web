@@ -948,7 +948,7 @@ RICH4_ASSETS_ALLOW_UNGATED=0     # 仅本机调试：非 production + PUBLIC_URL
 ### M11 Docker 部署与上线
 - 范围: Dockerfile（node:24-slim 三阶段构建）、.dockerignore、deploy/docker-compose.yml（app 加 caddy；/data 读写，/data-rich4 只读）、Caddyfile、nginx 示例配置、.env.example；每日备份；优雅停机；压测；上线检查清单（HMAC 密钥、ADMIN_TOKEN、TRUST_PROXY、域名与证书）。
 - 交付: Dockerfile、.dockerignore、deploy/{docker-compose.yml,Caddyfile,nginx.conf.example,.env.example}；apps/server/scripts/loadtest.ts；docs/deploy.md（数据包 rsync 流程与运维说明）
-- 验证: 1) docker build -t rich4:local . 成功。执行 docker run --rm rich4:local sh -c 'find / -xdev \( -iname "*.mkf" -o -iname "rich4.exe" -o -name "taiwan.map.json" \) 2>/dev/null | wc -l'，输出应为 0，确认镜像里没有任何原版派生数据。2) cp deploy/.env.example deploy/.env 并填好密钥，执行 docker compose -f deploy/docker-compose.yml up -d；然后 curl -kfsS https://localhost/healthz 和 https://localhost/readyz 都返回 200，curl -kfsS https://localhost/api/maps 的结果里有 taiwan。3) E2E_BASE_URL=https://localhost npm run test:e2e -- e2e/specs/turn-cycle.spec.ts e2e/specs/reconnect.spec.ts 通过。4) 对局进行中执行 docker compose -f deploy/docker-compose.yml restart app，客户端能自动恢复（epoch 加 1，玩家重连后对局继续）。5) npm run loadtest -- --url https://localhost --rooms 200：/admin/stats 中事件循环延迟 p99 小于 50ms。6) 运行满 24 小时后，/data/backup/ 下出现 rich4-YYYYMMDD.db。
+- 验证: 1) docker build -f deploy/Dockerfile -t rich4:local . 成功（Dockerfile 实际放在 deploy/，见 §25）。执行 docker run --rm rich4:local sh -c 'find / -xdev \( -iname "*.mkf" -o -iname "rich4.exe" -o -name "taiwan.map.json" \) 2>/dev/null | wc -l'，输出应为 0，确认镜像里没有任何原版派生数据。2) cp deploy/.env.example deploy/.env 并填好密钥，执行 docker compose -f deploy/docker-compose.yml up -d；然后 curl -kfsS https://localhost/healthz 和 https://localhost/readyz 都返回 200，curl -kfsS https://localhost/api/maps 的结果里有 taiwan。3) E2E_BASE_URL=https://localhost npm run test:e2e -- e2e/specs/turn-cycle.spec.ts e2e/specs/reconnect.spec.ts 通过。4) 对局进行中执行 docker compose -f deploy/docker-compose.yml restart app，客户端能自动恢复（epoch 加 1，玩家重连后对局继续）。5) npm run loadtest -- --url https://localhost --rooms 200：/admin/stats 中事件循环延迟 p99 小于 50ms。6) 运行满 24 小时后，/data/backup/ 下出现 rich4-YYYYMMDD.db。
 
 
 ## user_actions
@@ -1474,3 +1474,79 @@ RICH4_ASSETS_ALLOW_UNGATED=0     # 仅本机调试：非 production + PUBLIC_URL
 - **小游戏**：回放模式开播前至少留够入场 FLC 时长（READY GO 从第 0 帧播）；喜从天降 HUD 时间按 timeLeft / 2 向下取整；被炸爆炸借用 Data#485 的依据补上（fcn.00414f20 @0x415016 载入、fcn.00412b66 @0x412d2b 播放，写进 frames.ts 与 catalog）。
 - **文档与测试**：轮盘资源号顺序更正为航空 / 旅馆 / 购物中心 / 保险（ui.md、original-skin.md §4.2、catalog 描述）；合成包里与原版不同的取值（大号数字、接物者、转盘锚点）不再标「同原版」；skinStore 重置后才完成的旧 PackClient import 作废（修掉 screens 片头 dom 测试随文件组合变红）；skin-classic-venues-a 改为 page.route 供包，默认配置（CI）也跑，并断言股市是原版场景；新增原版存读档窗（真服务器存档）、出卡演出、观战版拍卖厅、15 日乐透开奖与 1 日月结颁奖的 E2E（终局排名仍只有 DOM 测试与巡检覆盖）；外壳 E2E 只认原版资产表；小游戏手机用例改为页面内探针量尺寸并点「不玩了」；cards.spec 在原版配置下偶发（本轮复跑稳定复现）撞上回合菜单的退场层（decision-TURN_MENU-exit 里有同名 inv-card-*），改为先等退场的原版场景卸载再展开。VERIFY V-R4 / V-R12 / V-R17 补上「⚑ 保留」结论，verify-checklist 补齐 V-C3、V-U2 子项与本机原版皮肤的启动命令。
 - **验证**：`npm run check` 全绿（vitest 291 个文件 2863 通过 2 跳过）；client-browser（minigames、ui/classic）通过；E2E 默认配置 42 通过（skin-classic-venues-a 不再跳过）、原版皮肤配置 39 通过 3 跳过（只适用于默认配置的 3 个）。
+
+## 25. M11「Docker 部署与上线」实施记录与本机实机验证（2026-09-28）
+
+本轮完成 M11 的交付物，并在本机 Docker Desktop 上按「### M11 Docker 部署与上线」的 6 条验证逐条实跑，另做生产形态检查、备份恢复演练与原版皮肤浏览器巡检。环境：compose 项目 `rich4-m11`，只绑 `127.0.0.1:8080/8443`，口令门禁 + 真实素材包 `rich4-assets`（packId e6f3322db57bdedd）+ 台湾图 `rich4-data`。密钥与口令都在本机随机生成，只放在 `.cache/m11/`（不入库、不进镜像）；截图与日志在 `.cache/m11/`。上线步骤、检查清单、运维与故障排查见 `docs/deploy.md`。
+
+### 25.1 交付物
+
+- **镜像**：`deploy/Dockerfile`（node:24-slim 三阶段；构建上下文与构建产物各查一遍原版文件与派生数据；deps 阶段 `--ignore-scripts` 并删掉类型声明、source map、文档；OCI label；以 node 用户运行，`/data` 属主 node）；根目录 `.dockerignore`；`deploy/scan-image.sh`（最终文件系统、`docker history`、`docker save` 逐层三道扫描，含先加后删的层）。
+- **编排**：`deploy/docker-compose.yml`（端口 `HTTP_PORT` / `HTTPS_PORT` / `BIND_ADDR` 插值；app 以 `/readyz` 做健康检查，caddy 等 app 健康后才启动；json-file 日志轮转；根文件系统只读、去掉全部 capability、禁止提权；`stop_grace_period: 30s`）；`deploy/docker-compose.e2e.yml`（只限本机：127.0.0.1、`SITE_ADDRESS=localhost`、`RICH4_TEST_MODE=1`，env 只读 `.cache/m11/e2e.env`）；**新增** `deploy/docker-compose.nginx.yml`（已有 nginx 的主机：不起 caddy，app 发布到 127.0.0.1:3000）；`deploy/Caddyfile`（安全响应头、去掉 Server / Via、HSTS 只发给非 localhost、请求体 4 MB、/pack 不再压缩）；`deploy/nginx.conf.example`；`deploy/.env.example`。
+- **服务器**：`config.ts` 新守卫——`NODE_ENV=production` 下 `RICH4_TEST_MODE=1` 只在显式设置且为 localhost 的 `PUBLIC_URL` 下接受；测试模式把同 IP 的并发连接与建房额度放宽 100 倍（`app.ts` 的 `TEST_MODE_IP_RELAX`，压测与 E2E 都来自同一个 IP）。
+- **压测**：`apps/server/scripts/loadtest.ts`（`npm run loadtest`），爬坡建房、稳态运行、读 `/admin/stats` 判定，收尾解散房间并核对房间数。
+- **E2E 远程模式**：`E2E_BASE_URL` / `E2E_PASSCODE` / `E2E_RESTART_CMD`（`e2e/fixtures/remote.ts`、`access.ts`、`room.ts`），新增 `e2e/specs/deploy-restart.spec.ts`。
+- **文档**：`docs/deploy.md`；design/net.md §8.5 补第 5 步（停机时 HTTP 连接的宽限与强制断开）。
+
+### 25.2 与规格不一致之处
+
+- **构建命令**：Dockerfile 放在 `deploy/`，验证 1 的命令是 `docker build -f deploy/Dockerfile -t rich4:local .`（M11 验证 1 已改正）。Dockerfile 不写 `# syntax=` 指令，免得构建时再拉 docker/dockerfile 前端镜像（基础镜像只用 node:24-slim 与 caddy:2），代价是要求 Docker 25+；审查修复后 compose 网络开启 IPv6（自动分配 ULA 子网、ip6tables 缺省开启），部署要求提高到 Docker Engine 27+（25.7）。
+- **验证 2、3、5 的形态**：挂了素材包就必须开门禁，所以 `/api/maps` 要先用口令换 cookie，E2E 加 `E2E_PASSCODE`，压测加 `ACCESS_PASSCODE`（或 `--passcode`）与 `ADMIN_TOKEN`。E2E 要用 `debug:act`、压测的 200 个房间来自同一个 IP，两者都只在测试模式下可行，所以验证 2–6 对着 `docker-compose.e2e.yml` 起的实例跑，地址是 `https://localhost:8443` 而不是 `https://localhost`；不开测试模式的生产形态另做了检查（25.4）。
+- **验证 6「运行满 24 小时」**：备份在启动 30 秒后第一次检查、之后每小时检查「当天是否已有」，所以起服 30 秒后就有当天的 `rich4-YYYYMMDD.db`（日期按容器时区 UTC），不用等 24 小时；另外补了恢复演练。
+- **事件循环延迟的口径**：`/admin/stats` 用 `monitorEventLoopDelay({ resolution: 20 })`，读数包含 20 ms 的采样间隔本身（容器里空闲 p50 约 22–26 ms、p99 约 31 ms）。验收阈值 50 ms 与接口口径都没改（保守读数），在 deploy.md 注明。
+- **规格之外新增**：`docker-compose.nginx.yml`（让已有 nginx 的主机不用改 compose 文件）、`RICH4_TEST_MODE` 生产守卫、测试模式放宽同 IP 额度、停机日志 `shutdown: rooms suspended`。
+
+### 25.3 实机验证发现并修复的问题
+
+- **优雅停机被 keep-alive 连接拖到 25 秒强制退出**：第一次跑验证 4 时，app 日志停在 `shutdown: notifying clients`，25 秒后 `shutdown timed out, forcing exit`，快照与自动存档那一步之后的关库都没走完（房间靠逐条写入的 journal 恢复，数据没丢，但重启停机 27.8 秒）。原因：`io.close()` 要等 HTTP 服务器的全部连接断开；Caddy 到 app 的 keep-alive 连接池里（重启前采样到 34 条），停机瞬间有请求在途的连接处理完后按 Fastify 的 keepAliveTimeout（72 秒）继续挂着，页面的重连请求又经它进来（engine.io 关闭后照样受理新握手）。修复（`app.ts` 的 close）：宽限期内每 100 ms 断开变空闲的连接，`SHUTDOWN_HTTP_GRACE_MS`（3 秒）后 `closeAllConnections()`；状态在此之前已刷盘。回归测试 `restart-recovery.test.ts`「优雅停机不被在途请求的 keep-alive 连接拖住」用一条只发了半截请求头的连接复现（修复前 20 秒超时，修复后按时完成并能恢复房间）。修复后 4 次 E2E 重启里有 2 次仍走到 3 秒强制断开（从 SIGTERM 到新进程监听 5.7–5.9 秒），另 2 次 0.2 秒内停完（约 3 秒）。**这次修复并不完整**（审查第 5 条）：已升级为 WebSocket 的连接不在 `http.Server` 的连接跟踪里，`closeAllConnections()` 断不开，不回应关闭帧的 WebSocket 仍会把停机拖满 25 秒；补救见 25.7。
+- **WebSocket 被拦时前端不降级长轮询**：客户端 `transports: ['websocket', 'polling']` 而没开 `tryAllTransports`，engine.io-client 在 WebSocket 握手失败时直接报错重连，每次都只试 WebSocket。用 `test/m11-ws-block-proxy.mjs`（拦掉 Upgrade、其余转发给 Caddy 的本机代理）实测：60 秒内试了 12 次 WebSocket、0 次长轮询，建房一直超时。修复：`net/socketTransport.ts` 加 `tryAllTransports: true`（单测断言选项）；复测 `test/m11-ws-fallback.spec.ts`：WebSocket 被拦后走长轮询（11 个 polling 请求 200），2.5 秒建房进大厅。注意：握手失败后退到长轮询的那条连接不会再升级到 WebSocket，直到下一次重连。
+- **停机日志**：补一行 `shutdown: rooms suspended`（房间数、对局中房间数、是否写快照与自动存档、耗时），运维能从 `docker compose logs app` 确认优雅停机走完了刷盘。
+
+### 25.4 实测数据
+
+- **镜像**（验证 1）：`docker images` 406 MB，压缩后约 91 MB，容器内 `du` 297 MB（本项目部分：node_modules 26 MB、public 17 MB（其中 193 个前端 source map 约 11 MB）、server 4 MB）；10 层。`deploy/scan-image.sh rich4:local` 退出 0（最终文件系统、history、全部 10 层都没有命中）；规格里的 `find / -xdev … | wc -l` 输出 0。
+- **HTTP 面**（验证 2，`test/m11-final-http.sh`，28 项全部通过，最终镜像上复跑一遍）：`/healthz`、`/readyz` 200；门禁开启时 `/api/maps`、`/pack/manifest.json`、素材文件未带 cookie 均 401（401 也带 nosniff 与 CORP），错误口令 401；口令登录后 cookie 为 `HttpOnly; SameSite=Lax; Secure; Max-Age=2592000`，`/api/maps` 含 taiwan；manifest `private, no-cache`、按 Accept-Encoding 返回服务器预压缩的 br（Caddy 不再压）；素材包 mp4 与 m4a 的 `Range: bytes=100-1123` 经 Caddy 返回 206、`Content-Range: bytes 100-1123/<manifest 字节数>`、Content-Length 1024、不压缩，越界 416，素材文件 `private, max-age=2592000`；前端 JS 由 Caddy 压成 zstd、`public, max-age=31536000, immutable`，index.html `no-cache`；首页与 /api 带 nosniff、Referrer-Policy same-origin、X-Frame-Options DENY、CSP frame-ancestors 'none'，没有 Server / Via，localhost 不发 HSTS；HTTP/2；`/admin/stats` 无 token 401、带 token 200。
+- **E2E**（验证 3）：`turn-cycle`（original / compact 两种节奏）与 `reconnect` 3 passed（1.2 分钟），修复后的最终镜像上复跑同样 3 passed。
+- **重启恢复**（验证 4）：`deploy-restart.spec.ts` 共跑 6 次全部通过（修复前 2 次、修复后 4 次）：页面出现断线遮罩后自动重连、同房同座、epoch 恰好加 1、seq 不变、view 与 HUD 与重启前逐字相同、有 serverRestored 系统消息、对局继续。app 日志：`shutdown: rooms suspended {rooms, playing, snapshot:true, autosave:true, ms 9–19}` → `shutdown complete` → 新进程 `rooms restored [<code>:journal …]`。SIGTERM 到新进程开始监听：修复前 27.8 秒（1 次）或约 3 秒（1 次，碰巧没有在途连接），修复后 2.95–5.87 秒。
+- **压测**（验证 5，`npm run loadtest -- --url https://localhost:8443 --rooms 200`，每房 1 个真人 bot + 3 个电脑，爬坡 20 秒、稳态 120 秒，经 Caddy；`test/m11-final-loadtest.sh` 同时每 2 秒采 docker stats），连跑两轮都 PASS：
+
+  | 轮次 | 服务器事件循环 p99 / max | game:act ack p50 / p99 | app 容器 CPU 峰值（均值） | app 内存峰值 | caddy CPU / 内存峰值 | 错误 |
+  |---|---|---|---|---|---|---|
+  | 1 | 33.72 / 44.7 ms | 5.74 / 20.68 ms | 41.5%（29.1%） | 458 MiB（RSS 498 MB） | 7.5% / 154 MiB | 0 |
+  | 2 | 32.10 / 39.06 ms | 5.88 / 22.89 ms | 39.1%（27.6%） | 476 MiB（RSS 517 MB） | 7.0% / 106 MiB | 0 |
+
+  两轮都是 200/200 开局，ack 超时、app:error、seq 缺口、意外断线全为 0，收尾后房间数回到压测前（8，都是之前 E2E 留下的暂停房间）、连接数 0。容器里空闲时 p99 就有约 31 ms（macOS 上 Docker 虚拟机的调度抖动加 20 ms 采样间隔），负载只让它上升 1–3 ms，瓶颈不在服务器，没有做优化。
+- **备份**（验证 6，`test/m11-final-backup.sh`）：首次起服 30 秒后 `/data/backup/rich4-20260928.db` 出现（node:node 644）。恢复演练：签发邀请码 before-backup → 让 app 重新写当天备份（8 个房间、408 个自动存档）→ 再签发 after-backup → 停 app、用一次性容器把备份拷成 `rich4.db` 并删掉 -wal / -shm → 起 app：启动日志恢复 8 个房间（epoch 各加 1），存档 408 个、邀请码只剩 before-backup，与备份一致。另外演练了从异地副本恢复（`docker compose cp` 拷出、app 停着时拷回数据卷），并确认恢复会撤销备份之后做过的吊销（epoch 回到 0），已写进 deploy.md。
+- **生产形态**（只用 `deploy/docker-compose.yml`，`deploy/.env` 设 127.0.0.1:8080/8443、`SITE_ADDRESS=localhost`、`PUBLIC_URL=https://localhost:8443`）：容器里 `RICH4_TEST_MODE` 未设置、日志没有测试模式告警；`test/m11-final-prodcheck.ts`（用 Caddy 内部 CA 根证书正常校验 TLS）建房、补 3 个电脑、开局正常，`debug:act` 2 秒内没有 ack（未注册），正常对局推进到 seq 10。`ACCESS_MODE=off` 仍挂素材包：app 以 2 退出反复重启，日志「启用原版素材包（RICH4_ASSETS_DIR=/assets-rich4）时必须设置访问门禁：ACCESS_MODE=passcode 或 invite…当前不满足：NODE_ENV=production；TRUST_PROXY=1；HOST=0.0.0.0 不是回环地址；未设置 RICH4_ASSETS_ALLOW_UNGATED=1」，经 Caddy 访问 502。`RICH4_TEST_MODE=1` + `PUBLIC_URL=https://rich4.example.com`：以 2 退出，日志「环境变量无效：NODE_ENV=production 时 RICH4_TEST_MODE=1 只允许用于本机验证，PUBLIC_URL 必须显式设为 localhost…」。换回正常配置后恢复健康。管理接口：签发 / 列出邀请码、吊销后旧 cookie 401。`docker-compose.nginx.yml`：只起 app、发布在 127.0.0.1:3000，`/healthz` 200、`/api/maps` 401。
+- **原版皮肤巡检**（`test/m11-tour.spec.ts`，真实 Chrome 经 Caddy 访问生产形态实例，截图在 `.cache/m11/tour/`）：桌面 1920×1080 走 門禁 → 片頭（跳过）→ 標題 → 開始遊戲 → 開局設定（台灣、3 電腦、不限時）→ 選人 → 開局 → Loading → 对局；手机横屏 844×390 走 門禁 → 片頭 → 標題 → 單機對戰 → 对局。最终镜像上两种视口各打 4 个本人回合，分别买地 2 块与 1 块；遇到的决策（BUY_LAND、BANK_ATM、LOTTERY，前一轮另有 BUY_FACILITY）全部是原版场景；控制台 0 错误；`/pack` 请求约 310 个（200 与 206），0 个 4xx/5xx；皮肤判定 applied=original、pack=ready、failedGroups 空、原版棋盘；手机横屏无横向滚动。门禁页本身是程序化画面（登录前拿不到素材包，按设计）。
+
+### 25.5 验证
+
+- `npm run check` 全绿：typecheck、lint（1229 个文件）、vitest 294 个文件 2882 通过 2 跳过（含新增的停机回归测试，server 与 server-real 各一遍；socketTransport 单测 6 通过）、check-determinism OK（193）、check-no-original OK（1535）、check-deps OK（1159）、zh-TW 最新（17）。收尾时有一次整体运行在 `server` 的 `integration/minigame.test.ts`「replay：不直播…」失败（`bombRun` 找不到可达的炸弹格，取决于随机的房间种子；该文件本轮未改动，单独连跑 6 次都通过），重跑全绿，记入遗留。
+- Docker：`docker build -f deploy/Dockerfile -t rich4:local .`、`bash deploy/scan-image.sh rich4:local`（0）、规格的 `find … | wc -l`（0）；验证 2–7 的命令与结果见 25.4，日志在 `.cache/m11/final/`。
+
+### 25.6 遗留
+
+- `deploy/nginx.conf.example` 没有用 `nginx -t` 校验过（本机没有 nginx，按约束不用其他镜像），只做了人工审阅；真实域名下的 Let's Encrypt 签发、ICP 备案与 HSTS 也只能在云主机上验证（本机只有 localhost 内部 CA；HSTS 由上一阶段用临时 caddy + 内部证书的 rich4.example.com 验证过）。
+- 前端构建开着 source map：镜像的 public/ 里有 193 个 .map（约 11 MB），任何人都能下载；去掉可以让镜像再小约 11 MB，是否保留待定。socket.io-client / engine.io-client 被锁文件标成生产依赖，也进了 server 的运行时依赖（约 1.5 MB）。
+- Caddy 在 80 端口自动跳转 HTTPS 的响应仍带 `Server: Caddy`（去掉 Server 头的配置只作用于 https 站点）。
+- 停机时有连接要等 3 秒强制断开（修复后 4 次 E2E 重启里有 2 次）：来源没有查清。审查指出当时的强制断开够不着 WebSocket，最坏情况其实仍是 25 秒；25.7 补上之后最坏情况才真正是 3 秒。审查修复后 7 次 E2E 重启里仍有 2 次走满 3 秒，新加的日志显示剩下的是 3 条普通 HTTP 连接、没有 WebSocket——推测是停机期间页面重连发起的 engine.io 新握手（engine.io 关闭后照样受理）留下的长轮询；停机开始时让 engine.io 拒绝新握手可以消掉这 3 秒，本轮没做（会改变重连期间客户端看到的错误，需要单独验证）。
+- 两轮压测之后空闲时 heapUsed 约 122 MB、RSS 约 540 MB（刚启动时 53 MB / 175 MB），没有确认是尚未回收的垃圾还是泄漏，需要长时间运行观察 `/admin/stats`；Docker 内存上限建议至少 1 GB。
+- 压测收尾解散房间会给每个房间写 `auto:<code>` 自动存档（压测只能对测试模式实例跑，不会碰正式库）。
+- WebSocket 被拦的降级只用本机代理模拟验证过，没有在真实的公司代理 / CDN 后面试过。
+- E2E 远程模式只跑了 turn-cycle、reconnect、deploy-restart；其余 spec 没有逐个在远程模式下验证。
+- `apps/server/test/integration/minigame.test.ts` 的 `bombRun` 偶发失败：随机房间种子生成的企鹅棋盘上偶尔没有从起点可直达的炸弹格（`expected -1 to be greater than or equal to 0`），测试应改为固定种子或在找不到时换一种结束方式。
+- 仓库根目录三个被 git 跟踪的反汇编片段文件（`0x10800000`、`0x10800020`、`0x45382e`，调试遗留）已被 `.dockerignore` 排除，是否从 git 删除待定。
+
+### 25.7 审查修复（M11 审查 16 条）
+
+逐条独立核实后修复；复核在本机 compose 项目 `rich4-m11fix`（127.0.0.1:8080/8443，e2e 覆盖文件，口令门禁 + 真实素材包 + 台湾图）上实跑，日志在 `.cache/m11/fix/`。
+
+- **镜像扫描规则统一**（第 1、12 条）：新增 `scripts/scan-tree.ts`，直接调用 `check-no-original.ts` 的纯函数（路径、MKF/PE/FLIC/SPR 魔数、不分大小写的 `RICH4_DERIVED` 音视频标记、全部 12 个素材包 schema 含带连字符的 id、gzip/brotli 变体解压后再判、sha256 禁单），另加镜像 / 构建产物档的路径规则（任何一级 `original` / `rich4-data` / `rich4-assets` 目录、`.rich4-extract.json`、素材包命名 `<名字>.<8 位十六进制>.<扩展名>[.br|.gz]`、一切音视频与 MIDI）与压缩包展开（tar、tar.gz/br、zip 逐条目再查；xz/7z 等展不开的在 `app/` 与构建产物里判命中）。它只用 Node 内置模块与可擦除的 TS 语法，`node:24-slim` 里直接 `node scripts/scan-tree.ts` 运行（类型剥离，`check-no-original.ts` 改为带 `.ts` 后缀导入 `lib/cli.ts`）。`deploy/scan-image.sh` 的三道检查都改用它（服务器上不必装 Node：在官方 node:24-slim 容器里 `--network none` 运行），禁单并入 tools/extract 指纹、本机素材包 manifest（含 `.cache/**`）与本机 `original/` 下全部文件的哈希；环境错误一律退出码 2（`set -E` + ERR trap）。Dockerfile 的构建上下文与产物检查也改用它（构建产物档）。回归：`scripts/__tests__/scan-tree.test.ts`（9 例，含命令行经 Node 类型剥离运行、gzip 层 tar、路径清单）；`test/m11fix-scan-selftest.sh` 在 rich4:local 上叠一层合成「泄漏」（审查自测的 11 个文件形态加改名的派生 opus、voice-map JSON、带 rich4-assets 路径的 zip、xz、按禁单哈希的文件、先加后删的 Data.MKF，共 17 种，不含任何原版字节），scan-image.sh 退出 1、17 种全部命中（34 处），`TMPDIR` 不可用时退出 2；自测镜像已删除。正式镜像 scan 退出 0（10 层，基础层 apt 日志 `eipp.log.xz` 只告警）。
+- **客户端真实 IP**（第 2、11、13 条）：compose 默认网络 `enable_ipv6: ${ENABLE_IPV6:-true}`（本机 Docker Desktop 实测自动分配 ULA /64，caddy 仍经 IPv4 连 app）；Caddyfile 全局 `servers { trusted_proxies static {$CADDY_TRUSTED_PROXIES}; trusted_proxies_strict }`，反代时 `header_up X-Forwarded-For {client_ip}`（缺省不信任任何代理，与原来等价）；app 在生产环境第一次把握手的客户端 IP 解析成本机或私有地址时 warn 一次（`io.ts` 的 `privateClientIpWarner`，单测）。实测：缺省配置下带不同 XFF 的请求在 app 日志里全是 `172.20.0.1`，一个「客户端」错 6 次口令后另一个带正确口令的也被 429（复现审查）；`CADDY_TRUSTED_PROXIES=private_ranges` 后 app 日志按 XFF 分开，另一个客户端正确口令 200，`XFF: 1.2.3.4, 192.0.2.99, 10.0.0.5` 取 `192.0.2.99`（从右往左第一个不可信地址）。E2E 后日志里恰好一条 `client ip resolves to a private address`（Docker Desktop 的端口转发本来就这样）。deploy.md 新增 §7.1（IPv6、前置反代、CDN 三种形态）。Linux 主机上 IPv6 经 NAT 保留源地址这一点本机无法复现。
+- **.gitignore**（第 3 条）：补 `.env.*`、`*.env`（放行两个 `.env.example`）、`*.db`、`*.db-wal`、`*.db-shm`、`*.r4save`；`git check-ignore` 核对 deploy/.env.bak、deploy/.env.prod、deploy/prod.env、.env.local、rich4-20260928.db、deploy/rich4.db、backup.r4save 均已忽略，已跟踪文件没有被新规则误伤。异地恢复改从 `/srv/rich4-backups/` 拷入。
+- **ADMIN_TOKEN 不上命令行**（第 4 条）：deploy.md、.env.example、compose 文件头的管理命令一律 `sed -n 's/^ADMIN_TOKEN=/Authorization: Bearer /p' deploy/.env | curl -fsS -H @- …`；本机对容器实测 stats、列出与签发邀请码都 200。
+- **停机不再被 WebSocket 拖住**（第 5 条）：`app.ts` 在 `upgrade` 时登记连接，宽限期满（3 秒）与 `closeAllConnections()` 一起销毁。回归测试「优雅停机不被不回应关闭帧的 WebSocket 拖住」（直连 engine.io websocket 后一字不回）：去掉修复时 20 秒超时，修复后按时完成并能恢复房间。宽限期满时另记一条 `shutdown: grace period over, forcing connections closed`（剩余连接数、其中的 WebSocket 数）。实机：3 条 websocket 客户端被 `kill -STOP` 后 `restart app` 共 3.6 秒（`rooms suspended` 到 `shutdown complete` 3.0 秒；审查实测修复前 25.3 秒）；7 次 E2E 重启里 5 次在 0.3 秒内 `shutdown complete`，2 次走到 3 秒强制断开（其中一次日志为 `connections: 3, websockets: 0`：剩下的是普通 HTTP 连接），SIGTERM 到新进程监听 2.9–7.1 秒。
+- **文档与运维**（第 6–10 条）：最低内存改为 2 GB（1 GB 主机加 swap，或本机构建后 `docker save | ssh … docker load`、服务器 `up --no-build`；复核：构建阶段容器限 768 MB 时 `npm run build` 被杀 137，1.2 GB 通过、峰值 1.08 GB）；所有 compose 命令改为「仓库根目录 `.env` 写 `COMPOSE_FILE`、命令不写 `-f`」，nginx 模式只改这一行（实测带 nginx 覆盖文件的项目再次 `up -d --wait` 后 127.0.0.1 端口仍在、只有 app）；升级后 Caddyfile 有改动要 `restart caddy`（实测换 inode 后 `up -d` 与容器内 `caddy reload` 都不生效，`restart caddy` 生效）；异地备份改为每小时 `docker compose cp app:/data/backup/. /srv/rich4-backups/`（不再按日期拼文件名，实测可重复拷贝）；两个只读挂载改为 `create_host_path: false`，§2 先 `mkdir -p rich4-data rich4-assets`（实测目录缺失时 `up` 报 `bind source path does not exist`，不再自动建目录）。
+- **压测判定**（第 14、15 条）：判定抽成 `apps/server/scripts/loadtestVerdict.ts`（单测 5 例）：`app:error`、非预期的 `game:act` 错误码（INVALID_ACTION、RATE_LIMITED、STALE_DECISION、NOT_YOUR_DECISION 之外）、其余请求出错、再来一局失败都判 FAIL；有功能性错误时读不到 `/admin/stats` 也判 FAIL（退出码 1），只缺 p99 读数才是 UNKNOWN（2）。复核：压测中 SIGKILL 服务器，loadtest 退出 1、`verdict: FAIL`（修复前 2 / UNKNOWN）；对容器 30 房 30 秒冒烟 PASS。
+- **deploy-restart 用例**（第 16 条）：等断线遮罩时同时盯着重启命令，命令非 0 退出立即带退出码与输出失败，命令成功后 30 秒仍没断线也带输出失败。复核（本机测试模式服务器）：`E2E_RESTART_CMD='echo MARKER >&2; exit 3'` 报「重启命令失败…exit 3…MARKER」；`E2E_RESTART_CMD=true` 报「重启命令已成功退出，但之后 30 秒内页面没有出现断线遮罩」。远程模式对容器共跑 8 次，7 次通过；1 次在重启之前就失败：`if (debug) expect(before.server.lots.L1?.owner).toBe(String(seatA))` 得到座位 3（P2）而不是 P1——用例假定 P1 第一回合固定买下 L1，随机对局里 L1 偶尔先落到别人手里，与本轮改动（重启命令的监视）无关，留作遗留。

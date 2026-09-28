@@ -3,13 +3,17 @@
  * - 正常关闭（刷快照 + 自动存档）后用同一目录起新 app：状态哈希一致、epoch+1、全员断线并暂停，bot 重连拿到快照继续；
  * - 跳过刷盘（模拟 kill -9）：只靠逐条写入的 journal 重放，状态哈希同样一致；
  * - 大厅房间与聊天记录随快照恢复；优雅停机发 server:notice、readyz 转 503。
+ * - 停机不被在途请求的 keep-alive 连接拖住（反代连接池，M11 实机发现）：宽限期满强制断开，shutdown 按时完成；
+ *   不回应关闭帧的 WebSocket（已升级的连接不归 closeAllConnections 管，M11 审查）同样在宽限期满时断开。
  */
 import { mkdtempSync, rmSync } from 'node:fs';
+import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { GameState } from '@rich4/shared/engine';
 import { canonicalJson, fnv1a64 } from '@rich4/shared/util';
 import { afterEach, describe, expect, it } from 'vitest';
+import { SHUTDOWN_HTTP_GRACE_MS } from '../../src/app';
 import { autoSaveId } from '../../src/persistence/SaveService';
 import { type BotClient, connectBot } from '../helpers/botClient';
 import { closeAll, setupRoom, startGame } from '../helpers/scenario';
@@ -242,4 +246,52 @@ describe('integration/restart-recovery', () => {
     const srv2 = await serve(dir);
     expect(srv2.app.restoreReport.map((r) => r.mode)).toEqual(['journal']);
   }, 30_000);
+
+  it('优雅停机不被在途请求的 keep-alive 连接拖住：宽限期满强制断开，shutdown 按时完成', async () => {
+    const dir = tmp();
+    const srv1 = await serve(dir);
+    const s = await twoPlayerGame(srv1);
+    // 模拟反代（Caddy）连接池里停机瞬间还有请求在途的连接：请求头只发了一半，server.close() 不会把它当空闲连接断开
+    const { port } = new URL(srv1.url);
+    const sock = connect(Number(port), '127.0.0.1');
+    sock.on('error', () => {});
+    await new Promise<void>((r) => sock.once('connect', () => r()));
+    const sockClosed = new Promise<void>((r) => sock.once('close', () => r()));
+    sock.write('GET /healthz HTTP/1.1\r\nHost: localhost\r\n');
+    await sleep(100);
+    const t0 = Date.now();
+    await srv1.app.shutdown('test');
+    // 修复前 io.close() 一直等这条连接，shutdown 挂到 shutdown.ts 的 25s 强制退出
+    expect(Date.now() - t0).toBeLessThan(SHUTDOWN_HTTP_GRACE_MS + 2000);
+    await sockClosed;
+    // 刷快照与自动存档照常完成：同一目录重启能恢复房间
+    const srv2 = await serve(dir);
+    expect(srv2.app.restoreReport.map((r) => r.code)).toEqual([s.code]);
+  }, 20_000);
+
+  it('优雅停机不被不回应关闭帧的 WebSocket 拖住：宽限期满连同已升级的连接一起断开', async () => {
+    const dir = tmp();
+    const srv1 = await serve(dir);
+    const s = await twoPlayerGame(srv1);
+    // 模拟被挂起的手机浏览器、断了网但 TCP 还挂着的连接：直连 engine.io 的 websocket 完成握手，之后一个字节都不回，
+    // 服务器发出的关闭帧得不到回应（ws 缺省等 30s 才断开）
+    const { port } = new URL(srv1.url);
+    const sock = connect(Number(port), '127.0.0.1');
+    sock.on('error', () => {});
+    await new Promise<void>((r) => sock.once('connect', () => r()));
+    const sockClosed = new Promise<void>((r) => sock.once('close', () => r()));
+    const response = new Promise<string>((r) => sock.once('data', (d: Buffer) => r(d.toString('latin1'))));
+    sock.write(
+      'GET /socket.io/?EIO=4&transport=websocket HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n' +
+        'Connection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n',
+    );
+    expect(await response).toMatch(/^HTTP\/1\.1 101 /);
+    const t0 = Date.now();
+    await srv1.app.shutdown('test');
+    // 修复前 http.Server.close() 一直等这条已升级的连接，shutdown 挂到 ws 的 30s 关闭超时（部署里是 25s 强制退出）
+    expect(Date.now() - t0).toBeLessThan(SHUTDOWN_HTTP_GRACE_MS + 2000);
+    await sockClosed;
+    const srv2 = await serve(dir);
+    expect(srv2.app.restoreReport.map((r) => r.code)).toEqual([s.code]);
+  }, 20_000);
 });

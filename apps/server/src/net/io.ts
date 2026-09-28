@@ -24,6 +24,7 @@ import {
 } from '@rich4/shared/net';
 import { Server } from 'socket.io';
 import type { AccessControl } from '../access/AccessControl';
+import type { Logger } from '../infra/logger';
 import type { Emitter } from '../rooms/RoomBroadcaster';
 import type { AppSocket, HandlerCtx, SocketData } from './guard';
 import { registerChatHandlers } from './handlers/chat';
@@ -44,6 +45,10 @@ export interface IoOptions {
   maxConnectionsPerIp?: number;
   /** 访问门禁；缺省或未启用时不检查 */
   access?: AccessControl;
+  /**
+   * 生产环境且 TRUST_PROXY=1 时打开：第一次遇到解析成本机或私有地址的客户端 IP 时记一条 warn（见 privateClientIpWarner）。
+   */
+  warnPrivateClientIp?: boolean;
 }
 
 export function createIo(http: HttpServer, o: IoOptions): AppServer {
@@ -130,6 +135,25 @@ export function clientIp(socket: Pick<AppSocket, 'handshake'>, trustProxy: boole
   return peer || 'unknown';
 }
 
+/**
+ * 客户端 IP 塌缩告警（M11 审查）：反代前面还有一跳而 Caddy 没有信任它时——宿主 IPv6 经 docker-proxy 转发到只有 IPv4 的
+ * compose 网络、前置反代 / 隧道 / CDN——所有玩家都会显示成同一个网关或代理地址，按 IP 的限流、连接数上限与门禁退避
+ * 对这些人一起生效（一个人输错口令，全部人被 429）。这种地址总是本机或私有网段，所以生产环境第一次解析出这样的
+ * 客户端 IP 时打一条 warn（每个进程只打一次）；局域网部署（玩家本来就是内网地址）可以忽略。处理见 docs/deploy.md §7。
+ */
+export function privateClientIpWarner(log: Pick<Logger, 'warn'>): (ip: string, peer: string) => void {
+  let warned = false;
+  return (ip, peer) => {
+    if (warned || !isTrustedProxy(ip)) return;
+    warned = true;
+    log.warn(
+      { ip, peer },
+      'client ip resolves to a private address behind TRUST_PROXY=1: players may all share one IP for rate limits ' +
+        '(IPv6 via docker-proxy, or an untrusted front proxy/CDN; see docs/deploy.md §7)',
+    );
+  };
+}
+
 function handshakeError(
   code: 'BAD_HANDSHAKE' | 'PROTOCOL_MISMATCH' | 'SERVER_BUSY' | 'ACCESS_REQUIRED',
   details?: unknown,
@@ -150,6 +174,7 @@ export function attachIo(io: AppServer, ctx: HandlerCtx, o: IoOptions): void {
   relays.set(io, relay);
   const limit = o.maxConnectionsPerIp ?? MAX_CONNECTIONS_PER_IP;
   const access = o.access?.enabled ? o.access : null;
+  const warnPrivateIp = o.warnPrivateClientIp && o.trustProxy ? privateClientIpWarner(ctx.log) : null;
 
   if (access) {
     // 握手的第一个 HTTP 响应（polling 握手或 WebSocket 升级）上滑动续期
@@ -180,6 +205,7 @@ export function attachIo(io: AppServer, ctx: HandlerCtx, o: IoOptions): void {
     const nickname = sanitizeNickname(parsed.data.nickname);
     if (!isValidNickname(nickname)) return next(handshakeError('BAD_HANDSHAKE'));
     const ip = clientIp(socket, o.trustProxy);
+    warnPrivateIp?.(ip, socket.handshake.address);
     if ((perIp.get(ip) ?? 0) >= limit) return next(handshakeError('SERVER_BUSY'));
     socket.data = { tokenHash: tokenHashOf(parsed.data.token), nickname, ip };
     next();

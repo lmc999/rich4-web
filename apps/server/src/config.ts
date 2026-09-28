@@ -9,6 +9,9 @@
  * DATA_DIR/badwords.txt 为聊天敏感词表；DATA_DIR/backup 为每日备份（BACKUP_ENABLED=0 关闭，BACKUP_KEEP 份数）。
  * 生产环境（NODE_ENV=production）必须设置 SAVE_HMAC_SECRET（≥32 字节）。
  * RICH4_AI_POLICY=original|basic 选择电脑策略（默认 original）；RICH4_TIMER_SCALE 只在测试模式下缩放决策计时。
+ * RICH4_TEST_MODE=1 开放 debug:act（强制骰子等，可任意改写对局）并放宽授权限流：生产环境（NODE_ENV=production，
+ * 例如本机用 deploy/docker-compose.e2e.yml 验证镜像）里只允许显式设置的 PUBLIC_URL 为 localhost（回环）时开启，
+ * 否则 ConfigError。这只是配置层的兜底：真正的隔离靠 e2e 覆盖文件只绑定 127.0.0.1。
  *
  * 原版皮肤素材包与访问门禁（docs/design/original-skin.md U4、§3 修正 3；design-draft §5.1）：
  * - RICH4_ASSETS_DIR：只读素材包目录，**只认显式设置**（不自动探测仓库里的 rich4-assets/）；目录里有 manifest.json
@@ -193,6 +196,17 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     ? abs(e.STATIC_DIR)
     : firstExisting([resolve(REPO_ROOT, 'apps/client/dist')], 'index.html');
   const publicUrl = e.PUBLIC_URL ?? `http://localhost:${e.PORT}`;
+
+  // ───────────── 测试模式 ─────────────
+  // 生产构建里开测试模式只允许本机验证：PUBLIC_URL 必须显式设置且为 localhost（缺省值虽是 localhost，
+  // 但生产里没设 PUBLIC_URL 多半是漏填，不能据此放行）
+  if (production && e.RICH4_TEST_MODE && (e.PUBLIC_URL === undefined || !isLocalhostUrl(e.PUBLIC_URL))) {
+    throw new ConfigError(
+      `环境变量无效：NODE_ENV=production 时 RICH4_TEST_MODE=1 只允许用于本机验证，` +
+        `PUBLIC_URL 必须显式设为 localhost / 127.0.0.1 / [::1] 地址（当前 ${e.PUBLIC_URL ?? '未设置'}）；` +
+        '测试模式开放 debug:act（可强制骰子、任意改写对局），绝不能用于对外的部署',
+    );
+  }
 
   // ───────────── 访问门禁 ─────────────
   let passcodeHash: PasscodeHash | null = null;

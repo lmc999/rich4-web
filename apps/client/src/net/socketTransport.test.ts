@@ -1,4 +1,4 @@
-// socketTransport 的断线处理：服务器主动断开（停机 / 重启）后自动重连；被顶替后不重连、请求立即失败（socket.io-client 用假实现）
+// socketTransport 的传输选项与断线处理：WebSocket 被拦时降级长轮询；服务器主动断开（停机 / 重启）后自动重连；被顶替后不重连、请求立即失败（socket.io-client 用假实现）
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConnStatus } from './transport';
 
@@ -48,9 +48,14 @@ class FakeSocket {
 }
 
 let fake: FakeSocket;
+/** 最近一次 io() 收到的选项 */
+let ioOpts: Record<string, unknown> | null = null;
 
 vi.mock('socket.io-client', () => ({
-  io: () => fake,
+  io: (...a: unknown[]) => {
+    ioOpts = (a.find((x) => typeof x === 'object' && x !== null) as Record<string, unknown> | undefined) ?? null;
+    return fake;
+  },
 }));
 
 const { createSocketTransport, SERVER_RECONNECT_MS } = await import('./socketTransport');
@@ -72,6 +77,13 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe('socketTransport：传输方式', () => {
+  it('先试 WebSocket，握手失败（代理拦 Upgrade）时本次连接改试长轮询', () => {
+    make();
+    expect(ioOpts).toMatchObject({ transports: ['websocket', 'polling'], tryAllTransports: true });
+  });
 });
 
 describe('socketTransport：服务器主动断开', () => {

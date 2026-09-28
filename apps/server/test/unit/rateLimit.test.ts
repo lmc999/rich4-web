@@ -70,6 +70,22 @@ describe('rateLimit', () => {
     for (let i = 0; i < 1000; i++) expect(off.take('s', 'chat:send')).toBe(true);
   });
 
+  it('ipScale 只放宽指定的按 IP 额度（测试模式放宽建房），其余按 IP 额度与按会话的桶不变', () => {
+    const rl = new RateLimiter({ now: () => 0, ipScale: { create: 100 } });
+    for (let i = 0; i < 500; i++) expect(rl.takeIp('127.0.0.1', 'create')).toBe(true);
+    expect(rl.takeIp('127.0.0.1', 'create')).toBe(false);
+    for (let i = 0; i < 20; i++) expect(rl.takeIp('127.0.0.1', 'joinFail')).toBe(true);
+    expect(rl.peekIp('127.0.0.1', 'joinFail')).toBe(false);
+    for (let i = 0; i < 5; i++) expect(rl.take('s', 'chat:send')).toBe(true);
+    expect(rl.take('s', 'chat:send')).toBe(false);
+    // 与 scale 相乘；scale=0 仍然关闭全部限流
+    const both = new RateLimiter({ now: () => 0, scale: 2, ipScale: { create: 3 } });
+    for (let i = 0; i < 30; i++) expect(both.takeIp('1.1.1.1', 'create')).toBe(true);
+    expect(both.takeIp('1.1.1.1', 'create')).toBe(false);
+    const off = new RateLimiter({ now: () => 0, scale: 0, ipScale: { create: 100 } });
+    for (let i = 0; i < 1000; i++) expect(off.takeIp('1.1.1.1', 'create')).toBe(true);
+  });
+
   it('prune 清理空闲超过 10 分钟的桶（按会话与按 IP 一视同仁）', () => {
     let now = 0;
     const rl = new RateLimiter({ now: () => now });

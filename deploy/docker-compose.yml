@@ -1,25 +1,60 @@
-# 大富翁4 联机版部署示例（docs/architecture.md §9.3；原版皮肤见 docs/design/original-skin.md U4、design-draft §5.4）
+# 大富翁4 联机版部署示例（docs/architecture.md §9.3、M11；原版皮肤见 docs/design/original-skin.md U4、design-draft §5.4）
 #
+#   mkdir -p rich4-data rich4-assets        # 仓库根目录；两个只读挂载的宿主目录（见下「数据」）
+#   echo 'COMPOSE_FILE=deploy/docker-compose.yml' > .env   # 之后的 compose 命令都不写 -f（docs/deploy.md §2）
 #   cp deploy/.env.example deploy/.env      # 填好 SAVE_HMAC_SECRET、PUBLIC_URL、SITE_ADDRESS；
 #                                           # 用原版皮肤时把 ACCESS_MODE 改为 passcode（或 invite）并填 ACCESS_*（示例默认 off）
-#   docker compose -f deploy/docker-compose.yml up -d --build
+#   docker compose up -d --build --wait
+#
+# deploy/.env 同时是两样东西：app 容器的环境变量（env_file），以及本文件里 ${HTTP_PORT} 之类的插值来源
+# （compose 默认读取与本文件同目录的 .env）。本机验证镜像用 docker-compose.e2e.yml 覆盖（只绑 127.0.0.1，见该文件）；
+# 主机上已经有 nginx 时叠加 docker-compose.nginx.yml（不起 caddy，app 发布到 127.0.0.1:3000）。
+# 完整的上线步骤、检查清单、备份恢复与故障排查见 docs/deploy.md。
+#
+# 端口（插值变量，缺省 80/443）：HTTP_PORT、HTTPS_PORT（HTTP/3 用同号 UDP 端口）；BIND_ADDR 只绑定某个宿主地址
+# （例如前面还有一层反代或隧道时设为 127.0.0.1；留空绑定全部地址，含 IPv6）。Caddy 在容器里固定监听 80/443，
+# 自动签发的证书与 HTTP→HTTPS 跳转都假定对外就是 80/443：公网部署请保持缺省，改端口只适合前面另有反代的场合。
+#
+# 客户端真实 IP（按 IP 的限流、同 IP 连接数上限、门禁登录退避都靠它；M11 审查）：
+# - compose 网络开启 IPv6（ENABLE_IPV6，缺省 true；需要 Docker Engine 27+，自动分配 ULA 子网、ip6tables 缺省开启）：
+#   宿主 IPv6 地址上的端口经 NAT 转进 caddy，源地址保留。网络只有 IPv4 时，IPv6 访客由 docker-proxy 转发，
+#   全部显示成网关地址（172.x.0.1），一个人输错口令，所有 IPv6 访客一起被 429。主机内核禁用了 IPv6 时设为 false，
+#   同时不要给域名加 AAAA 记录（或者 BIND_ADDR 写主机的 IPv4 地址）。
+# - Caddy 前面还有反代、隧道或 CDN 时，在 CADDY_TRUSTED_PROXIES 里列出它们的网段（见 Caddyfile 与 docs/deploy.md §7.1），
+#   否则所有人都显示成那一跳的地址。app 日志里的 warn「client ip resolves to a private address」就是这种塌缩的信号。
 #
 # 数据：
-#   rich4-state            读写卷：sqlite（房间、存档、门禁邀请码与授权）、每日备份
+#   rich4-state            读写卷：sqlite（房间、存档、门禁邀请码与授权）、每日备份（/data/backup/rich4-YYYYMMDD.db）
 #   ../rich4-data          只读：npm run extract -- all && npm run extract -- pack 的产物（原版地图数据，不入库、不进镜像）
 #   ../rich4-assets        只读、可选：npm run extract -- assets build 的原版皮肤素材包（仅供私人与朋友游玩）
+# 两个只读目录都要先以部署用户身份建好（mkdir -p rich4-data rich4-assets；不用原版皮肤时 rich4-assets 留空）：
+# 挂载写成 create_host_path: false，目录不存在时直接启动失败——否则 Linux 上的 dockerd 会以 root 身份建一个空目录，
+# 之后普通用户 rsync 素材包会因权限被拒。
 #
 # 原版皮肤素材包：
-# - 镜像里**绝不** COPY 素材包（根目录 .dockerignore 排除 rich4-assets/、*.flc；deploy/Dockerfile 构建时再检查一遍）。
-#   素材包只通过下面的只读挂载进入容器，由服务器 /pack/* 按 manifest 白名单提供。
-# - 宿主目录 ../rich4-assets 不存在时 Docker 会建一个空目录：容器里没有 manifest.json，素材包不启用，前端用程序化美术。
+# - 镜像里**绝不** COPY 素材包（根目录 .dockerignore 排除 rich4-assets/、*.flc；deploy/Dockerfile 构建时再检查一遍；
+#   deploy/scan-image.sh 可以对构建好的镜像逐层复查）。素材包只通过下面的只读挂载进入容器，由服务器 /pack/* 按 manifest 白名单提供。
+# - 宿主目录 ../rich4-assets 为空时（不用原版皮肤）：容器里没有 manifest.json，素材包不启用，前端用程序化美术。
 # - 挂载目录里有 manifest.json 时服务器**必须**设置访问门禁（.env 里 ACCESS_MODE=passcode 或 invite，
 #   再加 ACCESS_SECRET 与 ACCESS_PASSCODE_HASH），否则拒绝启动。
 # - 宿主目录建议 0750，属组要让容器内的 node 用户（uid/gid 1000）可读：chgrp -R 1000 rich4-assets && chmod -R g+rX rich4-assets
-# - 管理门禁：镜像里没有 scripts/access.ts，用 ADMIN_TOKEN（门禁开启时 ≥32 字节）调管理接口，例如
-#   吊销全部会话：curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" https://<域名>/admin/access/revoke
+# - 管理门禁：镜像里没有 scripts/access.ts，用 ADMIN_TOKEN（门禁开启时 ≥32 字节）调管理接口，token 从 deploy/.env
+#   读出经标准输入交给 curl（不进命令行与 shell 历史），例如吊销全部会话：
+#   sed -n 's/^ADMIN_TOKEN=/Authorization: Bearer /p' deploy/.env | curl -fsS -X POST -H @- https://<域名>/admin/access/revoke
 #   生成邀请码：POST /admin/access/invites（JSON {"uses":5,"days":7}；ACCESS_MODE=invite 时必须配置 ADMIN_TOKEN）
+#
+# 运维：
+# - 停机：SIGTERM 后服务器依次 /readyz 转 503 → 广播停机通知 → 挂起房间写快照、自动存档 → 关连接（在途请求与
+#   WebSocket 关闭握手最多再等 3s，之后强制断开，含不回应关闭帧的 WebSocket）→ 关库退出；整体超过 25s 强制退出
+#   （apps/server/src/infra/shutdown.ts），stop_grace_period 30s 留出 5s 余量再 SIGKILL。
+# - 日志：json-file 轮转，每个容器最多 LOG_MAX_FILE 个 × LOG_MAX_SIZE（缺省 5 × 10m）。
 name: rich4
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: '${LOG_MAX_FILE:-5}'
 
 services:
   app:
@@ -29,6 +64,7 @@ services:
     image: rich4:local
     init: true
     restart: unless-stopped
+    # 与 shutdown.ts 的 25s 强制退出配合（见文件头「运维」）
     stop_grace_period: 30s
     env_file: .env
     environment:
@@ -43,27 +79,70 @@ services:
       RICH4_ASSETS_DIR: /assets-rich4
     volumes:
       - rich4-state:/data
-      - ../rich4-data:/data-rich4:ro
-      # 可选：原版皮肤素材包，只读挂载（不用原版皮肤时可以删掉这一行）
-      - ../rich4-assets:/assets-rich4:ro
+      # 只读挂载；宿主目录必须事先建好（见文件头「数据」）
+      - type: bind
+        source: ../rich4-data
+        target: /data-rich4
+        read_only: true
+        bind:
+          create_host_path: false
+      # 可选：原版皮肤素材包，只读挂载（不用原版皮肤时目录留空即可）
+      - type: bind
+        source: ../rich4-assets
+        target: /assets-rich4
+        read_only: true
+        bind:
+          create_host_path: false
     expose:
       - '3000'
+    # 加固：根文件系统只读（只写 /data 卷；/tmp 给 sqlite 的临时文件）、去掉全部 capability、禁止提权
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # 就绪检查用 /readyz（数据库正常且不在停机中）；镜像自带的 HEALTHCHECK 只看 /healthz，这里覆盖它
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:'+process.env.PORT+'/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
+    logging: *logging
 
   caddy:
     image: caddy:2
     restart: unless-stopped
+    # app 就绪（/readyz 200）后才启动 Caddy，避免刚起的时候对外返回 502
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     ports:
-      - '80:80'
-      - '443:443'
-      - '443:443/udp'
+      - '${BIND_ADDR:+${BIND_ADDR}:}${HTTP_PORT:-80}:80'
+      - '${BIND_ADDR:+${BIND_ADDR}:}${HTTPS_PORT:-443}:443'
+      - '${BIND_ADDR:+${BIND_ADDR}:}${HTTPS_PORT:-443}:443/udp'
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+      # 前面另有反代、隧道或 CDN 时它们的网段（空格分隔）；缺省为空：不信任任何代理（见 Caddyfile）
+      CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-}
+    # Caddyfile 是单文件绑定挂载：改了它（git pull 之后）要 restart caddy 才生效，up -d 不会重建（docs/deploy.md §9.4）
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    logging: *logging
+
+# compose 网络开启 IPv6（见文件头「客户端真实 IP」）
+networks:
+  default:
+    enable_ipv6: ${ENABLE_IPV6:-true}
 
 volumes:
   rich4-state:

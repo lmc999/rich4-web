@@ -794,6 +794,7 @@ sequenceDiagram
   2. 广播 `server:notice{kind:'shutdown', reconnectInMs:5000}`。
   3. 暂停所有 runner，给所有房间强制写快照（这样 journal 尾部为空）。
   4. 自动存档，关闭 io 和数据库，退出。compose 里设 `stop_grace_period: 30s`。
+  5. 关闭 HTTP 服务器时不能干等全部连接自然断开：反代（Caddy）到 app 的 keep-alive 连接里，停机瞬间有请求在途的那些处理完后还会被重连请求继续用着；已升级为 WebSocket 的连接不在 `http.Server` 的连接跟踪里（`closeAllConnections()` 断不开），engine.io 走正常关闭握手，对端不回关闭帧（手机浏览器被挂起、移动网络断了而 TCP 还挂着）时 ws 要等 30 秒。两种情况都会让 `server.close()` 的回调拖到强制退出。宽限期内每 100ms 断开变空闲的连接，3 秒（`SHUTDOWN_HTTP_GRACE_MS`）后强制断开其余 HTTP 连接，并销毁在 `upgrade` 时登记的全部 WebSocket 连接；状态在第 3、4 步已经刷盘（M11 实机与审查发现，见 architecture §25）。
 - **启动时**：
   1. `RoomStore.listActive(24h)`，逐个加载快照，重放 `seq > snap.seq` 的 journal 尾部（引擎是确定性的，结果一致）。
   2. 如果 `engineVersion` 的主版本不一致，就不重放 journal，只做 `migrateState`；迁移失败则把房间转成存档，并标记「服务器升级，请读档继续」。

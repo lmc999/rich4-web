@@ -1,9 +1,12 @@
 # 镜像只含代码与 fixture：原版正版文件、派生数据、提取工具源码一律不进构建上下文（docs/architecture.md §9.3）
+# deploy/Dockerfile 的构建期检查与 deploy/scan-image.sh（逐层扫描）再兜底；这里改动后请重跑 scan-image.sh
 node_modules
 **/node_modules
 original
+**/original
 .cache
 rich4-data
+**/rich4-data
 tools/extract/src
 tools/extract/test
 e2e
@@ -14,22 +17,43 @@ docs
 **/RICH4.EXE
 **/SAVE*.DAT
 **/*.avi
+**/*.AVI
 **/*.mid
+**/*.map.json
+
+# 原版素材包
+rich4-assets
+**/rich4-assets
+**/*.flc
+**/*.FLC
+**/*.fli
+**/*.FLI
+
+# 口令、密钥与本机数据：部署用的 .env、sqlite 库、存档导出
+.env
+.env.*
+**/.env
+**/.env.*
+**/*.env
+deploy
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.r4save
 
 # 其他无关内容
 .git
 .github
+.claude
+.vscode
+.idea
 test
 **/dist
 **/coverage
 test-results
 playwright-report
 **/*.tsbuildinfo
-.env
-deploy/.env
+**/*.log
 **/.DS_Store
-
-# 原版素材包
-rich4-assets
-**/*.flc
-**/*.fli
+# 仓库根目录零散的反汇编片段（0x10800000 之类，调试遗留，与构建无关）
+0x*

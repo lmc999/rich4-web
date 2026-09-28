@@ -7,7 +7,8 @@ import { createHash } from 'node:crypto';
 import { closeSync, existsSync, lstatSync, openSync, readdirSync, readFileSync, readlinkSync, readSync } from 'node:fs';
 import { isAbsolute, join, posix, relative, resolve } from 'node:path';
 import { brotliDecompressSync, gunzipSync, constants as zc } from 'node:zlib';
-import { isMainModule, parseRootArg, toPosix } from './lib/cli';
+// 带 .ts 后缀：scan-tree.ts 经它在 node:24-slim 里用 Node 自带的类型剥离直接运行（不经 tsx）
+import { isMainModule, parseRootArg, toPosix } from './lib/cli.ts';
 
 export const BINARY_SIZE_THRESHOLD = 64 * 1024;
 const TEXT_SCAN_LIMIT = 8 * 1024 * 1024;

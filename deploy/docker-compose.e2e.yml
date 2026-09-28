@@ -1,0 +1,38 @@
+# 本机验证专用的覆盖文件（M11：镜像冒烟、E2E、压测）。**只用于本机，绝不能用于公网部署。**
+#
+# - 端口只绑定 127.0.0.1：E2E_HTTP_PORT / E2E_HTTPS_PORT（缺省 8080 / 8443），不发布 UDP（本机不走 HTTP/3）。
+#   Caddy 容器内仍监听 80/443：访问 http://localhost:<E2E_HTTP_PORT> 的自动跳转会指向 443，本机请直接用 https 端口。
+# - SITE_ADDRESS=localhost：Caddy 用内部 CA 自签证书（curl 加 -k，Playwright 设 ignoreHTTPSErrors）；Caddyfile 对 localhost 不发 HSTS。
+# - PUBLIC_URL=https://localhost:<E2E_HTTPS_PORT>（访问 cookie 带 Secure，与正式部署同一条路径）。
+# - RICH4_TEST_MODE=1：开放 debug:act（E2E 用来强制骰子，可以任意改写对局）——这正是本文件不能上公网的原因。
+#   服务器在 NODE_ENV=production 下只有 PUBLIC_URL 显式为 localhost 时才接受测试模式（apps/server/src/config.ts），
+#   但真正的隔离靠这里只绑 127.0.0.1。
+# - app 的环境变量（SAVE_HMAC_SECRET、ADMIN_TOKEN、ACCESS_* 等）只从 RICH4_E2E_ENV_FILE 读取（路径相对 deploy/，
+#   缺省 ../.cache/m11/e2e.env；.cache/ 已被 .gitignore 与 .dockerignore 排除），不读 deploy/.env。
+#   密钥一律在本机随机生成（openssl rand -base64 48），不要写进任何受版本控制的文件。
+# - 项目名缺省 rich4-e2e（下面的 name），卷与正式部署（项目名 rich4）互不相干；down -v 只删本项目的测试卷。
+#
+# 用法（仓库根目录；--env-file 提供 ${...} 插值用的变量，可以与 RICH4_E2E_ENV_FILE 是同一个文件，
+# 在里面写一行空的 BIND_ADDR= 可以消掉 docker-compose.yml 端口插值的「变量未设置」告警）：
+#   docker compose -p rich4-e2e --env-file .cache/m11/e2e.env \
+#     -f deploy/docker-compose.yml -f deploy/docker-compose.e2e.yml up -d --build --wait
+#   curl -k https://localhost:8443/readyz
+#   docker compose -p rich4-e2e --env-file .cache/m11/e2e.env \
+#     -f deploy/docker-compose.yml -f deploy/docker-compose.e2e.yml down -v
+name: rich4-e2e
+
+services:
+  app:
+    env_file: !override
+      - path: ${RICH4_E2E_ENV_FILE:-../.cache/m11/e2e.env}
+        required: true
+    environment:
+      PUBLIC_URL: https://localhost:${E2E_HTTPS_PORT:-8443}
+      RICH4_TEST_MODE: '1'
+
+  caddy:
+    ports: !override
+      - '127.0.0.1:${E2E_HTTP_PORT:-8080}:80'
+      - '127.0.0.1:${E2E_HTTPS_PORT:-8443}:443'
+    environment:
+      SITE_ADDRESS: localhost

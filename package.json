@@ -25,6 +25,7 @@
     "fixtures": "tsx scripts/gen-fixtures.ts",
     "extract": "tsx tools/extract/src/cli.ts",
     "sim": "tsx apps/server/scripts/simulate.ts",
+    "loadtest": "tsx apps/server/scripts/loadtest.ts",
     "check:determinism": "tsx scripts/check-determinism.ts",
     "check:no-original": "tsx scripts/check-no-original.ts",
     "check:deps": "tsx scripts/check-deps.ts",

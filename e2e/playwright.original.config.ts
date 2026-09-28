@@ -4,12 +4,17 @@
 // 经典布局（ui/classic）、原版棋盘（game/orig）、繁体界面；夹具经 RICH4_E2E_PASSCODE 在打开页面前注入 cookie。
 // 换端口（3110 / 5184）与构建目录（.cache/e2e-original/dist），可与默认配置同时跑。
 // 用法：CI=1 npx playwright test -c e2e/playwright.original.config.ts lobby turn-cycle cards events minigame reconnect save-load
+//
+// 远程模式（与 playwright.config.ts 相同）：设置 E2E_BASE_URL 时不启动 webServer、baseURL 用它、忽略证书错误；口令改用
+// E2E_PASSCODE（远程实例自己的口令，不注入上面的本机测试口令）。实例挂的素材包必须给 fixture 地图 test 做了绑定
+// （合成素材包）——真实素材包只绑定台湾图，fixture 地图的对局页不会判成原版皮肤。
 import { scryptSync } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from '@playwright/test';
+import { defineConfig, type PlaywrightTestConfig } from '@playwright/test';
+import { E2E_REMOTE } from './fixtures/remote';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..');
@@ -18,6 +23,8 @@ const CLIENT_PORT = 5184;
 const DIST = join(repoRoot, '.cache', 'e2e-original', 'dist');
 const PACK_DIR = join(repoRoot, '.cache', 'synthetic-pack');
 const reuse = !process.env.CI;
+/** 远程实例的站点源（E2E_BASE_URL，见 fixtures/remote.ts）；null 为本机模式 */
+const REMOTE = E2E_REMOTE;
 
 // 测试专用口令与密钥（只用于本机回环地址上的 E2E 服务器）。配置文件在 runner 与 worker 里各载入一次，
 // 所以哈希用固定盐确定性生成：两边得到同一个口令。scrypt 取允许的最低一档（启动时会提示低于建议值），验证更快。
@@ -34,29 +41,13 @@ const HASH = [
   SALT.toString('base64url'),
   scryptSync(PASSCODE.normalize('NFC'), SALT, 32, { N, r: R, p: P }).toString('base64url'),
 ].join(':');
-process.env.RICH4_E2E_PASSCODE = PASSCODE;
+// 远程模式由夹具按 E2E_PASSCODE 处理门禁（fixtures/access.ts）
+if (!REMOTE) process.env.RICH4_E2E_PASSCODE = PASSCODE;
 process.env.RICH4_E2E_SKIN = 'original';
 
-export default defineConfig({
-  testDir: './specs',
-  outputDir: join(repoRoot, 'test-results', 'e2e-original'),
-  timeout: 180_000,
-  expect: { timeout: 20_000 },
-  fullyParallel: false,
-  workers: 1,
-  retries: 0,
-  reporter: [['list']],
-  use: {
-    baseURL: `http://localhost:${CLIENT_PORT}`,
-    channel: 'chrome',
-    headless: true,
-    // 桌面 16:9：经典舞台两侧的联机侧栏整栏显示（1280×800 时收成抽屉，座位条等不可见）
-    viewport: { width: 1920, height: 1080 },
-    trace: 'retain-on-failure',
-    screenshot: 'only-on-failure',
-    actionTimeout: 15_000,
-  },
-  webServer: [
+/** 本机模式的两个 webServer（远程模式不启动，也不建临时数据目录） */
+function localServers(): NonNullable<PlaywrightTestConfig['webServer']> {
+  return [
     {
       command:
         'npm run --silent extract -- assets synth --out .cache/synthetic-pack && npx tsx apps/server/src/main.ts',
@@ -90,5 +81,28 @@ export default defineConfig({
       stderr: 'pipe',
       env: { RICH4_API_TARGET: `http://127.0.0.1:${SERVER_PORT}` },
     },
-  ],
+  ];
+}
+
+export default defineConfig({
+  testDir: './specs',
+  outputDir: join(repoRoot, 'test-results', 'e2e-original'),
+  timeout: 180_000,
+  expect: { timeout: 20_000 },
+  fullyParallel: false,
+  workers: 1,
+  retries: 0,
+  reporter: [['list']],
+  use: {
+    baseURL: REMOTE ?? `http://localhost:${CLIENT_PORT}`,
+    ...(REMOTE ? { ignoreHTTPSErrors: true } : {}),
+    channel: 'chrome',
+    headless: true,
+    // 桌面 16:9：经典舞台两侧的联机侧栏整栏显示（1280×800 时收成抽屉，座位条等不可见）
+    viewport: { width: 1920, height: 1080 },
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+    actionTimeout: 15_000,
+  },
+  ...(REMOTE ? {} : { webServer: localServers() }),
 });

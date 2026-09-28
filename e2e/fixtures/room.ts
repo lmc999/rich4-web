@@ -1,8 +1,10 @@
 // E2E 夹具（design/client.md §12.2）：fourPlayers（4 个互相隔离的 BrowserContext，各自昵称 P1..P4，停在首页）、
 // spectator（第 5 个上下文），以及建房、进房、选角、准备、开局、掷骰、回答决策、读取 HUD 的助手。
 // 对局页通过 window.__rich4（开发 / 测试模式的钩子）等待动画空闲与读取状态；点击一律走 data-testid 的 DOM 按钮。
+// 远程模式（E2E_BASE_URL，见 remote.ts）下同样只用相对路径：页面、/api 与 /socket.io 都走 baseURL 的同一个源。
 import { type Browser, type BrowserContext, test as base, expect, type Page } from '@playwright/test';
-import { E2E_PASSCODE, grantAccess } from './access';
+import { E2E_PASSCODE, ensureAccess, grantAccess } from './access';
+import { E2E_REMOTE } from './remote';
 
 /**
  * 测试页 URL 参数：只提交不播放、关声音、测试构建开关（?test=1：生产构建里也开批尾对账，不一致走 console.error，
@@ -35,7 +37,7 @@ export interface NewPlayerOptions {
   /** 覆盖 baseURL（access.spec 自带开启门禁的服务器） */
   baseURL?: string;
   /**
-   * 访问口令：缺省取 RICH4_E2E_PASSCODE（服务器开启门禁时设置），打开页面前为上下文注入 cookie；
+   * 访问口令：缺省取 RICH4_E2E_PASSCODE（服务器开启门禁时设置；远程模式为 E2E_PASSCODE），打开页面前为上下文注入 cookie；
    * 传 null 表示不注入（测试门禁本身）
    */
   passcode?: string | null;
@@ -54,7 +56,9 @@ export async function newPlayer(
 ): Promise<Player> {
   const context = await browser.newContext(o.baseURL ? { baseURL: o.baseURL } : {});
   const passcode = o.passcode === undefined ? E2E_PASSCODE : o.passcode;
-  if (passcode) await grantAccess(context, passcode);
+  // 远程实例不一定开着门禁：先读门禁状态，需要时才换 cookie；没给口令而实例开着门禁时报错说明
+  if (E2E_REMOTE && !o.baseURL && o.passcode !== null) await ensureAccess(context, passcode);
+  else if (passcode) await grantAccess(context, passcode);
   const page = await context.newPage();
   if (o.setup) await o.setup(page);
   const errors: string[] = [];
@@ -196,6 +200,9 @@ export async function waitDecision(page: Page, kinds: string[], timeout = 30_000
   return (await handle.jsonValue()) as string;
 }
 
+/** 远程模式下 debug:act 失败时的提示：服务器没注册这个事件时请求只会超时 */
+const DEBUG_HINT = E2E_REMOTE ? '（远程实例需要 RICH4_TEST_MODE=1 才开放 debug:act）' : '';
+
 /** debug:act（只在 RICH4_TEST_MODE=1 的服务器上注册） */
 export async function debugAct(page: Page, op: Record<string, unknown>): Promise<void> {
   const r = await page.evaluate(
@@ -203,7 +210,7 @@ export async function debugAct(page: Page, op: Record<string, unknown>): Promise
     (o) => (window as any).__rich4.client.debug(o) as Promise<{ ok: boolean; error?: unknown }>,
     op,
   );
-  expect(r.ok, JSON.stringify(r)).toBe(true);
+  expect(r.ok, JSON.stringify(r) + DEBUG_HINT).toBe(true);
 }
 
 /** 服务器处理完 debug 后本页的 seq 追上 */
