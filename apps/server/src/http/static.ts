@@ -3,6 +3,7 @@
  * - STATIC_DIR（默认 apps/client/dist）存在时托管它：/assets/* 长缓存，index.html no-cache；
  * - 其余 GET（非 /api、/socket.io、/pack）回退到 index.html；客户端未构建时回退到一个占位页；
  *   /pack 排除在外（docs/design/original-skin.md §3 修正 4：没有素材包时 manifest 必须是 404 JSON，不能是 index.html）；
+ *   /assets/ 也排除：带哈希的产物缺失（升级后旧页面懒加载已删除的 chunk、或请求不存在的 .map）应当 404，不能拿到 index.html；
  * - GET /r/:code 返回注入了 og 信息的 index.html（邀请预览）；
  * - GET /robots.txt 一律 `Disallow: /`（私人服务器，不让搜索引擎收录；优先于 dist 里的同名文件）。
  */
@@ -34,13 +35,14 @@ export function injectInvite(html: string, code: string, publicUrl: string): str
 
 export const ROBOTS_TXT = 'User-agent: *\nDisallow: /\n';
 
-/** SPA 回退排除的前缀：接口、Socket.IO 与素材包 */
+/** SPA 回退排除的前缀：接口、Socket.IO、素材包与前端带哈希的产物目录 */
 export function isSpaFallback(method: string, url: string): boolean {
   const path = url.split('?')[0] ?? '';
   if (method !== 'GET') return false;
   if (path.startsWith('/api/') || path === '/api') return false;
   if (path.startsWith('/socket.io')) return false;
   if (path === '/pack' || path.startsWith('/pack/')) return false;
+  if (path.startsWith('/assets/')) return false;
   return true;
 }
 

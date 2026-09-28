@@ -89,5 +89,11 @@ describe('integration/http', () => {
     const api = await f.inject('/api/nothing');
     expect(api.statusCode).toBe(404);
     expect(api.json()).toMatchObject({ ok: false });
+    // 前端带哈希的产物缺失（旧 chunk、不存在的 source map）是 404，不回退到 index.html
+    for (const url of ['/assets/index-gone0000.js', '/assets/index-gone0000.js.map']) {
+      const asset = await f.inject(url);
+      expect(asset.statusCode).toBe(404);
+      expect(asset.headers['content-type']).not.toContain('text/html');
+    }
   });
 });

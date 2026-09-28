@@ -1528,7 +1528,7 @@ RICH4_ASSETS_ALLOW_UNGATED=0     # 仅本机调试：非 production + PUBLIC_URL
 ### 25.6 遗留
 
 - `deploy/nginx.conf.example` 没有用 `nginx -t` 校验过（本机没有 nginx，按约束不用其他镜像），只做了人工审阅；真实域名下的 Let's Encrypt 签发、ICP 备案与 HSTS 也只能在云主机上验证（本机只有 localhost 内部 CA；HSTS 由上一阶段用临时 caddy + 内部证书的 rich4.example.com 验证过）。
-- 前端构建开着 source map：镜像的 public/ 里有 193 个 .map（约 11 MB），任何人都能下载；去掉可以让镜像再小约 11 MB，是否保留待定。socket.io-client / engine.io-client 被锁文件标成生产依赖，也进了 server 的运行时依赖（约 1.5 MB）。
+- ~~前端构建开着 source map~~：已按用户决定（2026-09-28）去掉——`vite.config.ts` 默认不生成（本机排查用 `RICH4_SOURCEMAP=1` 构建），`deploy/Dockerfile` 构建后检查前端产物里没有 `*.map` 与 `sourceMappingURL=`；`/assets/` 同时排除在 SPA 回退之外，缺失的带哈希产物（旧 chunk、不存在的 .map）返回 404 而不是 index.html。镜像的 public/ 从 17 MB 降到 5.8 MB，`docker images` 406 MB → 392 MB。服务端 `server/main.mjs.map` 保留（不对外提供，只用于堆栈）。socket.io-client / engine.io-client 被锁文件标成生产依赖，也进了 server 的运行时依赖（约 1.5 MB）。
 - Caddy 在 80 端口自动跳转 HTTPS 的响应仍带 `Server: Caddy`（去掉 Server 头的配置只作用于 https 站点）。
 - 停机时有连接要等 3 秒强制断开（修复后 4 次 E2E 重启里有 2 次）：来源没有查清。审查指出当时的强制断开够不着 WebSocket，最坏情况其实仍是 25 秒；25.7 补上之后最坏情况才真正是 3 秒。审查修复后 7 次 E2E 重启里仍有 2 次走满 3 秒，新加的日志显示剩下的是 3 条普通 HTTP 连接、没有 WebSocket——推测是停机期间页面重连发起的 engine.io 新握手（engine.io 关闭后照样受理）留下的长轮询；停机开始时让 engine.io 拒绝新握手可以消掉这 3 秒，本轮没做（会改变重连期间客户端看到的错误，需要单独验证）。
 - 两轮压测之后空闲时 heapUsed 约 122 MB、RSS 约 540 MB（刚启动时 53 MB / 175 MB），没有确认是尚未回收的垃圾还是泄漏，需要长时间运行观察 `/admin/stats`；Docker 内存上限建议至少 1 GB。

@@ -84,7 +84,9 @@ export default defineConfig({
   preview: { port: 4173 },
   build: {
     target: 'es2023',
-    sourcemap: true,
+    // source map 默认不生成：部署出去的 public/ 里有 .map 时任何访问者都能下载到前端源码（architecture §25）。
+    // 本机排查压缩后代码的问题时用 RICH4_SOURCEMAP=1 构建；deploy/Dockerfile 构建后会检查产物里没有 .map
+    sourcemap: process.env.RICH4_SOURCEMAP === '1',
     // Pixi 单独成 chunk（只由懒加载的棋盘/开发页引用），体积告警阈值按 Pixi 调高
     chunkSizeWarningLimit: 900,
     rolldownOptions: {

@@ -35,8 +35,11 @@ RUN set -eu; \
 RUN npm run build
 # 产物复查（构建产物档）：只允许代码、样式、字体；原版文件、派生地图、带派生标记或素材包 schema 的内容（含 .br/.gz 变体）、
 # 素材包命名的文件、任何音视频、展不开的压缩包一律拒绝
+# 前端产物不带 source map（公开目录里的 .map 会让任何访问者下载到前端源码；vite.config.ts 默认不生成）
 RUN node --disable-warning=ExperimentalWarning scripts/scan-tree.ts --profile artifact apps/client/dist apps/server/dist \
-    && test -f apps/server/dist/main.mjs && test -f apps/client/dist/index.html
+    && test -f apps/server/dist/main.mjs && test -f apps/client/dist/index.html \
+    && if find apps/client/dist -name '*.map' | grep -q .; then echo "前端产物里不应有 source map（*.map）" >&2; exit 1; fi \
+    && if grep -rlq 'sourceMappingURL=' apps/client/dist; then echo "前端产物里不应引用 source map" >&2; exit 1; fi
 
 # ───────────── deps：只装 server 的生产依赖 ─────────────
 # @rich4/shared 已由 esbuild 打进 main.mjs；npm 为 workspace 建的 node_modules/@rich4/* 链接指向本阶段并不存在的源码目录，
