@@ -36,6 +36,14 @@ mkdir -p rich4-data rich4-assets
 echo 'COMPOSE_FILE=deploy/docker-compose.yml' > .env
 ```
 
+- **仓库没有远程地址时**（只在本机提交、没推到任何 git 服务），不用 `git clone`，在**本机**仓库根目录把已提交的文件打包传过去，再到服务器上执行上面除 `git clone` 之外的几行：
+
+  ```sh
+  ssh user@rich4.example.com 'sudo mkdir -p /srv/rich4 && sudo chown "$USER" /srv/rich4'
+  git archive --format=tar HEAD | ssh user@rich4.example.com 'tar -x -C /srv/rich4'
+  ```
+
+  `git archive` 只打包已提交的文件：`original/`、`rich4-data/`、`rich4-assets/`、`.cache/`、`deploy/.env` 都被 `.gitignore` 排除，不会被带上去。之后升级（§9.4）把 `git pull` 换成重跑这条 `git archive`（服务器上已删除的文件不会同步删除，一般无碍）。
 - `rich4-data/`、`rich4-assets/` 要**先以部署用户身份建好**（不用原版皮肤时 `rich4-assets/` 留空）。compose 把这两个只读挂载写成了 `create_host_path: false`：目录不存在时 `up` 直接报错 `bind source path does not exist`，而不是让 dockerd 以 root 身份建一个空目录——那样之后用普通用户 rsync 素材包会因权限被拒。
 - 仓库根目录的 `.env` 只有一行 `COMPOSE_FILE=…`：compose 从当前目录的 `.env` 读 `COMPOSE_FILE`，端口、域名这些插值变量仍然从 `deploy/.env` 读（§5）。它已被 `.gitignore` 与 `.dockerignore` 排除。**命令里一旦显式写了 `-f`，`COMPOSE_FILE` 就不起作用**，所以下文命令都不写 `-f`；已经在用 nginx 的主机这里换成 §10 的写法。
 
@@ -225,6 +233,7 @@ bash deploy/scan-image.sh rich4:local
 - `up -d` 只重建镜像或服务定义变了的容器，**不看挂载文件的内容**：Caddyfile 是单文件只读绑定挂载，`git pull` 改了它之后 caddy 仍是 Running、仍用旧配置；而且 git 更新文件是换 inode，容器里的挂载还指向旧文件，在容器里 `caddy reload` 也读不到新内容。所以 `git pull` 带来了 `deploy/Caddyfile` 的改动（`git diff --stat HEAD@{1} -- deploy/Caddyfile` 有输出）时，要 `docker compose restart caddy`（重启约 1 秒；不确定就每次都执行）。
 - 重建 app 时旧容器收到 SIGTERM 优雅停机：`/readyz` 转 503 → 广播「服务器即将重启」→ 挂起全部房间（写快照、自动存档）→ 关连接（在途请求与 WebSocket 关闭握手最多再等 3 秒，之后强制断开，不回应关闭帧的 WebSocket 也一样）→ 关数据库，日志依次是 `shutting down`、`shutdown: rooms suspended`（带房间数）、`shutdown complete`。新容器启动时从快照 + journal 恢复 24 小时内的房间（日志 `rooms restored`），对局 epoch 加 1，玩家的页面自动重连后接着玩。本机实测旧进程多数在 SIGTERM 后 0.3 秒内停完，偶尔有连接要等满 3 秒宽限被强制断开（日志 `shutdown: grace period over`，带剩余连接数与其中的 WebSocket 数），从 SIGTERM 到新进程开始监听共 3–7 秒；有玩家的手机被挂起、WebSocket 不回应关闭帧时也同样最多等 3 秒（修复前这种情况会卡满 25 秒被强制退出）。
 - 服务器内存紧张时（§1）用 §6 的「在本机构建」：本机构建、扫描、`docker save | ssh … docker load`，服务器上 `git pull && docker compose up -d --no-build --wait`。
+- 仓库没有远程地址时（§2），`git pull` 换成在本机重跑 `git archive --format=tar HEAD | ssh … 'tar -x -C /srv/rich4'`，其余命令不变。
 - 只想重启：`docker compose restart app`。
 - 数据包或素材包更新：按 §3 重新 rsync，再 `docker compose restart app`（服务器只在启动时读 manifest）。
 
