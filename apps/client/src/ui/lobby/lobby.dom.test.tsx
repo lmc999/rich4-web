@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ClientProvider } from '../../app/services';
 import { useChatStore } from '../../store/chatStore';
+import { canStart } from '../../store/roomStore';
 import { makeTestClient } from '../../test/fakeTransport';
 import { ai, human, roomView, seat } from '../../test/roomFixtures';
 import { ChatPanel } from '../social/ChatPanel';
@@ -45,7 +46,25 @@ describe('LobbyView', () => {
     });
     const { transport } = renderWith(<LobbyView room={room} onLeave={() => {}} />);
     await userEvent.click(screen.getByTestId('room-start'));
-    expect(transport.payloads('room:start')).toHaveLength(1);
+    await waitFor(() => expect(transport.payloads('room:start')).toHaveLength(1));
+  });
+
+  // 回归（线上反馈「选的是忍太郎，头像却是金贝贝」）：光标上的角色没提交就开始 / 准备时，先提交再开始 / 准备
+  it('只移动光标（▶ 翻到忍太郎）不点「选择」就开始：先发 selectCharacter(2) 再发 room:start', async () => {
+    const room = roomView({
+      seats: [human(0, 'A', { host: true, isYou: true }), human(1, 'B', { ready: true }), seat(2), seat(3)],
+    });
+    const { transport } = renderWith(<LobbyView room={room} onLeave={() => {}} />);
+    expect(screen.getByTestId('char-preview-name')).toHaveTextContent('约翰乔');
+    await userEvent.click(screen.getByTestId('char-next'));
+    await userEvent.click(screen.getByTestId('char-next'));
+    expect(screen.getByTestId('char-preview-name')).toHaveTextContent('忍太郎');
+    await userEvent.click(screen.getByTestId('room-start'));
+    await waitFor(() => expect(transport.payloads('room:start')).toHaveLength(1));
+    expect(
+      transport.sent.map((r) => r.event).filter((e) => e === 'room:selectCharacter' || e === 'room:start'),
+    ).toEqual(['room:selectCharacter', 'room:start']);
+    expect(transport.payloads('room:selectCharacter')).toEqual([{ characterId: 2 }]);
   });
 
   it('非房主：准备 / 取消准备；没有补电脑与踢人按钮', async () => {
@@ -57,7 +76,9 @@ describe('LobbyView', () => {
     expect(screen.queryByTestId('seat-2-add-ai')).toBeNull();
     expect(screen.queryByTestId('seat-0-kick')).toBeNull();
     await userEvent.click(screen.getByTestId('room-ready'));
-    expect(transport.payloads('room:setReady')).toEqual([{ ready: true }]);
+    await waitFor(() => expect(transport.payloads('room:setReady')).toEqual([{ ready: true }]));
+    // 准备前先提交了光标上的角色（缺省第一个没被选走的：约翰乔）
+    expect(transport.payloads('room:selectCharacter')).toEqual([{ characterId: 0 }]);
     const ready = {
       ...room,
       seats: [room.seats[0], human(1, '我', { isYou: true, ready: true }), room.seats[2], room.seats[3]],
@@ -69,6 +90,78 @@ describe('LobbyView', () => {
     );
     expect(screen.getByTestId('room-ready')).toHaveTextContent('取消准备');
     expect(screen.getByTestId('seat-1-ready')).toBeInTheDocument();
+  });
+
+  // 回归（复审）：已准备的非房主再移动光标，预览换成新角色，但开局由房主发起、不会替他提交光标——进局仍是旧角色。
+  // 现在移开已提交的角色就先取消准备（房主开不了局），再按准备时提交新光标上的角色。
+  it('非房主已准备后单击别的头像（改主意）：先取消准备；房主开不了局；再按准备先提交新角色', async () => {
+    const guestYou = { role: 'player', seat: 1, isHost: false } as const;
+    const readyRoom = roomView({
+      seats: [
+        human(0, 'A', { host: true }),
+        human(1, '我', { isYou: true, ready: true, character: 11 }),
+        seat(2),
+        seat(3),
+      ],
+      you: guestYou,
+    });
+    const { transport, rerender, client } = renderWith(<LobbyView room={readyRoom} onLeave={() => {}} />);
+    expect(screen.getByTestId('char-preview-name')).toHaveTextContent('金贝贝');
+    expect(screen.getByTestId('room-ready')).toHaveTextContent('取消准备');
+    // 光标还在已提交的角色上：不取消
+    await userEvent.click(screen.getByTestId('char-11'));
+    expect(transport.payloads('room:setReady')).toEqual([]);
+    await userEvent.click(screen.getByTestId('char-2'));
+    expect(screen.getByTestId('char-preview-name')).toHaveTextContent('忍太郎');
+    await waitFor(() => expect(transport.payloads('room:setReady')).toEqual([{ ready: false }]));
+    expect(transport.payloads('room:selectCharacter')).toEqual([]);
+    // 服务器广播：取消准备 → 房主那边开始按钮不可用（canStart 要求其他真人都已准备）
+    const unready = roomView({
+      ...readyRoom,
+      seats: [readyRoom.seats[0]!, human(1, '我', { isYou: true, character: 11 }), seat(2), seat(3)],
+    });
+    expect(canStart({ ...unready, you: { role: 'player', seat: 0, isHost: true } })).toBe(false);
+    rerender(
+      <ClientProvider client={client}>
+        <LobbyView room={unready} onLeave={() => {}} />
+      </ClientProvider>,
+    );
+    // 光标留在忍太郎上；再按准备：先提交忍太郎再准备
+    expect(screen.getByTestId('char-preview-name')).toHaveTextContent('忍太郎');
+    await userEvent.click(screen.getByTestId('room-ready'));
+    await waitFor(() => expect(transport.payloads('room:setReady')).toEqual([{ ready: false }, { ready: true }]));
+    expect(transport.payloads('room:selectCharacter')).toEqual([{ characterId: 2 }]);
+    expect(
+      transport.sent.map((r) => r.event).filter((e) => e === 'room:selectCharacter' || e === 'room:setReady'),
+    ).toEqual(['room:setReady', 'room:selectCharacter', 'room:setReady']);
+  });
+
+  it('非房主已准备后 ▶ 翻看同样先取消准备；房主移动光标不发取消准备', async () => {
+    const readyRoom = roomView({
+      seats: [
+        human(0, 'A', { host: true }),
+        human(1, '我', { isYou: true, ready: true, character: 4 }),
+        seat(2),
+        seat(3),
+      ],
+      you: { role: 'player', seat: 1, isHost: false },
+    });
+    const a = renderWith(<LobbyView room={readyRoom} onLeave={() => {}} />);
+    await userEvent.click(screen.getByTestId('char-next'));
+    expect(screen.getByTestId('char-preview-name')).toHaveTextContent('莎拉公主');
+    await waitFor(() => expect(a.transport.payloads('room:setReady')).toEqual([{ ready: false }]));
+    a.unmount();
+    const b = renderWith(
+      <LobbyView
+        room={roomView({
+          seats: [human(0, '房主', { host: true, isYou: true, character: 4 }), seat(1), seat(2), seat(3)],
+        })}
+        onLeave={() => {}}
+      />,
+    );
+    await userEvent.click(screen.getByTestId('char-next'));
+    await userEvent.click(screen.getByTestId('char-7'));
+    expect(b.transport.payloads('room:setReady')).toEqual([]);
   });
 
   it('选角：被他人占用的置灰不可选；选择发 room:selectCharacter', async () => {

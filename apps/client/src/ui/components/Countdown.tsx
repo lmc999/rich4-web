@@ -1,10 +1,14 @@
-// 决策倒计时（design/client.md §5.1）：对话框右上角圆环，最后 5 秒变红并跳动。
+// 决策倒计时（design/client.md §5.1）：对话框右上角圆环，最后 10 秒变红并跳动。
 // deadlineAt 是服务器时间戳；now() 由调用方给出服务器时间估计（Date.now() + 时钟偏移）。
+// 与画面中央的决策倒计时（ui/common/DecisionCountdown）同屏：紧急阈值同一个（COUNTDOWN_URGENT_S），轮询也对齐到整秒
+// 边界（msToNextSecond），相邻的两个数字在同一时刻变化、同一时刻变红，不会一个 9 一个 10、一个红一个绿。
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { COUNTDOWN_URGENT_S, msToNextSecond } from '../common/countdownLogic';
 import s from './components.module.css';
 
-export const URGENT_MS = 5000;
+/** 进入最后这么多毫秒：变红、跳动（与中央倒计时的 COUNTDOWN_URGENT_S 同一档） */
+export const URGENT_MS = COUNTDOWN_URGENT_S * 1000;
 const TICK_MS = 200;
 
 export interface Remaining {
@@ -15,8 +19,8 @@ export interface Remaining {
 }
 
 /**
- * 按 tickMs 轮询剩余时间；resetKey（通常是 decisionId）变化时重新计总时长。
- * 到 0 后停止轮询。
+ * 按 tickMs 轮询剩余时间（圆弧平滑），每次都不越过下一个整秒边界：显示的整秒数在跨秒的那一刻更新，
+ * 与中央倒计时同步；resetKey（通常是 decisionId）变化时重新计总时长。到 0 后停止轮询。
  */
 export function useRemainingMs(
   deadlineAt: number | null,
@@ -35,12 +39,20 @@ export function useRemainingMs(
     const first = compute();
     setMs(first);
     if (first === null || first <= 0) return;
-    const id = setInterval(() => {
+    let id: ReturnType<typeof setTimeout> | null = null;
+    const next = (v: number): void => {
+      id = setTimeout(loop, Math.min(tickMs, msToNextSecond(v)));
+    };
+    const loop = (): void => {
+      id = null;
       const v = compute();
       setMs(v);
-      if (v === null || v <= 0) clearInterval(id);
-    }, tickMs);
-    return () => clearInterval(id);
+      if (v !== null && v > 0) next(v);
+    };
+    next(first);
+    return () => {
+      if (id !== null) clearTimeout(id);
+    };
   }, [deadlineAt, resetKey, tickMs]);
   // 截止时间刚变化、effect 尚未跑时，用即时值，避免闪一下旧数字
   const live = deadlineAt === null ? null : (ms ?? compute());
@@ -98,7 +110,10 @@ export function CountdownRing({ remainingMs, totalMs, size = 44 }: CountdownRing
           strokeDashoffset={c * (1 - frac)}
         />
       </svg>
-      <span className={s.countdownNum}>{secs}</span>
+      {/* 最后 10 秒每秒换 key：重新挂载数字，跳动从整秒边界播一次（与中央倒计时的提示音同拍） */}
+      <span key={urgent ? secs : 'calm'} className={s.countdownNum}>
+        {secs}
+      </span>
     </span>
   );
 }

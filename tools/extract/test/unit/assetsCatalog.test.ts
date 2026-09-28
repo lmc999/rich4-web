@@ -70,6 +70,33 @@ describe('catalog.v206 编号公式', () => {
     expect([0, 1, 2, 13, 14, 15].map(conf)).toEqual(Array(6).fill('exe'));
   });
 
+  // 回归（线上反馈「选的是忍太郎，头像却是金贝贝」的排查）：按角色号取的每一种条目，角色号 c → 资源号的公式。
+  // 这些公式已用本机真实素材包逐行目视核对过（12 行 × 每一列都是同一个人物；test/pc-char-montage.mjs、pc-char-flics.ts）。
+  it('按角色号取的条目：角色 c → 资源号（头像、讲话头像、侧视走动、Q 版小人、接物姿态、跳伞 / 表情 FLIC）', () => {
+    const face = byKey.get('portrait.face72')!;
+    expect([face.mkf, face.res, face.type === 'sprite' && face.frames]).toEqual(['Data', 2, 12]);
+    const owner = byKey.get('board.ownerMark')!;
+    expect([owner.mkf, owner.res, owner.type === 'sprite' && owner.frames]).toEqual(['map', 13, 12]);
+    const res = (key: string): [string, number] => {
+      const it = byKey.get(key);
+      if (!it) throw new Error(`没有条目 ${key}`);
+      return [it.mkf, it.res];
+    };
+    for (let c = 0; c < 12; c++) {
+      expect(res(`portrait.speaker.${c}`)).toEqual(['map', 15 + c]);
+      ['walk', 'moto', 'car'].forEach((v, i) => {
+        expect(res(`title.sidewalk.${c}.${v}`)).toEqual(['jump', 5 + 3 * c + i]);
+      });
+      for (let i = 0; i < 3; i++) expect(res(`venue.chibi.${c}.${i}`)).toEqual(['Panel', 27 + 3 * c + i]);
+      expect(res(`mg.xicong.char.${c}`)).toEqual(['Panel', 100 + c]);
+      expect(res(`char.${c}.parachute`)).toEqual(['Data', 518 + c]);
+      expect(res(`char.${c}.emoteA`)).toEqual(['Data', 375 + 2 * c]);
+      expect(res(`char.${c}.emoteB`)).toEqual(['Data', 376 + 2 * c]);
+      expect(res(`title.freefall.${c}`)).toEqual(['jump', 43 + c]);
+      expect(res(`title.parachuteOpen.${c}`)).toEqual(['jump', 55 + c]);
+    }
+  });
+
   it('路面物件 Data#354+t（t 与 GodKind 相同），路障/地雷/炸弹 370–372，ZZZ 373', () => {
     for (const o of ROAD_OBJECTS) expect(byKey.get(`object.${o.name}`)!.res).toBe(354 + o.t);
     expect(['object.roadblock', 'object.mine', 'object.bomb', 'object.zzz'].map((k) => byKey.get(k)!.res)).toEqual([

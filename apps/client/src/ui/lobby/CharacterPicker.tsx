@@ -1,13 +1,16 @@
 // 选角（design/client.md §5.5）：12 个角色轮播，预览待机动画（M3a 的 SVG 纸娃娃），被其他座位占用的置灰。
+// 光标由 LobbyView 持有（lobby/characterPick：开始 / 准备前先提交光标上的角色，预览里看到的就是进局的角色；
+// 已准备后移动光标先取消准备）。
 import { CHARACTER_IDS, CHARACTER_KEYS, type CharacterId } from '@rich4/shared/engine';
 import type { RoomView } from '@rich4/shared/net';
 import clsx from 'clsx';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { useClient } from '../../app/services';
 import { characterByKey } from '../../game/procedural/character/defs';
 import { characterSvg, svgDataUrl } from '../../game/procedural/character/svg';
 import { useTx } from '../../i18n/tx';
 import { Avatar } from '../common/Avatar';
+import { takenCharacters } from './characterPick';
 import l from './lobby.module.css';
 import { useRun } from './SeatGrid';
 
@@ -24,23 +27,21 @@ function frameUrl(id: CharacterId, pose: 'idle0' | 'idle1' | 'cheer'): string {
   return url;
 }
 
-export function CharacterPicker({ room }: { room: RoomView }): ReactNode {
+export interface CharacterPickerProps {
+  room: RoomView;
+  /** 光标（lobby/characterPick 的 usePickCursor，由 LobbyView 持有） */
+  cursor: CharacterId;
+  onCursor(c: CharacterId): void;
+}
+
+export function CharacterPicker({ room, cursor, onCursor: setCursor }: CharacterPickerProps): ReactNode {
   const t = useTx();
   const client = useClient();
   const run = useRun();
   const me = room.you.role === 'player' ? room.you.seat : null;
   const mine = me === null ? null : (room.seats[me]?.characterId ?? null);
-  const taken = useMemo(() => {
-    const m = new Map<CharacterId, number>();
-    for (const s of room.seats) if (s.characterId !== null && s.index !== me) m.set(s.characterId, s.index);
-    return m;
-  }, [room.seats, me]);
-  const [cursor, setCursor] = useState<CharacterId>(mine ?? CHARACTER_IDS[0]!);
+  const taken = takenCharacters(room);
   const [frame, setFrame] = useState(0);
-
-  useEffect(() => {
-    if (mine !== null) setCursor(mine);
-  }, [mine]);
 
   useEffect(() => {
     const id = setInterval(() => setFrame((f) => f + 1), IDLE_MS);

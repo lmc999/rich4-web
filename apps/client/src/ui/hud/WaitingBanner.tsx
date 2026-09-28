@@ -10,6 +10,7 @@ import { useTx } from '../../i18n/tx';
 import { makeNames } from '../../presentation/names';
 import { useGameStore } from '../../store/gameStore';
 import { mySeat } from '../../store/roomStore';
+import { COUNTDOWN_URGENT_S } from '../common/countdownLogic';
 import { useRemainingMs } from '../components/Countdown';
 import h from './hud.module.css';
 import { useServerNow } from './useServerClock';
@@ -47,7 +48,7 @@ export function WaitingBanner({
       <span className={h.waitingDot} style={{ background: `var(--c-p${p.seat + 1})` }} aria-hidden="true" />
       <span>{t(auto ? 'hud:waiting.textAi' : 'hud:waiting.text', { who, action })}</span>
       {secs !== null && !auto && (
-        <span className={`num ${h.waitingSecs}`} data-urgent={secs <= 5 ? 'true' : 'false'}>
+        <span className={`num ${h.waitingSecs}`} data-urgent={secs <= COUNTDOWN_URGENT_S ? 'true' : 'false'}>
           {t('hud:waiting.secs', { n: secs })}
         </span>
       )}

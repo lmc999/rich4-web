@@ -105,6 +105,10 @@
   "decision": {
     "collapse": "收起回合菜单"
   },
+  "countdown": {
+    "aria": "决策剩余时间：{{n}} 秒",
+    "hurry": "决策时间只剩 {{n}} 秒，请尽快决定"
+  },
   "dice": {
     "sum": "共 {{n}} 步"
   },

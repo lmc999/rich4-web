@@ -22,6 +22,18 @@ export interface SkinHookSnapshot {
   lang: string;
 }
 
+/** 一次倒计时提示音请求（E2E：最后 10 秒每秒一次、提交后停止） */
+export interface CountdownBeepRecord {
+  decisionId: string;
+  /** 响的是剩余第几秒 */
+  secs: number;
+  level: 'tick' | 'final';
+  /** 本机时间（ms） */
+  at: number;
+  /** 请求时音频系统已接好（?audio=off、没有 Web Audio 或音频模块还没载入时为 false） */
+  audio: boolean;
+}
+
 export interface Rich4TestHooks {
   /** zustand store（getState() 可读全部状态） */
   store: Record<string, { getState(): unknown }>;
@@ -38,6 +50,8 @@ export interface Rich4TestHooks {
   readonly skin: SkinHookSnapshot | null;
   /** 音频（?audio=off 或未加载时为 null）：state、log（逻辑动作日志）、music()、clearLog() */
   audio: AudioTestHooks | null;
+  /** 中央决策倒计时的提示音请求（ui/common/countdownSound；?audio=off 时照样记录，audio 为 false） */
+  countdown?: { beeps: CountdownBeepRecord[] };
   /** 旧名（开发页）：等同 board.tileScreenPos */
   tileScreenPos(id: number): { x: number; y: number } | null;
 }

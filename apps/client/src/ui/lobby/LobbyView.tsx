@@ -17,6 +17,7 @@ import l from './lobby.module.css';
 import { RoomSettingsFields } from './RoomSettingsFields';
 import { SeatGrid, useRun } from './SeatGrid';
 import { draftFromSettings, draftToPatch, fetchMapList, type MapListingLite } from './settingsDraft';
+import { useCommitPick, usePickCursor } from './useCharacterPick';
 
 function SettingsBox({ room }: { room: RoomView }): ReactNode {
   const t = useTx();
@@ -150,6 +151,9 @@ export function LobbyView({ room, onLeave }: { room: RoomView; onLeave(): void }
   const unclaimed = unclaimedSeats(room);
   const startable = canStart(room) && unclaimed.length === 0;
   const [savesOpen, setSavesOpen] = useState(false);
+  // 选角光标在这里持有：开始 / 准备前先提交光标上的角色（lobby/characterPick）
+  const [cursor, setCursor] = usePickCursor(room);
+  const commitPick = useCommitPick(room, cursor);
 
   return (
     <main className={l.lobby} data-testid="screen-room" data-phase={room.phase}>
@@ -167,7 +171,11 @@ export function LobbyView({ room, onLeave }: { room: RoomView; onLeave(): void }
               <button
                 type="button"
                 className={ready ? 'btn btn--cream' : 'btn btn--green'}
-                onClick={() => void run(client.setReady(!ready))}
+                onClick={() =>
+                  void (ready
+                    ? run(client.setReady(false))
+                    : commitPick().then((ok) => ok && run(client.setReady(true))))
+                }
                 data-testid="room-ready"
                 aria-pressed={ready}
               >
@@ -179,7 +187,7 @@ export function LobbyView({ room, onLeave }: { room: RoomView; onLeave(): void }
                 type="button"
                 className="btn btn--green"
                 disabled={!startable}
-                onClick={() => void run(client.startGame())}
+                onClick={() => void commitPick().then((ok) => ok && run(client.startGame()))}
                 data-testid="room-start"
               >
                 {t('lobby:room.start')}
@@ -219,7 +227,7 @@ export function LobbyView({ room, onLeave }: { room: RoomView; onLeave(): void }
           {room.loadedSave ? (
             <p className={c.muted}>{t('lobby:saved.characterLocked')}</p>
           ) : (
-            <CharacterPicker room={room} />
+            <CharacterPicker room={room} cursor={cursor} onCursor={setCursor} />
           )}
         </div>
         <aside className={l.lobbySide}>

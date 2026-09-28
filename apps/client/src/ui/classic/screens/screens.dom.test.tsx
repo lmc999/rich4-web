@@ -325,8 +325,8 @@ describe('选人大厅', () => {
       ...over,
     });
 
-  it('头像格：点选移动光标、「选这个」发 room:selectCharacter；被占用的置灰标座位；走动预览按行进方式换精灵', async () => {
-    install(['title.sidewalk.0.walk', 'title.sidewalk.3.walk', 'title.sidewalk.3.car']);
+  it('头像格：单击没被选走的即发 room:selectCharacter；被占用的置灰标座位、单击只移动光标；走动预览按行进方式换精灵', async () => {
+    install(['title.sidewalk.0.walk', 'title.sidewalk.3.walk', 'title.sidewalk.3.car', 'title.sidewalk.9.walk']);
     const room = hostRoom();
     const { transport, rerender, client } = renderWith(<ClassicLobby room={room} onLeave={() => {}} />);
     expect(screen.getByTestId('screen-room')).toHaveAttribute('data-screen', 'select');
@@ -335,16 +335,30 @@ describe('选人大厅', () => {
     expect(c9).toHaveAttribute('data-taken', 'true');
     expect(c9).toHaveAttribute('aria-disabled', 'true');
     expect(within(c9).getByText('2P')).toBeInTheDocument();
+    // 格 c = 角色 c：名字与 portrait.face72 的帧 c（不混用格子序号与角色号）
+    const names = ['约翰乔', '沙隆巴斯', '忍太郎', '钱夫人', '阿土伯', '莎拉公主'];
+    for (let c = 0; c < 12; c++) {
+      const cell = screen.getByTestId(`char-${c}`);
+      expect(cell.querySelector('[data-sprite]')).toHaveAttribute('data-sprite', `portrait.face72/${c}`);
+      if (c < names.length) expect(cell).toHaveAccessibleName(names[c]!);
+    }
+    expect(screen.getByTestId('char-11')).toHaveAccessibleName('金贝贝');
     expect(screen.getByTestId('char-walker')).toHaveAttribute('data-sheet', 'title.sidewalk.0.walk');
+    // 被选走的孙小美：单击只移动光标（预览置灰），不发选择
+    await userEvent.click(c9);
+    expect(c9).toHaveAttribute('data-cursor', 'true');
+    expect(screen.getByTestId('char-walker')).toHaveAttribute('data-sheet', 'title.sidewalk.9.walk');
+    expect(screen.getByTestId('char-select')).toHaveTextContent('已被 2P 选走');
+    expect(transport.payloads('room:selectCharacter')).toEqual([]);
+    // 钱夫人：单击即选定
     await userEvent.click(screen.getByTestId('char-3'));
     expect(screen.getByTestId('char-3')).toHaveAttribute('data-cursor', 'true');
     expect(screen.getByTestId('char-preview-name')).toHaveTextContent('钱夫人');
     expect(screen.getByTestId('char-walker')).toHaveAttribute('data-sheet', 'title.sidewalk.3.walk');
+    expect(transport.payloads('room:selectCharacter')).toEqual([{ characterId: 3 }]);
     // 悬停显示名字
     fireEvent.pointerEnter(screen.getByTestId('char-5'));
     expect(screen.getByTestId('char-tip')).toBeInTheDocument();
-    await userEvent.click(screen.getByTestId('char-select'));
-    expect(transport.payloads('room:selectCharacter')).toEqual([{ characterId: 3 }]);
     // 选中之后：描金边、按钮显示「已选择」；行进方式改成汽车时走动换汽车侧视
     const mine = hostRoom({
       seats: [
@@ -404,7 +418,9 @@ describe('选人大厅', () => {
     );
     expect(screen.getByTestId('room-start')).toBeEnabled();
     await userEvent.click(screen.getByTestId('room-start'));
-    expect(transport.payloads('room:start')).toHaveLength(1);
+    // 房主没选过角色：先提交光标上的角色（缺省第一个没被选走的：约翰乔），再开始
+    await waitFor(() => expect(transport.payloads('room:start')).toHaveLength(1));
+    expect(transport.payloads('room:selectCharacter')).toEqual([{ characterId: 0 }]);
     // 座位牌（只显示）
     expect(screen.getByTestId('classic-seat-1')).toHaveTextContent('小明');
     expect(screen.getByTestId('setup-value-aiCount')).toHaveTextContent('1');
@@ -419,7 +435,7 @@ describe('选人大厅', () => {
     expect(screen.queryByTestId('room-start')).toBeNull();
     expect(screen.getByTestId('set-timer')).toBeDisabled();
     await userEvent.click(screen.getByTestId('room-ready'));
-    expect(transport.payloads('room:setReady')).toEqual([{ ready: true }]);
+    await waitFor(() => expect(transport.payloads('room:setReady')).toEqual([{ ready: true }]));
     const ready = {
       ...room,
       seats: [room.seats[0], human(1, '我', { isYou: true, ready: true }), room.seats[2], room.seats[3]],
@@ -435,6 +451,168 @@ describe('选人大厅', () => {
     expect(screen.getByTestId('room-ready')).toHaveAccessibleName('取消准备');
     expect(screen.getByTestId('room-ready-mark')).toBeInTheDocument();
     expect(screen.getByTestId('seat-1-ready')).toBeInTheDocument();
+  });
+
+  // 回归（线上反馈「选的是忍太郎，头像却是金贝贝」）：光标上的角色（预览、名字、走动）没提交就按 OK / 准备时，
+  // 旧实现照样开局，服务器给没选角色的座位随机分配。现在先提交光标上的角色，再开始 / 准备。
+  it('房主：◀ ▶ 翻到忍太郎、不点「选这个」直接 OK → 先发 selectCharacter(2) 再发 room:start', async () => {
+    install(['title.sidewalk.0.walk', 'title.sidewalk.2.walk']);
+    const room = hostRoom({
+      seats: [human(0, '房主', { host: true, isYou: true }), human(1, '小明', { ready: true }), ai(2), seat(3)],
+    });
+    const { transport } = renderWith(<ClassicLobby room={room} onLeave={() => {}} />);
+    await userEvent.click(screen.getByTestId('char-next'));
+    await userEvent.click(screen.getByTestId('char-next'));
+    expect(screen.getByTestId('char-preview-name')).toHaveTextContent('忍太郎');
+    expect(screen.getByTestId('char-walker')).toHaveAttribute('data-sheet', 'title.sidewalk.2.walk');
+    expect(transport.payloads('room:selectCharacter')).toEqual([]);
+    await userEvent.click(screen.getByTestId('room-start'));
+    await waitFor(() => expect(transport.payloads('room:start')).toHaveLength(1));
+    expect(
+      transport.sent.map((r) => r.event).filter((e) => e === 'room:selectCharacter' || e === 'room:start'),
+    ).toEqual(['room:selectCharacter', 'room:start']);
+    expect(transport.payloads('room:selectCharacter')).toEqual([{ characterId: 2 }]);
+  });
+
+  it('房主：光标就是已选的角色、或停在被别人选走的角色上时，OK 不再提交，直接开始', async () => {
+    const chosen = hostRoom({
+      seats: [
+        human(0, '房主', { host: true, isYou: true, character: 11 }),
+        human(1, '小明', { ready: true, character: 9 }),
+        ai(2),
+        seat(3),
+      ],
+    });
+    const a = renderWith(<ClassicLobby room={chosen} onLeave={() => {}} />);
+    expect(screen.getByTestId('char-preview-name')).toHaveTextContent('金贝贝');
+    await userEvent.click(screen.getByTestId('room-start'));
+    await waitFor(() => expect(a.transport.payloads('room:start')).toHaveLength(1));
+    expect(a.transport.payloads('room:selectCharacter')).toEqual([]);
+    a.unmount();
+
+    // 没选过、光标翻到被 2P 选走的孙小美（预览置灰）：保持原样（开局由服务器随机分配）
+    const b = renderWith(
+      <ClassicLobby
+        room={hostRoom({
+          seats: chosen.seats.map((x, i) =>
+            i === 0 ? human(0, '房主', { host: true, isYou: true }) : x,
+          ) as RoomView['seats'],
+        })}
+        onLeave={() => {}}
+      />,
+    );
+    await userEvent.click(screen.getByTestId('char-9'));
+    expect(screen.getByTestId('char-select')).toHaveTextContent('已被 2P 选走');
+    await userEvent.click(screen.getByTestId('room-start'));
+    await waitFor(() => expect(b.transport.payloads('room:start')).toHaveLength(1));
+    expect(b.transport.payloads('room:selectCharacter')).toEqual([]);
+  });
+
+  it('非房主：准备前先提交光标上的角色；提交失败（刚被别人选走）就不准备；取消准备不提交', async () => {
+    const room = roomView({
+      seats: [human(0, 'A', { host: true, character: 0 }), human(1, '我', { isYou: true }), seat(2), seat(3)],
+      you: { role: 'player', seat: 1, isHost: false },
+    });
+    // 缺省光标：第一个没被选走的角色（0 号被房主选走 → 沙隆巴斯）
+    const { transport } = renderWith(<ClassicLobby room={room} onLeave={() => {}} />);
+    expect(screen.getByTestId('char-preview-name')).toHaveTextContent('沙隆巴斯');
+    transport.respond('room:selectCharacter', () => ({
+      ok: false,
+      error: { code: 'CHARACTER_TAKEN', message: '角色已被其他人选择' },
+    }));
+    await userEvent.click(screen.getByTestId('room-ready'));
+    await waitFor(() => expect(transport.payloads('room:selectCharacter')).toEqual([{ characterId: 1 }]));
+    await waitFor(() => expect(useUiStore.getState().toasts.length).toBeGreaterThan(0));
+    expect(transport.payloads('room:setReady')).toEqual([]);
+    transport.respond('room:selectCharacter', () => ({ ok: true, data: undefined }));
+    await userEvent.click(screen.getByTestId('room-ready'));
+    await waitFor(() => expect(transport.payloads('room:setReady')).toEqual([{ ready: true }]));
+    expect(transport.payloads('room:selectCharacter')).toEqual([{ characterId: 1 }, { characterId: 1 }]);
+  });
+
+  // 「◀ ▶ 翻看后点選這個」仍是保留的交互（单击头像即选之外的另一条路）：点它要发 selectCharacter，选中后按钮变「已选择」
+  it('◀ ▶ 翻到没被选走的角色后点「选这个」：发 selectCharacter(c)，服务器确认后按钮变「已选择」', async () => {
+    install(['title.sidewalk.0.walk', 'title.sidewalk.11.walk']);
+    const room = hostRoom();
+    const { transport, rerender, client } = renderWith(<ClassicLobby room={room} onLeave={() => {}} />);
+    await userEvent.click(screen.getByTestId('char-prev'));
+    expect(screen.getByTestId('char-preview-name')).toHaveTextContent('金贝贝');
+    expect(screen.getByTestId('char-select')).toHaveTextContent('选这个');
+    expect(screen.getByTestId('char-select')).toBeEnabled();
+    expect(transport.payloads('room:selectCharacter')).toEqual([]);
+    await userEvent.click(screen.getByTestId('char-select'));
+    expect(transport.payloads('room:selectCharacter')).toEqual([{ characterId: 11 }]);
+    rerender(
+      <ClientProvider client={client}>
+        <Router hook={memoryLocation({ path: '/r/123456' }).hook}>
+          <ClassicLobby
+            room={hostRoom({
+              seats: [
+                human(0, '房主', { host: true, isYou: true, character: 11 }),
+                human(1, '小明', { character: 9 }),
+                ai(2),
+                seat(3),
+              ],
+            })}
+            onLeave={() => {}}
+          />
+        </Router>
+      </ClientProvider>,
+    );
+    expect(screen.getByTestId('char-select')).toHaveTextContent('已选择');
+    expect(screen.getByTestId('char-select')).toBeDisabled();
+    expect(screen.getByTestId('char-11')).toHaveAttribute('data-mine', 'true');
+  });
+
+  // 回归（复审）：已准备的非房主再 ◀ ▶ 翻看（只移动光标），预览换成新角色，但开局由房主发起、不会替他提交——
+  // 进局仍是旧角色。现在移开已提交的角色就先取消准备；单击没被选走的头像是「移动 + 提交」，保持准备。
+  it('非房主已准备：▶ 翻看先取消准备，再按准备提交新角色；单击没被选走的头像直接改选、保持准备', async () => {
+    const guestYou = { role: 'player', seat: 1, isHost: false } as const;
+    const readyRoom = roomView({
+      seats: [
+        human(0, 'A', { host: true, character: 0 }),
+        human(1, '我', { isYou: true, ready: true, character: 11 }),
+        seat(2),
+        seat(3),
+      ],
+      you: guestYou,
+    });
+    const { transport, rerender, client } = renderWith(<ClassicLobby room={readyRoom} onLeave={() => {}} />);
+    expect(screen.getByTestId('char-preview-name')).toHaveTextContent('金贝贝');
+    // 单击没被选走的忍太郎：移动 + 提交，不取消准备（光标 = 进局的角色）
+    await userEvent.click(screen.getByTestId('char-2'));
+    expect(transport.payloads('room:selectCharacter')).toEqual([{ characterId: 2 }]);
+    expect(transport.payloads('room:setReady')).toEqual([]);
+    const picked2 = roomView({
+      ...readyRoom,
+      seats: [readyRoom.seats[0]!, human(1, '我', { isYou: true, ready: true, character: 2 }), seat(2), seat(3)],
+    });
+    const show = (r: RoomView): void =>
+      rerender(
+        <ClientProvider client={client}>
+          <Router hook={memoryLocation({ path: '/r/123456' }).hook}>
+            <ClassicLobby room={r} onLeave={() => {}} />
+          </Router>
+        </ClientProvider>,
+      );
+    show(picked2);
+    expect(screen.getByTestId('char-2')).toHaveAttribute('data-mine', 'true');
+    // ▶ 翻到钱夫人（只移动光标）：先取消准备，不提交
+    await userEvent.click(screen.getByTestId('char-next'));
+    expect(screen.getByTestId('char-preview-name')).toHaveTextContent('钱夫人');
+    await waitFor(() => expect(transport.payloads('room:setReady')).toEqual([{ ready: false }]));
+    expect(transport.payloads('room:selectCharacter')).toEqual([{ characterId: 2 }]);
+    show(
+      roomView({
+        ...readyRoom,
+        seats: [readyRoom.seats[0]!, human(1, '我', { isYou: true, character: 2 }), seat(2), seat(3)],
+      }),
+    );
+    expect(screen.getByTestId('room-ready')).toHaveAccessibleName('准备');
+    // 再按准备：先提交光标上的钱夫人，再准备
+    await userEvent.click(screen.getByTestId('room-ready'));
+    await waitFor(() => expect(transport.payloads('room:setReady')).toEqual([{ ready: false }, { ready: true }]));
+    expect(transport.payloads('room:selectCharacter')).toEqual([{ characterId: 2 }, { characterId: 3 }]);
   });
 
   it('观战者：没有选角控件与 OK，只能离开；侧栏标「观战中」', () => {

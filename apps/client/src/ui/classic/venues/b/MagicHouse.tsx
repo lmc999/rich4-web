@@ -31,6 +31,7 @@ import {
   effectRegion,
   HINT,
   hintPlacement,
+  MAGIC_BADGE,
   MAGIC_CAST_FLC,
   MAGIC_FRAME,
   MAGIC_ICON_AT,
@@ -138,6 +139,7 @@ export default function MagicHouseScene(props: DecisionProps<'MAGIC_CAST'>): Rea
       isMine={isMine}
       label={`${t('dlg.magic.title')}：${t('dlg.magic.condition', { cond })}`}
       backdrop="opaque"
+      countdownBadgeAt={MAGIC_BADGE}
       closeButton={false}
       onKeyDown={(e) => {
         if (e.key === 'Escape' && pick !== null && !busy) {

@@ -243,6 +243,17 @@ describe('事件', () => {
     expect(e.ops).toEqual(['sfx zzfx.click ui', 'sfx sfx.001 ui', 'sfx zzfx.tick ui']);
   });
 
+  it('决策倒计时提示音：只用 ZzFX（素材包里没有对应音效），走音效总线；可预载', async () => {
+    const { e, d } = spy();
+    d.setOptions({ guessOriginal: true });
+    expect(d.uiCue('countdown')?.key).toBe('zzfx.countdown');
+    expect(d.uiCue('countdownFinal')?.key).toBe('zzfx.countdownFinal');
+    expect(e.ops).toEqual(['sfx zzfx.countdown sfx', 'sfx zzfx.countdownFinal sfx']);
+    const before = e.preloaded.length;
+    await d.preloadUiCues(['countdown', 'countdownFinal']);
+    expect(e.preloaded.slice(before)).toEqual(['zzfx.countdown', 'zzfx.countdownFinal']);
+  });
+
   it('wrapHandlers：handler 抛错或被中止时仍收起事件场景曲；ctx.at 决定语音种子', async () => {
     const { e, d } = spy();
     let calls = 0;

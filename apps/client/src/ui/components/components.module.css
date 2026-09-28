@@ -191,12 +191,18 @@
 
 .countdown[data-urgent="true"] .countdownNum {
   color: var(--c-red);
-  animation: tick 1s steps(1) infinite;
+  /* 数字每秒重新挂载一次（CountdownRing 按秒换 key），每次播一遍 */
+  animation: tick 1s steps(1);
 }
 
+/* 每秒前半秒放大：变红从整秒边界开始（useRemainingMs 对齐整秒），放大与中央倒计时的提示音同拍 */
 @keyframes tick {
-  50% {
+  0% {
     scale: 1.15;
+  }
+
+  50% {
+    scale: 1;
   }
 }
 

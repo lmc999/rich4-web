@@ -48,6 +48,11 @@ export const MAGIC_ICON_AT: readonly (readonly [number, number])[] = [
 ];
 
 export const WITCH_AT = { x: 242, y: 140 } as const;
+/**
+ * 中央决策倒计时的小牌（场景坐标，上缘中点；common/sceneCover）：舞台顶端正中是画里的「∽1998∽」字样，
+ * 挪到它右边的拱框上（蝙蝠之左）
+ */
+export const MAGIC_BADGE = { x: 440, y: 4 } as const;
 export const WITCH_FACE = {
   eyes: { x: 45, y: 48 },
   mouthOpen: { x: 45, y: 77 },

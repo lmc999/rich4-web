@@ -34,6 +34,7 @@ import { Sprite } from '../../Sprite';
 import {
   ASSISTANT_AT,
   ASSISTANT_EYES,
+  AUCTION_BADGE,
   AUCTION_FRAME,
   AUCTION_SHEET,
   AUCTIONEER_AT,
@@ -327,6 +328,7 @@ export default function AuctionScene(props: DecisionProps<'AUCTION_BID'>): React
       isMine={isMine}
       label={`${t('dlg.auction.title')}：${text.lot(o.lot)}`}
       backdrop="opaque"
+      countdownBadgeAt={AUCTION_BADGE}
       closeButton={false}
       attrs={{ 'data-venue': 'auction', 'data-lot': o.lot, 'data-price': String(shown) }}
     >

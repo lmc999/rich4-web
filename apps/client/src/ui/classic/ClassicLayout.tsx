@@ -30,6 +30,7 @@ import { openTrusteeSettings } from '../system/TrusteeSettings';
 import { AuctionWatchMount } from './AuctionWatch';
 import { bindClassicAssets } from './assets';
 import { CalendarPanel } from './CalendarPanel';
+import { ClassicCountdown } from './ClassicCountdown';
 import { ClassicDice } from './ClassicDice';
 import { ClassicStage, useClassicBox } from './ClassicStage';
 import c from './classic.module.css';
@@ -279,6 +280,8 @@ export function ClassicLayout({
             <ClassicPopups map={map} />
             {packId !== null && <AuctionWatchMount view={view} map={map} me={me} />}
             {map && <ClassicDecisionLayer view={view} map={map} room={room} packId={packId} />}
+            {/* 画面中央的本人决策倒计时（经 portal 挂到舞台容器上，在原版场景之上） */}
+            <ClassicCountdown room={room} />
           </>
         }
         left={({ width, mode }) => (

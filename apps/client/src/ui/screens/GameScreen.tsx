@@ -23,6 +23,7 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { useUiStore } from '../../store/uiStore';
 import { AccessGateHost } from '../access/AccessGateHost';
 import { ClassicLayout } from '../classic/ClassicLayout';
+import { DecisionCountdown } from '../common/DecisionCountdown';
 import { DecisionClockProvider } from '../decisions/clock';
 import { type BoardBridge, BoardBridgeContext } from '../decisions/targeting';
 import { ActionPad } from '../hud/ActionPad';
@@ -260,6 +261,7 @@ export default function GameScreen({ room, onLeave }: { room: RoomView; onLeave(
       <PausedBanner room={room} />
       <PopupLayer map={map} />
       {map && <DecisionLayer view={view} map={map} room={room} />}
+      <DecisionCountdown room={room} variant="hud" />
       {map && <PanelHost view={view} map={map} room={room} />}
       <GameOverPanel view={view} room={room} onLeave={onLeave} />
       <RotateHint />

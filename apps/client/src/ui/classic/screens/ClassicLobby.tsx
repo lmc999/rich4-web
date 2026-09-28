@@ -1,17 +1,21 @@
 // 原版选人画面 + 联机大厅（original-skin.md §4.3；ui.md §2.3）：房间处于大厅阶段时显示。
-// 舞台（640×480）：jump#0 背景风景；jump#4 竖栏（关卡、OK / EXIT、6 个下拉显示当前设置）；12 头像格（jump#4 图0 + Data#2）：
-// 点选移动光标（悬停显示名字），自己选中的描金边，被别人选走的置灰并标座位；上方 4 个座位牌；中间走动预览（jump#5+3c+v，
-// 按房间的行进方式选步行 / 机车 / 汽车）与「选这个」。OK = 开始游戏（房主）/ 准备（其他玩家），EXIT = 离开房间。
+// 舞台（640×480）：jump#0 背景风景；jump#4 竖栏（关卡、OK / EXIT、6 个下拉显示当前设置）；12 头像格（jump#4 图0 + Data#2，
+// 格 i = 角色 i = 头像帧 i）：单击没被选走的头像即选定该角色（同原版：点头像就是选人），单击被选走的只移动光标看预览；
+// 悬停显示名字，自己选中的描金边，被别人选走的置灰并标座位；上方 4 个座位牌；中间走动预览（jump#5+3c+v，按房间的行进方式
+// 选步行 / 机车 / 汽车）与 ◀ ▶ 翻看、「选这个」。OK = 开始游戏（房主）/ 准备（其他玩家），按下时光标上的角色还没提交就先提交
+// （lobby/characterPick：预览里看到的就是进局的角色，不会被服务器随机换掉；已准备后 ◀ ▶ 或单击被选走的头像把光标移开
+// 已提交的角色，就先取消准备，再按准备时提交新角色），EXIT = 离开房间。
 // 联机信息放两侧侧栏（窄屏收成抽屉）：左栏房间号与邀请链接、读档横幅、座位（补电脑、踢人…）、房间设置（房主可改）、
 // 观战者、存档；右栏聊天。逻辑与 testid 与程序化 LobbyView / CharacterPicker / SeatGrid 相同，只换表现层。
 import { CHARACTER_IDS, CHARACTER_KEYS, type CharacterId } from '@rich4/shared/engine';
 import type { RoomView } from '@rich4/shared/net';
 import clsx from 'clsx';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { useClient } from '../../../app/services';
 import { useTx } from '../../../i18n/tx';
 import { formatDate } from '../../../presentation/names';
 import { canStart, mySeatView } from '../../../store/roomStore';
+import { takenCharacters } from '../../lobby/characterPick';
 import { InviteLink } from '../../lobby/InviteLink';
 import { useRun } from '../../lobby/SeatGrid';
 import {
@@ -21,6 +25,7 @@ import {
   type MapListingLite,
   type SettingsDraft,
 } from '../../lobby/settingsDraft';
+import { useCommitPick, usePickCursor } from '../../lobby/useCharacterPick';
 import { ChatPanel } from '../../social/ChatPanel';
 import { SpectatorList } from '../../social/SpectatorList';
 import { SaveLoadMenu, warningText } from '../../system/SaveLoadMenu';
@@ -119,17 +124,10 @@ function SelectStage({ room, onLeave }: ClassicLobbyProps): ReactNode {
   const startable = canStart(room) && unclaimedSeats(room).length === 0;
   const locked = room.loadedSave !== undefined;
   const picking = me !== null && !locked;
-  const taken = useMemo(() => {
-    const m = new Map<CharacterId, number>();
-    for (const st of room.seats) if (st.characterId !== null && st.index !== me) m.set(st.characterId, st.index);
-    return m;
-  }, [room.seats, me]);
-  const [cursor, setCursor] = useState<CharacterId>(mine ?? CHARACTER_IDS[0]!);
+  const taken = takenCharacters(room);
+  const [cursor, setCursor] = usePickCursor(room);
+  const commitPick = useCommitPick(room, cursor);
   const [hover, setHover] = useState<CharacterId | null>(null);
-
-  useEffect(() => {
-    if (mine !== null) setCursor(mine);
-  }, [mine]);
 
   // 开局时叠在对局页上的 Loading 整图（Data#560）在大厅里先下载进浏览器缓存：否则开局那一刻图还没下完，只看到黑底文字
   const packId = useClassicAssets((st) => st.packId);
@@ -267,10 +265,16 @@ function SelectStage({ room, onLeave }: ClassicLobbyProps): ReactNode {
             className={s.cell}
             style={regionStyle(cell)}
             onClick={() => {
-              playScreenCue('move');
-              setCursor(id);
+              // 没被别人选走的直接选定（choose 自带点击音；同时提交，已准备也不用取消）；
+              // 被选走的只移动光标看预览（已准备时移开已提交的角色会先取消准备，见 useCharacterPick）
+              if (by === undefined && id !== mine) {
+                setCursor(id, { committing: true });
+                choose(id);
+              } else {
+                setCursor(id);
+                playScreenCue('move');
+              }
             }}
-            onDoubleClick={() => by === undefined && choose(id)}
             onPointerEnter={() => setHover(id)}
             onPointerLeave={() => setHover((h) => (h === id ? null : h))}
             onFocus={() => setHover(id)}
@@ -307,14 +311,16 @@ function SelectStage({ room, onLeave }: ClassicLobbyProps): ReactNode {
               label={t('lobby:room.start')}
               testId="room-start"
               disabled={!startable}
-              onPress={() => void run(client.startGame())}
+              onPress={() => void commitPick().then((ok) => ok && run(client.startGame()))}
             />
           ) : (
             <HotButton
               rect={COLUMN_OK}
               label={ready ? t('lobby:room.unready') : t('lobby:room.ready')}
               testId="room-ready"
-              onPress={() => void run(client.setReady(!ready))}
+              onPress={() =>
+                void (ready ? run(client.setReady(false)) : commitPick().then((ok) => ok && run(client.setReady(true))))
+              }
               attrs={{ 'aria-pressed': ready }}
             />
           )}

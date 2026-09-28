@@ -19,6 +19,7 @@ import { mySeat } from '../../store/roomStore';
 import { type AnimSpeed, useSettingsStore } from '../../store/settingsStore';
 import { useUiStore } from '../../store/uiStore';
 import { portraitUrl } from '../common/Avatar';
+import { COUNTDOWN_URGENT_S } from '../common/countdownLogic';
 import { useRemainingMs } from '../components/Countdown';
 import { EventLogPanel } from '../hud/EventLogPanel';
 import { seatName } from '../hud/PlayerChips';
@@ -54,7 +55,7 @@ function MessageBoxHead({ width, children }: { width: number; children: ReactNod
   );
 }
 
-/** 我自己的决策倒计时（等别人的决策由 WaitingBanner 显示） */
+/** 我自己的决策倒计时（等别人的决策由 WaitingBanner 显示）；与中央倒计时同一紧急阈值、同样对齐整秒（useRemainingMs） */
 function MyCountdown(): ReactNode {
   const t = useTx();
   const decision = useGameStore((s) => s.decision);
@@ -68,7 +69,7 @@ function MyCountdown(): ReactNode {
       role="timer"
       data-testid="classic-my-countdown"
       data-kind={decision.kind}
-      data-urgent={secs !== null && secs <= 5 ? 'true' : 'false'}
+      data-urgent={secs !== null && secs <= COUNTDOWN_URGENT_S ? 'true' : 'false'}
     >
       <span>{decision.kind === 'TURN_MENU' ? t('classic:rail.myTurn') : t('classic:rail.myDecision')}</span>
       <span className={`${c.secs} ${c.num}`}>

@@ -79,24 +79,29 @@ describe('提交锁定', () => {
 });
 
 describe('倒计时', () => {
-  it('圆环显示剩余秒数，最后 5 秒变红，到 0 锁定全部按钮', () => {
+  it('圆环显示剩余秒数，最后 10 秒变红（与中央倒计时同一档），到 0 锁定全部按钮', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] });
     vi.setSystemTime(1_000_000);
     const fx = fixture();
     const submit = vi.fn();
-    const decision = makeDecision('BUY_LAND', demoOptions(fx.view).BUY_LAND, { now: Date.now(), timeoutMs: 8000 });
+    const decision = makeDecision('BUY_LAND', demoOptions(fx.view).BUY_LAND, { now: Date.now(), timeoutMs: 14_000 });
     render(<BuyLotDialog decision={decision} isMine view={fx.view} map={fx.map} submit={submit} />);
     const ring = screen.getByTestId('countdown');
-    expect(ring).toHaveAccessibleName('剩余 8 秒');
+    expect(ring).toHaveAccessibleName('剩余 14 秒');
     expect(ring).toHaveAttribute('data-urgent', 'false');
     act(() => {
       vi.advanceTimersByTime(3500);
     });
-    expect(ring).toHaveAccessibleName('剩余 5 秒');
+    expect(ring).toHaveAccessibleName('剩余 11 秒');
+    expect(ring).toHaveAttribute('data-urgent', 'false');
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(ring).toHaveAccessibleName('剩余 10 秒');
     expect(ring).toHaveAttribute('data-urgent', 'true');
     expect(screen.getByTestId('buy-confirm')).toBeEnabled();
     act(() => {
-      vi.advanceTimersByTime(5000);
+      vi.advanceTimersByTime(10_000);
     });
     expect(ring).toHaveAccessibleName('剩余 0 秒');
     expect(screen.getByTestId('decision-BUY_LAND')).toHaveAttribute('data-expired', 'true');
@@ -108,7 +113,7 @@ describe('倒计时', () => {
   });
 
   it('时钟偏移由 DecisionClockProvider 提供（服务器快 10 秒 → 剩余少 10 秒）', () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] });
     vi.setSystemTime(5_000_000);
     const fx = fixture();
     const decision = makeDecision('BUY_LAND', demoOptions(fx.view).BUY_LAND, { now: Date.now(), timeoutMs: 30_000 });

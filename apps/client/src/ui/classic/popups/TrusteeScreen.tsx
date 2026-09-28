@@ -29,6 +29,12 @@ export const TRUSTEE_AT = {
   y: Math.round((480 - AUTOPLAY.dialog.h) / 2),
 } as const;
 
+/**
+ * 中央决策倒计时的小牌（场景坐标，上缘中点；common/sceneCover）：对话框居中、盖住棋盘视窗中线，
+ * 摆在工具列（y<40）与对话框上缘（y=63）之间的空档正中
+ */
+export const TRUSTEE_BADGE = { x: 320, y: 37 } as const;
+
 export interface TrusteeScreenProps {
   room: RoomView;
   onClose: () => void;
@@ -163,6 +169,7 @@ export function TrusteeScreen({ room, onClose }: TrusteeScreenProps): ReactNode 
       testId="trustee-dialog"
       label={t('ui:trustee.title')}
       backdrop="dim"
+      countdownBadgeAt={TRUSTEE_BADGE}
       onClose={onClose}
       attrs={{ 'data-classic': 'true', 'data-auto': auto ? 'true' : 'false' }}
     >

@@ -4,6 +4,8 @@
 .game {
   --right-w: 300px;
   --top-h: 50px;
+  /* 左侧日志 / 聊天停靠栏的宽度（中央决策倒计时据此避让，ui/common/countdown.module.css） */
+  --dock-w: min(340px, 38vw);
   position: fixed;
   inset: 0;
   overflow: hidden;
@@ -604,7 +606,7 @@
   left: max(6px, env(safe-area-inset-left));
   top: calc(var(--top-h) + 20px);
   bottom: 110px;
-  width: min(340px, 38vw);
+  width: var(--dock-w);
   display: flex;
   flex-direction: column;
   gap: 6px;

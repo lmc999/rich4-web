@@ -30,6 +30,12 @@ export type ListKind = ListingAsset['t'];
 /** 板子左上角（场景坐标） */
 export const BOARD_AT = { x: 22, y: 66 } as const;
 export const BOARD_SIZE = { w: 596, h: 348 } as const;
+/**
+ * 中央决策倒计时的小牌（场景坐标，小牌上缘中点；common/sceneCover）：板面与板上的弹框（类别、明细卡、计算器）时摆在
+ * 工具列（y<40）与软木板（y≥66）之间的空档正中；选资产的表格从 y=32 画到 y=448、横跨中线，改到表格左边的空处
+ * （标题「公」字之上）
+ */
+export const COUNTDOWN_BADGE = { board: { x: 320, y: 40 }, table: { x: 76, y: 40 } } as const;
 /** 板上画好的 SALE / EXIT 钮（板内坐标） */
 export const SALE_BTN: Rect = { x: 443, y: 9, w: 68, h: 36 };
 export const EXIT_BTN: Rect = { x: 517, y: 9, w: 68, h: 36 };

@@ -111,7 +111,10 @@ export async function joinRoom(page: Page, code: string, watch = false): Promise
 
 export async function pickCharacter(page: Page, id: number): Promise<void> {
   await page.getByTestId(`char-${id}`).click();
-  await page.getByTestId('char-select').click();
+  // 原版选人画面（data-screen="select"）单击头像格即选定；程序化大厅单击只移动光标，还要点「选择」
+  if ((await page.getByTestId('screen-room').getAttribute('data-screen')) !== 'select') {
+    await page.getByTestId('char-select').click();
+  }
   // 程序化大厅为简体、原版选人画面为繁体（原版皮肤由素材包决定，与本进程的配置无关：默认配置下也有 page.route 供包的用例）
   await expect(page.getByTestId('char-select')).toHaveText(/^已(选择|選擇)$/);
 }

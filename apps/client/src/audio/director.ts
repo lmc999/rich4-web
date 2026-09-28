@@ -68,8 +68,8 @@ export interface EventAudio {
   end(): void;
 }
 
-/** 界面音 */
-export type UiCue = 'click' | 'back' | 'open' | 'move' | 'use' | 'tick';
+/** 界面音（countdown / countdownFinal：决策倒计时最后 10 秒的提示音，走音效总线，受音效音量控制） */
+export type UiCue = 'click' | 'back' | 'open' | 'move' | 'use' | 'tick' | 'countdown' | 'countdownFinal';
 
 const UI_CUES: Readonly<Record<UiCue, SfxCue>> = {
   click: { cue: 'ui.click', zzfx: 'click', bus: 'ui' },
@@ -78,6 +78,9 @@ const UI_CUES: Readonly<Record<UiCue, SfxCue>> = {
   move: { cue: 'ui.move', zzfx: 'click', bus: 'ui' },
   use: { cue: 'ui.use', zzfx: 'magic', bus: 'ui' },
   tick: { zzfx: 'tick' as ZzfxPresetId, bus: 'ui' },
+  // 原版没有决策计时，素材包里没有语义对应的音效（audio_video.md §2）：只用 ZzFX
+  countdown: { zzfx: 'countdown', bus: 'sfx' },
+  countdownFinal: { zzfx: 'countdownFinal', bus: 'sfx' },
 };
 
 /** 场景 → 原版音效集（进入时预载；audio_video.md §2.2） */
@@ -302,8 +305,18 @@ export class AudioDirector {
 
   uiCue(name: UiCue): ResolvedSfx | null {
     const r = resolveSfxCue(UI_CUES[name], this.maps.sfxSets, 0, { guessOriginal: this.opts.guessOriginal });
-    if (r) this.engine.playSfx(r.key, { bus: 'ui' });
+    if (r) this.engine.playSfx(r.key, { bus: r.bus });
     return r;
+  }
+
+  /** 预载几个界面音（例如倒计时出现时预载提示音，第一声不因首次合成超时而作废） */
+  preloadUiCues(names: readonly UiCue[]): Promise<void> {
+    const keys: string[] = [];
+    for (const n of names) {
+      const r = resolveSfxCue(UI_CUES[n], this.maps.sfxSets, 0, { guessOriginal: this.opts.guessOriginal });
+      if (r) keys.push(r.key);
+    }
+    return this.engine.preload(keys);
   }
 }
 

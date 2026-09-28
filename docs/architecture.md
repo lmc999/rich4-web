@@ -1349,7 +1349,7 @@ RICH4_ASSETS_ALLOW_UNGATED=0     # 仅本机调试：非 production + PUBLIC_URL
 ### 22.9 遗留
 
 - 原版棋盘（A6）、OrigActor / OrigStage（A7 / A8）、路线 A 外壳与原版对话框（A10–A12）未开始：台湾图的棋盘仍回退程序化；FLIC 播放器未接到演出，`flicSfx` 保持 false，flicCovered 的演出仍放 cue 音效。
-- 界面音（`director.uiCue`：按钮、倒计时最后 5 秒）尚未接到组件；他人的保释 / 小游戏场所曲只在本人决策时播放；隐藏标签页 EventPlayer 走 instant，不放事件声音（设计如此）。
+- 界面音（`director.uiCue`：按钮、倒计时最后 5 秒）尚未接到组件（倒计时提示音已由 §26 接上：中央倒计时最后 10 秒 `countdown` / `countdownFinal`）；他人的保释 / 小游戏场所曲只在本人决策时播放；隐藏标签页 EventPlayer 走 instant，不放事件声音（设计如此）。
 - guess 置信度的音效 / 语音槽需要人工在 `/dev/audio` 试听核对（A9 清单）；iOS / Android 真机（解锁、切后台、静音键、audioSession）未测，设置里还没有关闭 `audioSession=playback` 的开关。
 - 合成素材包不含音频（features.audio/voice/music 为 false），E2E 只覆盖 ZzFX 回退路径；原版声音的 E2E（开局宣言、进银行切曲续播）需要带音频的合成包。
 - 根 package.json 不在本轮可改范围：`npm run access`、`gen-zh-tw --check` 进 check、`check:bundle` 都还没有。
@@ -1550,3 +1550,19 @@ RICH4_ASSETS_ALLOW_UNGATED=0     # 仅本机调试：非 production + PUBLIC_URL
 - **文档与运维**（第 6–10 条）：最低内存改为 2 GB（1 GB 主机加 swap，或本机构建后 `docker save | ssh … docker load`、服务器 `up --no-build`；复核：构建阶段容器限 768 MB 时 `npm run build` 被杀 137，1.2 GB 通过、峰值 1.08 GB）；所有 compose 命令改为「仓库根目录 `.env` 写 `COMPOSE_FILE`、命令不写 `-f`」，nginx 模式只改这一行（实测带 nginx 覆盖文件的项目再次 `up -d --wait` 后 127.0.0.1 端口仍在、只有 app）；升级后 Caddyfile 有改动要 `restart caddy`（实测换 inode 后 `up -d` 与容器内 `caddy reload` 都不生效，`restart caddy` 生效）；异地备份改为每小时 `docker compose cp app:/data/backup/. /srv/rich4-backups/`（不再按日期拼文件名，实测可重复拷贝）；两个只读挂载改为 `create_host_path: false`，§2 先 `mkdir -p rich4-data rich4-assets`（实测目录缺失时 `up` 报 `bind source path does not exist`，不再自动建目录）。
 - **压测判定**（第 14、15 条）：判定抽成 `apps/server/scripts/loadtestVerdict.ts`（单测 5 例）：`app:error`、非预期的 `game:act` 错误码（INVALID_ACTION、RATE_LIMITED、STALE_DECISION、NOT_YOUR_DECISION 之外）、其余请求出错、再来一局失败都判 FAIL；有功能性错误时读不到 `/admin/stats` 也判 FAIL（退出码 1），只缺 p99 读数才是 UNKNOWN（2）。复核：压测中 SIGKILL 服务器，loadtest 退出 1、`verdict: FAIL`（修复前 2 / UNKNOWN）；对容器 30 房 30 秒冒烟 PASS。
 - **deploy-restart 用例**（第 16 条）：等断线遮罩时同时盯着重启命令，命令非 0 退出立即带退出码与输出失败，命令成功后 30 秒仍没断线也带输出失败。复核（本机测试模式服务器）：`E2E_RESTART_CMD='echo MARKER >&2; exit 3'` 报「重启命令失败…exit 3…MARKER」；`E2E_RESTART_CMD=true` 报「重启命令已成功退出，但之后 30 秒内页面没有出现断线遮罩」。远程模式对容器共跑 8 次，7 次通过；1 次在重启之前就失败：`if (debug) expect(before.server.lots.L1?.owner).toBe(String(seatA))` 得到座位 3（P2）而不是 P1——用例假定 P1 第一回合固定买下 L1，随机对局里 L1 偶尔先落到别人手里，与本轮改动（重启命令的监视）无关，留作遗留。
+
+## 26. 用户反馈修复：选人提交与画面中央的决策倒计时（2026-09-28）
+
+用户在线上（原版皮肤、真实素材包）反馈两点：「选的是忍太郎，头像却是金贝贝」；「决策时间的倒计时应在画面中央，最后 10 秒发出急促的提示音」。
+
+- **头像问题的根因不在素材映射**：角色号 → 头像 Data#2、讲话头像 map#15+c、侧视走动 jump#5+3c+v、棋盘姿态 Data#87+21c+k 等映射（original-skin.md §4.3、docs/research/original-assets/*.md）逐一与真实素材包核对，全部正确，没有文档需要更正。根因在选人流程：选角光标（预览、名字）与已提交给服务器的角色是两回事，单击头像只移动光标，直接按 OK / 準備时座位 characterId 仍为 null，`Room.start` 给它随机分配了角色。修复：`ui/lobby/characterPick.ts` + `useCharacterPick.ts`（两种皮肤共用），开始 / 准备前先提交光标上的角色，提交失败就不开始 / 不准备；原版选人画面单击没被选走的头像即选定（同原版）。规则写在 client.md §5.5、original-skin.md §4.3。
+- **中央决策倒计时**：`ui/common/useDecisionCountdown` + `DecisionCountdown`（程序化挂载）/ `ui/classic/ClassicCountdown`（原版，portal 到舞台容器）。只跟随本人、有截止时间的决策；按校准后的服务器时钟每跨一个整秒更新；最后 10 秒变红并每秒一声 ZzFX `countdown`，最后 3 秒 `countdownFinal` 双响；提交 / 到点立即停，同一秒不重复、后台回来不补播；决策框或铺满舞台的场所开着时避让到上方。设计见 client.md §5.1 / §7.3、original-skin.md §4.2。单机默认不限时（timerPreset off），这时没有倒计时。
+- **联调验证**：`npm run check` 全绿（vitest 300 个文件 2930 通过 2 跳过）；E2E 默认配置 44 通过 1 跳过、原版配置 41 通过 4 跳过（跳过均为按配置的既有 skip），新增 `decision-countdown`、`skin-classic-character` 两种配置都通过。真实素材包实测（`test/pc-final-check.mjs`，端口 3501/5501，截图与记录在 `.cache/pc/final/`，不入库）：原版与程序化皮肤、1920×1080 与 844×390 各一遍，「单击忍太郎 → 直接 OK」进局为忍太郎（服务器座位、座位条与资料栏 face72 帧 2、棋盘 `char.2.*`、买地讲话头像 `portrait.speaker.2/0` 一致），P2「▶ 翻到金貝貝 → 直接準備」进局为金貝貝；fast 档回合菜单放到超时，音频引擎日志里 `zzfx.countdown` 在距截止 9996、8997 … 3996 ms 各一声，`countdownFinal` 在 2998、1998、998 ms 各两声（间隔约 131 ms；四轮都落在整秒边界前 10 ms 以内），数字在剩 10 秒时变红、到点后 17–37 ms 内消失（采样间隔 40 ms）；提交后不再响；与回合菜单、买地、银行、拍卖叠加时倒计时 `pointer-events: none`，与可见按钮的矩形都不相交（程序化手机横屏在对话框上方放不下时按设计隐去）；控制台 0 错误。
+- **复审修复**（9 条 minor，逐条复核后都属实）：
+  - 选人：已准备的非房主玩家再移动光标（程序化单击头像、原版 ◀ ▶ / 单击被选走的头像），预览换成新角色，但开局由房主发起、不会替他提交光标——同一类「看到 A、进局 B」。现在移开已提交的角色就先取消准备（`characterPick.unreadyOnMove`，`usePickCursor` 的移动光标），再按准备时提交新角色；原版单击没被选走的头像是「移动 + 提交」，保持准备。原版「◀ ▶ 翻看后点選這個」补了 DOM 用例。
+  - 同屏倒计时一致：`URGENT_MS = COUNTDOWN_URGENT_S × 1000`（圆环、原版侧栏「輪到你了 N 秒」、等待条都 10 秒变红）；`useRemainingMs` 仍 200ms 轮询但不越过下一个整秒边界，与中央倒计时同一时刻换秒；圆环的跳动改为每秒换 key、在整秒边界放大。
+  - 提示音去重键只看截止时间（`beepKey`）：回合菜单里用卡、买股票后服务器换 decisionId 重发、截止时间不变时同一秒不重响；定时器仍按「决策 + 截止时间」重启。
+  - 断线（连接状态 reconnecting / closed / connecting）时中央倒计时不显示、不响，取消没响的双响第二声；重连后按 resetTo 带回的截止时间重新计时。
+  - 原版铺满舞台的场景由场景决定小牌位置（Stage4x3 `countdownBadgeAt` → `common/sceneCover` 记位置）：缺省舞台顶端中线；股市在自己的圆环左边、拍卖在价格牌右边、魔法屋避开「1998」、公布栏在工具列与软木板之间（选资产表格时在表格左边）、托管设置与存档窗在工具列与窗口之间；登记改在布局阶段（不再先在棋盘视窗上缘闪一下）。
+  - 程序化：对话框上方放不下（手机横屏）时小牌叠到对话框标题栏圆环的左边（`data-anchor="ring"`），不再隐去；左侧日志 / 聊天停靠栏开着时 center 的数字不越过停靠栏右缘（`--dock-w`，桌面宽屏时不动）。
+  - 验证：`npm run check` 全绿；E2E 两种配置全量各跑两遍（结果见本轮汇报）；真实素材包截图 `test/fix-cd-shots.mjs`、断线 `test/fix-cd-disconnect.mjs`（端口 3801 / 5801，输出在 `.cache/pc/fix/`，不入库）。

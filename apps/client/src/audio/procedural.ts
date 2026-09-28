@@ -32,6 +32,10 @@ export const ZZFX_PRESETS = Object.freeze({
   sad: [0.5, 0, 400, 0.02, 0.3, 0.3, 2, 1, -3],
   fanfare: [0.6, 0, 523, 0.01, 0.25, 0.35, 1, 1, 0, 0, 262, 0.12, 0.12],
   whoosh: [0.4, 0, 300, 0.05, 0.15, 0.2, 4, 1, 20, _, _, _, _, 1],
+  // 决策倒计时最后 10 秒的「嘀」（原版单机热座没有决策计时，素材里没有对应音效）：1318Hz 方波短响约 80ms；
+  // 最后 3 秒：1760Hz 更短的一响（约 65ms），由倒计时连放两次成「嘀嘀」（ZzFX 的 delay 回声只有原音的一半且渐弱，不够干脆）
+  countdown: [0.3, 0, 1318, 0, 0.05, 0.03, 5, 1],
+  countdownFinal: [0.32, 0, 1760, 0, 0.04, 0.025, 5, 1],
 } as const satisfies Record<string, ZzfxParams>);
 
 export type ZzfxPresetId = keyof typeof ZZFX_PRESETS;

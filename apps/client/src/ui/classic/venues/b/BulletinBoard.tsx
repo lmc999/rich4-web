@@ -39,6 +39,7 @@ import {
   BULLETIN_REQUIRED_KEYS,
   BULLETIN_SHEET,
   CALC_AT,
+  COUNTDOWN_BADGE,
   DETAIL,
   DETAIL_AT,
   detailFrame,
@@ -740,6 +741,7 @@ export function BulletinBoardScene(props: BulletinBoardProps): ReactNode {
       isMine={isMine}
       label={t('pnl.board.title')}
       backdrop="dim"
+      countdownBadgeAt={step === 'asset' ? COUNTDOWN_BADGE.table : COUNTDOWN_BADGE.board}
       onClose={close}
       closeButton={false}
       attrs={{ 'data-venue': 'bulletin', 'data-sheet': 'board', 'data-step': step }}
