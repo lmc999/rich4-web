@@ -13,7 +13,6 @@ import { maskFromRegions } from './mask';
 import { NineSlice } from './NineSlice';
 import { SpeakerBubble } from './SpeakerBubble';
 import { SceneLayer, Stage4x3 } from './Stage4x3';
-import { STAGE_BADGE_TOP, type StageBadgeAt, useSceneCoverStore } from './sceneCover';
 import { fakeSceneSheets, fakeSheet, installSceneAssets } from './testing';
 import { YesNoBox } from './YesNoBox';
 
@@ -204,36 +203,6 @@ describe('Stage4x3', () => {
     await user.click(screen.getByTestId('outside'));
     await user.keyboard('{Escape}');
     expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it('登记中央倒计时小牌的位置（sceneCover）：opaque / dim 缺省舞台顶端中线；none 缺省不登记；场景可指定或明确不登记；只读不登记', () => {
-    const at = (): StageBadgeAt | null => useSceneCoverStore.getState().covers.at(-1)?.at ?? null;
-    for (const backdrop of ['opaque', 'dim'] as const) {
-      const a = render(<Stage4x3 testId="scene" label="场景" backdrop={backdrop} />);
-      expect(at(), backdrop).toEqual(STAGE_BADGE_TOP);
-      a.unmount();
-      expect(at()).toBeNull();
-    }
-    const b = render(<Stage4x3 testId="scene" label="场景" backdrop="none" />);
-    expect(at()).toBeNull();
-    b.unmount();
-    const c = render(<Stage4x3 testId="scene" label="场景" backdrop="dim" countdownBadgeAt={{ x: 320, y: 40 }} />);
-    expect(at()).toEqual({ x: 320, y: 40 });
-    c.unmount();
-    const d = render(<Stage4x3 testId="scene" label="场景" backdrop="opaque" countdownBadgeAt={null} />);
-    expect(at()).toBeNull();
-    d.unmount();
-    const e = render(<Stage4x3 testId="scene" label="场景" backdrop="opaque" readOnly />);
-    expect(at()).toBeNull();
-    e.unmount();
-    // 两个场景重叠（进出场动画）：取后登记的；后开的关掉后回到先开的
-    const f = render(<Stage4x3 testId="s1" label="一" backdrop="opaque" />);
-    const g = render(<Stage4x3 testId="s2" label="二" backdrop="opaque" countdownBadgeAt={{ x: 572, y: 448 }} />);
-    expect(at()).toEqual({ x: 572, y: 448 });
-    g.unmount();
-    expect(at()).toEqual(STAGE_BADGE_TOP);
-    f.unmount();
-    expect(useSceneCoverStore.getState().covers).toEqual([]);
   });
 });
 

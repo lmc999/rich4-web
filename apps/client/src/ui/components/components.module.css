@@ -73,6 +73,16 @@
   outline: none;
 }
 
+/* 系统界面（Modal layer="system"：系统菜单、设置、托管设置）：盖在画面正中央的决策倒计时（z 45，挂在 body 上，
+ * ui/common/countdown.module.css）之上；决策与游戏面板仍是 40 / 41，数字压在它们上面 */
+.overlay[data-layer="system"] {
+  z-index: 46;
+}
+
+.modal[data-layer="system"] {
+  z-index: 47;
+}
+
 .sheet {
   top: auto;
   bottom: 0;

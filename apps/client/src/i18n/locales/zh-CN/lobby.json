@@ -42,6 +42,8 @@
     "rules": "规则",
     "minigames": "小游戏",
     "timer": "决策计时",
+    "timerHint": "只有一名真人时不计时",
+    "timerHintActive": "现在只有一名真人：开局后不计时",
     "pacing": "演出节奏",
     "visibility": "房间",
     "spectators": "允许观战",

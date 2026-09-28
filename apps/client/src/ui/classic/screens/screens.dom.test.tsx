@@ -272,6 +272,7 @@ describe('开局设置（jump#0 + jump#4）', () => {
     await userEvent.selectOptions(screen.getByTestId('set-vehicle'), 'car');
     await userEvent.selectOptions(screen.getByTestId('set-ai-count'), '2');
     await userEvent.selectOptions(screen.getByTestId('set-timer'), 'off');
+    expect(within(form).getByTestId('set-timer-hint')).toHaveTextContent('只有一名真人时不计时');
     await userEvent.selectOptions(screen.getByTestId('set-pacing'), 'compact');
     await userEvent.click(screen.getByTestId('set-spectators'));
     await userEvent.selectOptions(screen.getByTestId('set-ai-preset'), 'cunning');
@@ -309,6 +310,16 @@ describe('开局设置（jump#0 + jump#4）', () => {
       expect(within(panel).getByTestId(id)).toBeInTheDocument();
       expect(screen.getAllByTestId(id)).toHaveLength(1);
     }
+    expect(within(panel).getByTestId('set-timer-hint')).toHaveTextContent('只有一名真人时不计时');
+    expect(within(panel).getByTestId('set-timer-hint')).toHaveAttribute('data-active', 'false');
+    // 计时档位这一行占满整行、落在左列：前面有偶数个字段行
+    const rows = [...panel.querySelectorAll(':scope > label')];
+    const timerRow = screen.getByTestId('set-timer').closest('label')!;
+    expect(rows.indexOf(timerRow) % 2).toBe(0);
+    // 电脑补满其余三个座位：开局只有房主一名真人，说明换成「现在只有一名真人：开局后不计时」
+    await userEvent.selectOptions(screen.getByTestId('set-ai-count'), '3');
+    expect(within(panel).getByTestId('set-timer-hint')).toHaveTextContent('现在只有一名真人：开局后不计时');
+    expect(within(panel).getByTestId('set-timer-hint')).toHaveAttribute('data-active', 'true');
     expect(screen.getByTestId('setup-value-vehicle')).toHaveTextContent('步行');
     await userEvent.selectOptions(screen.getByTestId('set-vehicle'), 'moto');
     expect(screen.getByTestId('setup-value-vehicle')).toHaveTextContent('机车');
@@ -403,6 +414,8 @@ describe('选人大厅', () => {
     expect(transport.payloads('room:kick')).toEqual([{ target: { seat: 1 } }]);
     await userEvent.selectOptions(screen.getByTestId('set-timer'), 'fast');
     expect(transport.payloads('room:updateSettings')[0]).toMatchObject({ patch: { timerPreset: 'fast' } });
+    expect(screen.getByTestId('set-timer-hint')).toHaveTextContent('只有一名真人时不计时');
+    expect(screen.getByTestId('set-timer-hint')).toHaveAttribute('data-active', 'false');
     await userEvent.click(screen.getByTestId('room-leave'));
     expect(onLeave).toHaveBeenCalled();
     // 小明准备后可以开始
@@ -424,6 +437,22 @@ describe('选人大厅', () => {
     // 座位牌（只显示）
     expect(screen.getByTestId('classic-seat-1')).toHaveTextContent('小明');
     expect(screen.getByTestId('setup-value-aiCount')).toHaveTextContent('1');
+  });
+
+  it('只有房主一名真人 + 电脑（有效档位 off）：计时说明高亮，设置下拉仍是房间设置', () => {
+    renderWith(
+      <ClassicLobby
+        room={hostRoom({
+          seats: [human(0, '房主', { host: true, isYou: true }), ai(1), ai(2), seat(3)],
+          effectiveTimerPreset: 'off',
+        })}
+        onLeave={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('set-timer')).toHaveValue('normal');
+    expect(screen.getByTestId('set-timer-hint')).toHaveAttribute('data-active', 'true');
+    // 文字本身也换了（不只靠颜色）
+    expect(screen.getByTestId('set-timer-hint')).toHaveTextContent('现在只有一名真人：开局后不计时');
   });
 
   it('非房主：OK = 准备 / 取消准备（aria-pressed，打勾）；房间设置只读', async () => {

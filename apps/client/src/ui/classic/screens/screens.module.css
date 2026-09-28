@@ -419,6 +419,28 @@
   white-space: nowrap;
 }
 
+/* 带一行小字说明的行（计时档位）：标签 + 下拉在上，说明占满下一行（自动排布） */
+.rowHinted {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 1px;
+}
+
+.rowHint {
+  grid-column: 1 / -1;
+  color: #e8cf8e;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+/* 大厅：现在的座位开局就不计时 */
+.rowHint[data-active="true"] {
+  color: var(--gold, #f6c64a);
+  font-weight: 700;
+}
+
 .rowSelect {
   flex: 1;
   min-width: 0;
@@ -488,6 +510,27 @@
 .settings[data-wide="true"] .row > span:first-child {
   width: 72px;
   font-size: 14px;
+}
+
+/* 两列面板里带说明的行（计时档位）：占满整行（WIDE_FIELDS 让它落在左列，不留空格）——标签、下拉框与左列其他行对齐，
+ * 说明排在右列的位置、左缘与右列对齐（两列间距 10 = 6 + 4）；字号 14 逻辑像素（844×390 缩放约 0.81，约 11 CSS 像素），
+ * 最多两行，行高仍是 56 */
+.settings[data-wide="true"] .rowHinted {
+  grid-column: 1 / -1;
+  grid-template-columns: 72px calc((100% - 10px) / 2 - 78px) minmax(0, 1fr);
+  column-gap: 6px;
+  row-gap: 0;
+}
+
+.settings[data-wide="true"] .rowHint {
+  grid-column: 3;
+  grid-row: 1;
+  padding-left: 4px;
+  font-size: 14px;
+  line-height: 1.2;
+  /* 放不下一行时在标点（「：」）处折行，不拆开词、不留一个字单独一行；一段实在太长才任意折 */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 .settingsBtn {
@@ -830,6 +873,10 @@
 
 .railBox .railSettings .rowSelect {
   height: 30px;
+}
+
+.railBox .railSettings .rowHint {
+  font-size: 12px;
 }
 
 .savesBox summary {

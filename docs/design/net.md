@@ -270,7 +270,7 @@ export interface RoomSettings {
   maxSpectators: number;                      // 0..20，默认 10
   spectatorChat: 'all' | 'spectators' | 'off';// 默认 all（观战者只能看到公开信息，泄密风险低）
   handVisibility: 'public' | 'private';       // 默认 public（还原原版同屏体验）
-  timerPreset: 'fast' | 'normal' | 'slow' | 'off';
+  timerPreset: 'fast' | 'normal' | 'slow' | 'off'; // 只有一名真人时实际不计时（RoomView.effectiveTimerPreset，§5.4）
   timeoutPolicy: 'ai' | 'default';            // 超时由 AI 代决（默认）或执行决策的 defaultIntent
   reconnectGraceSec: number;                  // 默认 15
   pauseWhenAllAway: boolean;                  // 默认 true
@@ -297,6 +297,7 @@ export interface RoomView {
   seats: [SeatView, SeatView, SeatView, SeatView];
   spectators: { id: string; nickname: string }[];
   settings: RoomSettings;
+  effectiveTimerPreset?: TimerPreset;         // 有效计时档位（§5.4）：真人座位 ≤ 1 时为 off；大厅按座位上的真人推算
   you: { role: 'player'; seat: SeatIndex; isHost: boolean } | { role: 'spectator'; id: string; isHost: false };
   loadedSave?: { saveId: string; name: string; gameDay: number; verified: boolean };
   paused?: { reason: 'host' | 'all_away'; since: number };
@@ -562,6 +563,23 @@ sequenceDiagram
 | MINIGAME | 小游戏时长 + 5 |
 | 其他 | 20 |
 
+- **有效计时档位**（`shared/net/timing.ts` 的 `effectiveTimerPreset` / `isHumanSeatControl`，`GameRunner.effectiveTimerPreset()`）：
+  截止时间按它计算，而不是直接按 `settings.timerPreset`。规则：房间设置的档位，但**真人座位 ≤ 1 时为 off**——只有一名真人、
+  其余都是电脑的房间和单机（`/solo` 本来就是 off）一样不限时。真人座位按座位控制方式数：`human` 与各种托管
+  （`autopilot:manual` / `afk` / `disconnect`，本人还在这局里）都算；电脑补位与被踢（`ai`）、对局中离开（`autopilot:left`）不算；
+  **已淘汰（破产或投降，引擎里 `players[].alive` 为 false）的真人不算**——不管控制方式是什么（出局后仍在线观看、关掉页面转断线
+  托管都一样），他已经没有决策了；观战者不占座位，不影响判定。房间设置本身不变（多名真人时仍按设置），`room:state` 的 `RoomView.effectiveTimerPreset` 下发
+  判定结果（大厅里按座位上的真人数推算，开局就按它计时），大厅与建房的计时设置下有一行说明「只有一名真人时不计时」。
+  - 开局（含读档开局、重启恢复）时按各座位的初始控制方式判定：读档后未认领、由电脑补上的真人座位是 `ai`，不算真人；
+    重启恢复沿用快照里的控制方式（离开的仍是 `autopilot:left`）。存档与快照不另存判定结果，读档时总是重新推导。
+  - 对局中控制方式变化或对局进展使结果改变时（有人离开 / 被踢 / 破产 / 投降后只剩一名真人；离开的人同一 token 回来又变成
+    两名真人）重新计算当前待决策的截止时间（`GameRunner.retime`；淘汰在 `apply` 里提交新状态后比较前后结果）：变为不限时 → 取消截止时间与超时定时器、清掉 TURN_MENU 计时链；变为有时限 →
+    从现在（这批动画还没播完则从播完时）起按档位给完整时限，计时链从头开始。小游戏窗口不受影响；电脑 / 托管代打的决策
+    只改截止时间，AI 定时器不动。结果走现有通道下发：离开、回来经 `game:pending`，踢人随 `SYS_SET_CONTROLLER` 那一批的
+    `game:batch`，淘汰随出局那一批的 `game:batch`（这一批之后新出现的决策直接按新结果计时）；`room:state` 同时带新的
+    `effectiveTimerPreset`（淘汰经 `RunnerHooks.timerPresetChanged` 通知房间，先于这一批广播）。引擎状态里没有墙钟时间，这只是调度层的事，不影响确定性。
+  - 与决策计时无关的机制不变：只剩的那名真人断线时照断线宽限转 `autopilot:disconnect`（宽限期内给别人看的截止时间是
+    宽限结束，同单机），全员离线按 `pauseWhenAllAway` 暂停；超时进 AFK 托管只在有截止时间时才会发生。
 - 超时处理：先确认 `decisionId` 仍然有效。`timeoutPolicy='ai'` 时调用 `AiDriver` 代决（`by:'timeout'`）；为 `'default'` 时执行 `decision.defaultIntent`。之后该座位 `consecutiveTimeouts++`，达到 2 次进入 `autopilot:afk`。
 - 暂停（房主手动或全员离线）：记下每个待决策的剩余时间 `remainingMs = deadlineAt - now`，然后取消所有定时器。恢复时 `deadlineAt = now + max(remainingMs, 5000)`，并广播 `game:pending`。
 - 竞态：真人提交和超时同时到达时，Node 单线程保证先执行的那个生效，后到的返回 `STALE_DECISION`，前端提示「已超时，电脑代为决定」。

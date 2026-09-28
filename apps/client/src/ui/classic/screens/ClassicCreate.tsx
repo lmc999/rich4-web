@@ -12,10 +12,12 @@ import { useTx } from '../../../i18n/tx';
 import {
   applyQuickPreset,
   defaultDraft,
+  draftSoloHuman,
   draftToPatch,
   fetchMapList,
   type MapListingLite,
   type SettingsDraft,
+  timerHintActive,
 } from '../../lobby/settingsDraft';
 import { useEnsureSceneSprites } from '../common/sceneAssets';
 import { regionStyle } from '../layout';
@@ -45,6 +47,7 @@ import {
   ONLINE_FIELDS,
   RowField,
   SETUP_FIELD_KEYS,
+  WIDE_FIELDS,
 } from './settingsFields';
 import { playScreenCue } from './uiSound';
 
@@ -147,6 +150,8 @@ function CreateBody({ onCancel, onCreated }: ClassicCreateProps): ReactNode {
   };
 
   const spec = (k: FieldKey) => fieldSpec(k, t, draft.mapId, maps);
+  // 电脑补满其余三个座位：开局时只有房主一名真人、不计时，计时说明换成「现在只有一名真人：开局后不计时」
+  const untimed = timerHintActive(draft.timerPreset, draftSoloHuman(draft));
   const change = (d: SettingsDraft): void => {
     playScreenCue('move');
     setDraft(d);
@@ -188,13 +193,14 @@ function CreateBody({ onCancel, onCreated }: ClassicCreateProps): ReactNode {
       })}
       {wide ? (
         <fieldset className={s.settings} style={regionStyle(WIDE_PANEL)} data-wide="true" disabled={busy}>
-          {[...SETUP_FIELDS.map((f) => SETUP_FIELD_KEYS[f.field]), ...ONLINE_FIELDS].map((k) => (
+          {WIDE_FIELDS.map((k) => (
             <RowField
               key={k}
               spec={spec(k)}
               draft={draft}
               onChange={change}
               disabled={k === 'aiPreset' && draft.aiCount === 0}
+              hintActive={k === 'timerPreset' && untimed}
             />
           ))}
           {quick}
@@ -209,6 +215,7 @@ function CreateBody({ onCancel, onCreated }: ClassicCreateProps): ReactNode {
               draft={draft}
               onChange={change}
               disabled={k === 'aiPreset' && draft.aiCount === 0}
+              hintActive={k === 'timerPreset' && untimed}
             />
           ))}
           {quick}

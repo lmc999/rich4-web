@@ -25,7 +25,7 @@ export interface RoomSettings {
   spectatorChat: SpectatorChat;
   /** 默认 public（还原原版同屏体验） */
   handVisibility: 'public' | 'private';
-  /** 默认 normal；单机默认 off */
+  /** 默认 normal；单机默认 off。只有一名真人（其余是电脑）时实际不计时（RoomView.effectiveTimerPreset） */
   timerPreset: TimerPreset;
   /** 默认 default */
   timeoutPolicy: TimeoutPolicy;
@@ -110,6 +110,12 @@ export interface RoomView {
   seats: [SeatView, SeatView, SeatView, SeatView];
   spectators: { id: string; nickname: string }[];
   settings: RoomSettings;
+  /**
+   * 有效计时档位（服务器权威，timing.ts effectiveTimerPreset）：settings.timerPreset，但真人座位 ≤ 1 时为 off。
+   * 大厅里按座位上的真人数推算（开局时就按它计时），对局中按座位控制方式（有人离开 / 被踢 / 回来时随之变化）。
+   * 截止时间已经按它算好（决策的 deadlineAt 为 null 即不限时），客户端只用它做说明性显示；旧服务器不下发。
+   */
+  effectiveTimerPreset?: TimerPreset;
   you: RoomYou;
   loadedSave?: {
     saveId: string;

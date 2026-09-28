@@ -1,8 +1,9 @@
 // 画面中央的决策倒计时（client-dom）：
 // - useDecisionCountdown：剩余整秒、最后 10 秒每秒一声（最后 3 秒 final）、提交后停止并取消双响第二声、到点隐藏、
 //   后台回来不补播、deadline 为 null / 托管 / 观战 / 小游戏不显示、两处挂载同一秒只响一次；
-// - DecisionCountdown：role=timer 与 aria-label、只在进入最后 10 秒写一次 aria-live、不可聚焦、摆放（center / top / stage）、
-//   回合横幅期间让位；原版布局经 portal 挂到经典舞台容器上且层级高于原版场景；样式层 pointer-events: none；
+// - DecisionCountdown：role=timer 与 aria-label、只在进入最后 10 秒写一次 aria-live、不可聚焦；始终在画面正中央、不避让
+//   （决策种类、回合菜单展开、回合横幅、停靠栏都不改变摆放）；程序化布局整层挂到 body 上（盖得过 radix 模态面板），
+//   原版布局经 portal 挂到经典舞台容器上且层级高于原版场景；样式层 pointer-events: none、正中定位；
 // - 两种布局（GameScreen 程序化 / 经典）都挂着倒计时。
 // Pixi 不在 jsdom 挂载：BoardCanvas 用替身；皮肤判定直接给结果。
 import { readFileSync } from 'node:fs';
@@ -17,19 +18,19 @@ import { ClientProvider } from '../../app/services';
 import { useConnectionStore } from '../../store/connectionStore';
 import { useGameStore } from '../../store/gameStore';
 import { useMapStore } from '../../store/mapStore';
+import { useSettingsStore } from '../../store/settingsStore';
 import { useUiStore } from '../../store/uiStore';
 import { makeTestClient } from '../../test/fakeTransport';
 import { ai, human, roomView } from '../../test/roomFixtures';
 import { selfPlay } from '../../test/selfPlay';
 import { CLASSIC_COUNTDOWN_Z, ClassicCountdown } from '../classic/ClassicCountdown';
 import { ClassicStage } from '../classic/ClassicStage';
-import { useSceneCoverStore } from '../classic/common/sceneCover';
 import { SCENE_Z } from '../classic/common/stage';
 import { CountdownRing, useRemainingMs } from '../components/Countdown';
 import { useServerNow } from '../decisions/clock';
 import GameScreen from '../screens/GameScreen';
 import { BeepGate } from './countdownLogic';
-import { anchorAboveDialog, countdownPlace, DecisionCountdown, dialogAnchor } from './DecisionCountdown';
+import { DecisionCountdown, hudLayerStyle } from './DecisionCountdown';
 import {
   type CountdownBeepFn,
   resetCountdownGateForTest,
@@ -139,7 +140,6 @@ afterEach(() => {
   useGameStore.getState().clear();
   useUiStore.getState().clear();
   useConnectionStore.getState().reset();
-  useSceneCoverStore.setState({ covers: [] });
   skinMock.skin = 'procedural';
 });
 
@@ -379,102 +379,59 @@ describe('DecisionCountdown', () => {
     expect(urgentSeen).toBe(true);
   });
 
-  it('摆放：等掷骰在中线偏上（center），决策框在中央避让（top），回合横幅显示期间 center 让位', () => {
+  it('始终在画面正中央、不避让：换决策种类、展开回合菜单、回合横幅、停靠栏、左手模式都不改变摆放（没有内联位置）', () => {
     setDecision(decision({ deadlineAt: T0 + 20_000 }));
     render(<DecisionCountdown room={room} variant="hud" options={quiet()} />);
     const timer = () => screen.getByTestId('decision-countdown');
-    expect(timer()).toHaveAttribute('data-place', 'center');
-    expect(timer()).toHaveAttribute('data-yield', 'false');
+    const same = (): void => {
+      const el = timer();
+      expect(el.getAttribute('style')).toBeNull();
+      for (const a of ['data-place', 'data-yield', 'data-anchor']) expect(el).not.toHaveAttribute(a);
+      expect(el.parentElement).toBe(screen.getByTestId('decision-countdown-layer'));
+      expect(el.parentElement).not.toHaveAttribute('data-dock');
+    };
+    same();
     act(() => {
       useUiStore.getState().showBanner({ kind: 'turn', title: '轮到你了' });
     });
-    expect(timer()).toHaveAttribute('data-yield', 'true');
+    // 回合横幅显示期间照常显示（层级在横幅之上）
+    same();
+    expect(timer()).toBeVisible();
     act(() => useUiStore.getState().hideBanner());
-    expect(timer()).toHaveAttribute('data-yield', 'false');
-    // 展开回合菜单：对话框在中央。jsdom 量不到对话框（也没有圆环）：放不下 → 隐去（data-anchor="none"）
     act(() => useUiStore.getState().openMenu(null));
-    expect(timer()).toHaveAttribute('data-place', 'top');
-    expect(timer()).toHaveAttribute('data-anchor', 'none');
+    same();
     act(() => useUiStore.getState().openPanel(null));
-    expect(timer()).toHaveAttribute('data-place', 'center');
-    setDecision(decision({ decisionId: 'd2', kind: 'BUY_LAND', timing: 'confirm', deadlineAt: T0 + 20_000 }));
-    expect(timer()).toHaveAttribute('data-place', 'top');
-    expect(timer()).toHaveAttribute('data-kind', 'BUY_LAND');
-  });
-
-  it('countdownPlace / anchorAboveDialog / dialogAnchor', () => {
-    expect(countdownPlace('TURN_MENU', null, false)).toBe('center');
-    expect(countdownPlace('TURN_MENU', 'cards', false)).toBe('center');
-    expect(countdownPlace('TURN_MENU', 'menu', false)).toBe('top');
-    expect(countdownPlace('BANK_ATM', null, false)).toBe('top');
-    expect(countdownPlace('TURN_MENU', null, true)).toBe('stage');
-    const layer = new DOMRect(0, 66, 1620, 904);
-    // 对话框上方留有 200px：小牌底边落在对话框上缘之上 8px、水平居中
-    expect(anchorAboveDialog(layer, new DOMRect(500, 266, 400, 300))).toEqual({ x: 700, y: 192, mode: 'dialog' });
-    // 放不下（对话框顶着决策层上缘）
-    expect(anchorAboveDialog(layer, new DOMRect(500, 90, 400, 700))).toBeNull();
-    expect(anchorAboveDialog(layer, new DOMRect(0, 0, 0, 0))).toBeNull();
-    // 回归（复审）：手机横屏 844×390，决策层只有两百多像素高，对话框上方放不下 → 叠到对话框标题栏里圆环的左边
-    // （小牌右边中点离圆环 8px、与圆环垂直居中），不再整个隐去
-    const phone = new DOMRect(0, 48, 644, 266);
-    const dialog = new DOMRect(84, 52, 476, 258);
-    const ring = new DOMRect(500, 62, 44, 44);
-    expect(dialogAnchor(phone, dialog, ring)).toEqual({ x: 492, y: 36, mode: 'ring' });
-    expect(dialogAnchor(phone, dialog, null)).toBeNull();
-    expect(dialogAnchor(phone, dialog, new DOMRect(0, 0, 0, 0))).toBeNull();
-    // 上方放得下时仍在正上方
-    expect(dialogAnchor(layer, new DOMRect(500, 266, 400, 300), ring)).toEqual({ x: 700, y: 192, mode: 'dialog' });
-  });
-
-  it('程序化布局：对话框上方放不下时摆到圆环左边（data-anchor="ring"，内联 left/top）', () => {
-    setDecision(decision({ kind: 'BUY_LAND', timing: 'confirm', deadlineAt: T0 + 20_000 }));
-    // 模拟手机横屏的决策层与对话框（jsdom 没有布局，直接给矩形）
-    const rects = new Map<string, DOMRect>([
-      ['layer', new DOMRect(0, 48, 644, 266)],
-      ['dialog', new DOMRect(84, 52, 476, 258)],
-      ['ring', new DOMRect(500, 62, 44, 44)],
-    ]);
-    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
-      const k = this.getAttribute('data-rect');
-      return (k && rects.get(k)) || new DOMRect(0, 0, 0, 0);
-    });
-    render(
-      <>
-        <div data-testid="decision-layer">
-          <section role="dialog" data-rect="dialog">
-            <span data-testid="countdown" data-rect="ring" />
-          </section>
-        </div>
-        <DecisionCountdown room={room} variant="hud" options={quiet()} />
-      </>,
-    );
-    const timer = screen.getByTestId('decision-countdown');
-    (timer.parentElement as HTMLElement).setAttribute('data-rect', 'layer');
-    tick(300);
-    expect(timer).toHaveAttribute('data-place', 'top');
-    expect(timer).toHaveAttribute('data-anchor', 'ring');
-    expect(timer.style.left).toBe('492px');
-    expect(timer.style.top).toBe('36px');
-    spy.mockRestore();
-  });
-
-  it('程序化布局：左侧日志 / 聊天停靠栏开着时标 data-dock（center 的数字据此不越过停靠栏右缘）', () => {
-    setDecision(decision({ deadlineAt: T0 + 20_000 }));
-    render(<DecisionCountdown room={room} variant="hud" options={quiet()} />);
-    const layer = () => screen.getByTestId('decision-countdown').parentElement!;
-    expect(layer()).toHaveAttribute('data-dock', 'false');
-    act(() => useUiStore.getState().setLogOpen(true));
-    expect(layer()).toHaveAttribute('data-dock', 'true');
     act(() => {
-      useUiStore.getState().setLogOpen(false);
+      useUiStore.getState().setLogOpen(true);
       useUiStore.getState().setChatOpen(true);
     });
-    expect(layer()).toHaveAttribute('data-dock', 'true');
-    act(() => useUiStore.getState().setChatOpen(false));
-    expect(layer()).toHaveAttribute('data-dock', 'false');
+    same();
+    setDecision(decision({ decisionId: 'd2', kind: 'BUY_LAND', timing: 'confirm', deadlineAt: T0 + 20_000 }));
+    same();
+    expect(timer()).toHaveAttribute('data-kind', 'BUY_LAND');
+    const layer = screen.getByTestId('decision-countdown-layer');
+    expect(layer).toHaveAttribute('data-left', 'false');
+    act(() => useSettingsStore.getState().setLeftHanded(true));
+    expect(layer).toHaveAttribute('data-left', 'true');
+    act(() => useSettingsStore.getState().setLeftHanded(false));
   });
 
-  it('原版布局：经 portal 挂到经典舞台容器上（与舞台同一落点与缩放），层级高于原版场景；铺满舞台的场景开着时移到舞台顶端', () => {
+  it('程序化布局：整层经 portal 挂到 body 上（对局页 .game 自成层叠上下文，radix 模态面板在 body 上），带 HUD 尺寸变量', () => {
+    setDecision(decision({ deadlineAt: T0 + 20_000 }));
+    const { container } = render(
+      <main data-testid="game-root">
+        <DecisionCountdown room={room} variant="hud" options={quiet()} />
+      </main>,
+    );
+    const layer = screen.getByTestId('decision-countdown-layer');
+    expect(layer.parentElement).toBe(document.body);
+    expect(container.querySelector('[data-testid="decision-countdown-layer"]')).toBeNull();
+    expect(layer.className).toContain('hudLayer');
+    expect(layer.className).toContain('hudGeom');
+    expect(layer).toContainElement(screen.getByTestId('decision-countdown-live'));
+  });
+
+  it('原版布局：经 portal 挂到经典舞台容器上（与舞台同一落点与缩放），层级高于原版场景；数字不带内联位置（舞台正中）', () => {
     setDecision(decision({ deadlineAt: T0 + 20_000 }));
     render(
       <ClassicStage
@@ -494,24 +451,12 @@ describe('DecisionCountdown', () => {
     expect(layer.style.left).toBe('240px');
     const timer = screen.getByRole('timer');
     expect(timer).toHaveAttribute('data-variant', 'classic');
-    expect(timer).toHaveAttribute('data-place', 'center');
-    let off = (): void => {};
-    act(() => {
-      off = useSceneCoverStore.getState().add();
-    });
-    expect(timer).toHaveAttribute('data-place', 'stage');
-    expect([timer.style.left, timer.style.top]).toEqual(['320px', '2px']);
-    // 场景指定的位置（股市：自己的圆环左边）；后登记的优先，关掉后回到先前的
-    let off2 = (): void => {};
-    act(() => {
-      off2 = useSceneCoverStore.getState().add({ x: 572, y: 448 });
-    });
-    expect([timer.style.left, timer.style.top]).toEqual(['572px', '448px']);
-    act(() => off2());
-    expect([timer.style.left, timer.style.top]).toEqual(['320px', '2px']);
-    act(() => off());
-    expect(timer).toHaveAttribute('data-place', 'center');
-    expect(timer.style.left).toBe('');
+    expect(timer.getAttribute('style')).toBeNull();
+    expect(timer).not.toHaveAttribute('data-place');
+    // 展开回合菜单、换决策种类都不改变
+    act(() => useUiStore.getState().openMenu(null));
+    setDecision(decision({ decisionId: 'd2', kind: 'BANK_ATM', timing: 'confirm', deadlineAt: T0 + 20_000 }));
+    expect(screen.getByRole('timer').getAttribute('style')).toBeNull();
   });
 
   it('样式：整层不接收指针；最后 10 秒的脉动遵守 prefers-reduced-motion', () => {
@@ -523,8 +468,57 @@ describe('DecisionCountdown', () => {
       return css.slice(i, css.indexOf('}', i));
     };
     for (const sel of ['.hudLayer', '.classicLayer', '.countdown']) expect(rule(sel)).toContain('pointer-events: none');
+    // 程序化层挂在 body 上：position: fixed；数字在层的正中
+    expect(rule('.hudLayer')).toContain('position: fixed');
+    const face = rule('.countdown');
+    for (const d of ['left: 50%', 'top: 50%', 'transform: translate(-50%, -50%)']) expect(face).toContain(d);
+    // 原版：640×480 舞台正中
+    const classic = rule('.classicLayer .countdown');
+    expect(classic).toContain('left: 320px');
+    expect(classic).toContain('top: 240px');
+    // 不再有避让的摆放
+    for (const gone of ['data-place', 'data-anchor', 'data-dock', 'data-yield']) expect(css).not.toContain(gone);
     const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
     expect(reduced).toContain('animation: none');
+  });
+
+  it('层级：程序化倒计时层高于决策 / 游戏面板（Modal 缺省 40 / 41），低于系统界面（Modal layer="system"，同原版）', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const zOf = (file: string, sel: string): number => {
+      const css = readFileSync(join(here, file), 'utf8');
+      const i = css.indexOf(`\n${sel} {`);
+      expect(i, sel).toBeGreaterThanOrEqual(0);
+      const m = /z-index:\s*(\d+)/.exec(css.slice(i, css.indexOf('}', i)));
+      expect(m, sel).not.toBeNull();
+      return Number(m![1]);
+    };
+    const cd = zOf('countdown.module.css', '.hudLayer');
+    const cmp = '../components/components.module.css';
+    expect(cd).toBeGreaterThan(zOf(cmp, '.overlay'));
+    expect(cd).toBeGreaterThan(zOf(cmp, '.modal'));
+    expect(zOf(cmp, '.overlay[data-layer="system"]')).toBeGreaterThan(cd);
+    expect(zOf(cmp, '.modal[data-layer="system"]')).toBeGreaterThan(zOf(cmp, '.overlay[data-layer="system"]'));
+  });
+
+  it('程序化布局：上下缘用实测的顶栏 / 底栏高度（行动区折行、等待条出现时跟着变）；还没量到时按 CSS 缺省', () => {
+    expect(hudLayerStyle(null)).toBeUndefined();
+    expect(hudLayerStyle({ top: 0, bottom: 0 })).toBeUndefined();
+    expect(hudLayerStyle({ top: 56, bottom: 112 })).toEqual({ top: 56, bottom: 112 });
+    setDecision(decision({ deadlineAt: T0 + 20_000 }));
+    const { rerender } = render(
+      <DecisionCountdown room={room} variant="hud" hudBars={{ top: 56, bottom: 72 }} options={quiet()} />,
+    );
+    const layer = screen.getByTestId('decision-countdown-layer');
+    expect(layer.style.top).toBe('56px');
+    expect(layer.style.bottom).toBe('72px');
+    // 行动区折成两行（或等待条出现）：底栏变高，层的下缘跟着上移
+    rerender(<DecisionCountdown room={room} variant="hud" hudBars={{ top: 56, bottom: 112 }} options={quiet()} />);
+    expect(layer.style.bottom).toBe('112px');
+    rerender(<DecisionCountdown room={room} variant="hud" options={quiet()} />);
+    expect(layer.style.top).toBe('');
+    expect(layer.style.bottom).toBe('');
+    // 数字本身仍不带内联位置（在层的正中）
+    expect(screen.getByRole('timer').getAttribute('style')).toBeNull();
   });
 });
 

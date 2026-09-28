@@ -1,8 +1,7 @@
-// 原版布局的中央决策倒计时（ui/common/DecisionCountdown 的 classic 挂载点）：一层与经典舞台同一落点、同一缩放的
+// 原版布局的画面正中央决策倒计时（ui/common/DecisionCountdown 的 classic 挂载点）：一层与经典舞台同一落点、同一缩放的
 // 640×480 逻辑坐标透明层，经 portal 挂到经典舞台容器（.frame）上——棋盘叠层（40）自成层叠上下文，原版场景（48）也是
-// portal 到 .frame 的，倒计时要在场景之上（场景铺满棋盘视窗时仍看得到）、侧栏抽屉（70）之下，所以不能留在叠层里。
-// 数字的摆放见 countdown.module.css（棋盘视窗中线偏上；场景在棋盘中央时移到棋盘视窗上缘的中线；铺满舞台的场景开着时
-// 摆到场景登记的位置——缺省舞台顶端中线，见 common/sceneCover）。整层不接收指针。
+// portal 到 .frame 的，倒计时要在场景之上（铺满舞台的场所开着时仍看得到）、侧栏抽屉（70）之下，所以不能留在叠层里。
+// 数字始终在舞台正中 (320,240)，不避让（见 countdown.module.css）。整层不接收指针。
 // 不在经典舞台之内时（单测、预览）就地渲染在父元素左上角。
 import type { RoomView } from '@rich4/shared/net';
 import { type CSSProperties, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
@@ -11,7 +10,6 @@ import s from '../common/countdown.module.css';
 import { DecisionCountdown } from '../common/DecisionCountdown';
 import type { UseDecisionCountdownOptions } from '../common/useDecisionCountdown';
 import { useClassicBox } from './ClassicStage';
-import { useStageBadgeAt } from './common/sceneCover';
 import { SCENE_Z, scenePlacement } from './common/stage';
 
 /** 倒计时层：高于原版场景，低于侧栏抽屉 */
@@ -26,7 +24,6 @@ export function ClassicCountdown({
   options?: UseDecisionCountdownOptions;
 }): ReactNode {
   const box = useClassicBox();
-  const stageAt = useStageBadgeAt();
   const anchorRef = useRef<HTMLSpanElement>(null);
   // undefined：还没找过舞台容器（首帧先渲染锚点，布局阶段找到后同步重渲染）
   const [host, setHost] = useState<HTMLElement | null | undefined>(undefined);
@@ -47,7 +44,7 @@ export function ClassicCountdown({
       }
       data-testid="decision-countdown-layer"
     >
-      <DecisionCountdown room={room} variant="classic" stageAt={stageAt} options={options} />
+      <DecisionCountdown room={room} variant="classic" options={options} />
     </div>
   );
   return (

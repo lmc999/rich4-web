@@ -66,11 +66,6 @@ export const ITEM_AT = { x: 100, y: 70 } as const;
 export const ITEM_BUILDING_AT = { x: 100, y: 46 } as const;
 /** 价格牌（十字花纹框） */
 export const PRICE_BOARD: Rect = { x: 188, y: 10, w: 302, h: 126 };
-/**
- * 中央决策倒计时的小牌（场景坐标，上缘中点；common/sceneCover）：舞台顶端正中是价格牌的标题行，改到价格牌右边与
- * 右上角圆环（x 604–636）之间的背景上，与圆环同高
- */
-export const AUCTION_BADGE = { x: 548, y: 8 } as const;
 /** 「按起拍价出价」文字钮（原版没有这一档的钮图） */
 export const START_BID: Rect = { x: 330, y: 140, w: 150, h: 26 };
 /** 竞拍者站位：地面线与横向范围 */

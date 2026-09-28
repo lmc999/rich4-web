@@ -28,7 +28,15 @@ import {
   WIDE_ROW_H,
   walkerAt,
 } from './layout';
-import { FIELD_TEST_IDS, fieldSpec, mapOptions, ONLINE_FIELDS, withField } from './settingsFields';
+import {
+  FIELD_TEST_IDS,
+  fieldSpec,
+  mapOptions,
+  ONLINE_FIELDS,
+  SETUP_FIELD_KEYS,
+  WIDE_FIELDS,
+  withField,
+} from './settingsFields';
 import { decideScreens, type ScreensInput, screenKeysUsable } from './useClassicScreens';
 
 const overlaps = (a: Rect, b: Rect): boolean =>
@@ -169,9 +177,17 @@ describe('几何', () => {
     }
   });
 
-  it('手机横屏的设置面板：14 项 + 快速局按两列排下，行高 56（≥44px），在竖栏左侧', () => {
+  it('手机横屏的设置面板：14 项 + 快速局按两列排下（计时档位带说明占满整行），行高 56（≥44px），在竖栏左侧', () => {
     expect(WIDE_ROW_H * PHONE_SCALE).toBeGreaterThanOrEqual(44);
-    const rows = Math.ceil((SETUP_FIELDS.length + ONLINE_FIELDS.length + 1) / 2);
+    // 字段齐全、不重复：竖栏 6 项 + 联机设置
+    const all = [...SETUP_FIELDS.map((f) => SETUP_FIELD_KEYS[f.field]), ...ONLINE_FIELDS];
+    expect([...WIDE_FIELDS].sort()).toEqual([...all].sort());
+    expect(new Set(WIDE_FIELDS).size).toBe(WIDE_FIELDS.length);
+    // 占满整行的计时档位落在左列（前面偶数项），右列不留空格
+    expect(WIDE_FIELDS.indexOf('timerPreset') % 2).toBe(0);
+    const slots = WIDE_FIELDS.length + 1 + 1;
+    const rows = Math.ceil(slots / 2);
+    expect(rows).toBe(8);
     expect(rows * WIDE_ROW_H + 8).toBeLessThanOrEqual(WIDE_PANEL.h);
     expect(WIDE_PANEL.x + WIDE_PANEL.w).toBeLessThanOrEqual(COLUMN.x);
     expect(WIDE_PANEL.y + WIDE_PANEL.h).toBeLessThanOrEqual(480);

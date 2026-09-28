@@ -7,6 +7,8 @@
  *        [--ramp 20] [--map taiwan] [--days 0] [--admin-token <token>] [--delay 500] [--p99-max 50]
  *        [--ai-pace normal|fast] [--pacing original|compact] [--passcode <口令>] [--cookie <r4_access=…>] [--insecure] [--json]
  *   --json 时进度写 stderr、结果 JSON 写 stdout；要拿干净的 stdout 用 npm run -s loadtest（不带 -s 时 npm 会先打印命令行）。
+ * - --humans 1（默认）的房间只有一名真人，按有效计时档位不限时（design/net.md §5.4）：没有决策截止定时器、不会超时代决；
+ *   要把截止定时器与超时代决也算进负载，用 --humans 2 以上。判定规则不变。
  * - 全部连接来自同一个 IP：生产额度（同 IP 30 个并发连接、每分钟建房 5 次）只在服务器 RICH4_TEST_MODE=1 时放宽
  *   （app.ts 的 TEST_MODE_IP_RELAX）；目标服务器不在测试模式时会报 SERVER_BUSY / RATE_LIMITED 并给出提示。
  * - https 且主机是 localhost（或加 --insecure）时接受自签证书：只作用于本脚本自己的连接与请求，不改 NODE_TLS_REJECT_UNAUTHORIZED。

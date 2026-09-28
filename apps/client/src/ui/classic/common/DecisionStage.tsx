@@ -12,14 +12,7 @@ import { type SceneBackdrop, type SceneStatusTone, Stage4x3, type Stage4x3Props 
 export interface DecisionStageProps
   extends Pick<
     Stage4x3Props,
-    | 'initialFocus'
-    | 'className'
-    | 'onKeyDown'
-    | 'closeButton'
-    | 'closeTestId'
-    | 'scale'
-    | 'countdownAt'
-    | 'countdownBadgeAt'
+    'initialFocus' | 'className' | 'onKeyDown' | 'closeButton' | 'closeTestId' | 'scale' | 'countdownAt'
   > {
   ctl: DecisionController;
   decision: Pick<DecisionForYou, 'kind' | 'seat' | 'decisionId'>;

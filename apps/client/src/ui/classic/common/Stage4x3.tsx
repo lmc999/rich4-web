@@ -7,8 +7,6 @@
 //   Esc 与关闭钮调用 onClose；data-state="open" 让经典热键（空格、D、M…）暂停；
 // - 倒计时圆环叠在右上角；状态条（等待 X… / 已提交 / 时间到）在顶部居中；
 // - 只读（托管中、非本人）：不抢焦点、不挡棋盘（pointer-events: none），控件全部禁用；
-// - 背板为 opaque / dim 的模态场景登记中央决策倒计时小牌的位置（sceneCover；countdownBadgeAt，缺省舞台顶端中线），
-//   倒计时据此避让；
 // - 手机横屏（舞台缩小）或粗指针：data-hit="wide"，--hit 为 44px 折成的场景逻辑像素（Hotspots、ClassicButton 据此补透明热区）。
 // 不在经典舞台之内时（单测、预览）就地渲染在父元素左上角，按 scale 缩放。
 import clsx from 'clsx';
@@ -28,7 +26,6 @@ import { CountdownRing } from '../../components/Countdown';
 import { useClassicBox } from '../ClassicStage';
 import s from './common.module.css';
 import { shouldTakeFocus } from './focus';
-import { STAGE_BADGE_TOP, type StageBadgeAt, useFullStageCover } from './sceneCover';
 import { coarsePointer, hitMinLogical, SCENE_H, SCENE_W, SCENE_Z, scenePlacement, wantsWideHit } from './stage';
 
 export type SceneBackdrop = 'none' | 'dim' | 'opaque';
@@ -51,12 +48,6 @@ export interface Stage4x3Props {
   countdown?: { remainingMs: number | null; totalMs: number | null } | null;
   /** 圆环左上角的场景坐标（缺省场景右上角；只占棋盘视窗的小场景可以放到棋盘视窗右上角） */
   countdownAt?: { x: number; y: number };
-  /**
-   * 画面中央的决策倒计时在本场景开着时摆到哪（场景坐标，小牌上缘中点；common/sceneCover）。缺省：背板 opaque / dim
-   * （盖住整个舞台）的在舞台顶端中线 STAGE_BADGE_TOP，none（棋盘仍可见）不登记、倒计时按决策框位置摆；
-   * 顶端正中有内容的场景给一个空处；null 为明确不登记
-   */
-  countdownBadgeAt?: StageBadgeAt | null;
   /** Esc 与关闭钮 */
   onClose?: () => void;
   /** 显示右上角的关闭钮（缺省：给了 onClose 就显示；场景自己有 EXIT / NO 钮时可关掉） */
@@ -102,7 +93,6 @@ export function Stage4x3({
   statusTone = 'info',
   countdown,
   countdownAt,
-  countdownBadgeAt,
   onClose,
   closeButton,
   closeLabel,
@@ -125,9 +115,6 @@ export function Stage4x3({
   const canAct = (interactive ?? !readOnly) && isPresent;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-  // 模态场景登记倒计时小牌的位置：画面中央的决策倒计时据此避让（sceneCover.ts）
-  const badgeAt = countdownBadgeAt === undefined ? (backdrop === 'none' ? null : STAGE_BADGE_TOP) : countdownBadgeAt;
-  useFullStageCover(modal ? badgeAt : null);
 
   useLayoutEffect(() => {
     setHost(anchorRef.current?.closest<HTMLElement>('[data-testid="classic-stage"]') ?? null);

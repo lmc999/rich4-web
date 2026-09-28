@@ -7,7 +7,9 @@ import {
   type PacingProfile,
   type RoomSettings,
   type RoomSettingsPatch,
+  type RoomView,
   type TimerPreset,
+  UNTIMED_MAX_HUMAN_SEATS,
 } from '@rich4/shared/net';
 import { noteApiStatus } from '../access/accessStore';
 
@@ -51,6 +53,27 @@ export function defaultDraft(mapId = 'taiwan'): SettingsDraft {
     aiCount: 0,
     aiPreset: 'character',
   };
+}
+
+/**
+ * 大厅：现在座位上只有一名真人（其余是电脑或空位），开局就不计时（design/net.md §5.4）。房间档位不是 off 时看服务器下发的
+ * 有效档位；房间档位是 off 时有效档位恒为 off、看不出来，按座位上的真人数（与服务器的大厅推算同一规则）。
+ * 旧服务器不下发有效档位时为 false（不提示）
+ */
+export function soloHumanNow(room: RoomView): boolean {
+  if (room.effectiveTimerPreset === undefined) return false;
+  if (room.settings.timerPreset !== 'off') return room.effectiveTimerPreset === 'off';
+  return room.seats.filter((s) => s.occupant?.kind === 'human').length <= UNTIMED_MAX_HUMAN_SEATS;
+}
+
+/** 建房：电脑补满其余座位（1..3 号都是电脑），开局时只有房主一名真人 */
+export function draftSoloHuman(d: SettingsDraft): boolean {
+  return d.aiCount >= 3;
+}
+
+/** 计时说明此刻就适用（换成「现在只有一名真人：开局后不计时」）：只有一名真人，且计时档位不是 off */
+export function timerHintActive(timerPreset: TimerPreset, soloHuman: boolean): boolean {
+  return soloHuman && timerPreset !== 'off';
 }
 
 /** 快速局：1 年、10 倍（architecture §5.3） */

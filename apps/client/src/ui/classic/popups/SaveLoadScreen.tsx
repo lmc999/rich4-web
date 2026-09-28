@@ -10,7 +10,6 @@ import { formatDate } from '../../../presentation/names';
 import { useGameStore } from '../../../store/gameStore';
 import { SaveLoadMenu } from '../../system/SaveLoadMenu';
 import { Stage4x3 } from '../common/Stage4x3';
-import { STAGE_BADGE_TOP, type StageBadgeAt } from '../common/sceneCover';
 import { classicText } from '../common/textStyles';
 import { Sprite } from '../Sprite';
 import { SAVELOAD_SHEET } from './layout';
@@ -25,14 +24,6 @@ export const SAVELOAD = {
   panel: { x: 84, y: 12, w: 460 },
   thumb: { frame0: 2, maps: ['taiwan', 'china', 'japan', 'usa'] as const },
 } as const;
-
-/**
- * 中央决策倒计时的小牌（场景坐标，上缘中点；common/sceneCover）：窗口居中、盖住棋盘视窗中线与上缘，小牌摆在窗口上缘之上
- * 12（约一半压在窗框的装饰边上，不碰标题与存档行），窗口太高（读档窗口几乎顶满舞台）时贴舞台顶端
- */
-export function saveLoadBadgeAt(windowY: number): StageBadgeAt {
-  return { x: 320, y: Math.max(STAGE_BADGE_TOP.y, windowY - 12) };
-}
 
 export type SaveLoadMode = 'load' | 'save';
 
@@ -63,7 +54,6 @@ export function SaveLoadScreen({
       testId="classic-saves"
       label={mode === 'load' ? t('classic:tool.load') : t('classic:tool.save')}
       backdrop="dim"
-      countdownBadgeAt={saveLoadBadgeAt(y)}
       onClose={onClose}
       closeLabel={t('cmp.close')}
       attrs={{ 'data-classic': 'true', 'data-mode': mode }}

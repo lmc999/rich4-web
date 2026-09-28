@@ -11,7 +11,7 @@ import {
   type PlayerSetup,
   type SeatIndex,
 } from '@rich4/shared/engine';
-import { DEFAULT_PACING, type GameOverMsg } from '@rich4/shared/net';
+import { DEFAULT_PACING, type GameOverMsg, type TimerPreset } from '@rich4/shared/net';
 import type { SeatControl } from '@rich4/shared/view';
 import { AiDriver } from '../../src/game/AiDriver';
 import { DEFAULT_TIMING, type TimingOptions } from '../../src/game/Deadlines';
@@ -41,6 +41,8 @@ export interface HarnessRecord {
   batches: RawBatch[];
   pendingChanged: number;
   controls: { seat: SeatIndex; control: SeatControl; prev: SeatControl }[];
+  /** hooks.timerPresetChanged（真人被淘汰使有效计时档位改变）；batches 为调用时已广播的 batch 数（应先于这一批的 batch） */
+  presetChanges: { preset: TimerPreset; batches: number }[];
   over: GameOverMsg[];
   stuck: SeatIndex[];
   timedOut: { seat: SeatIndex; by: 'default' | 'ai' }[];
@@ -72,6 +74,7 @@ export function makeRunner(o: HarnessOptions = {}) {
     batches: [],
     pendingChanged: 0,
     controls: [],
+    presetChanges: [],
     over: [],
     stuck: [],
     timedOut: [],
@@ -105,6 +108,7 @@ export function makeRunner(o: HarnessOptions = {}) {
           rec.pendingChanged++;
         },
         controlChanged: (seat, control, prev) => rec.controls.push({ seat, control, prev }),
+        timerPresetChanged: (preset) => rec.presetChanges.push({ preset, batches: rec.batches.length }),
         gameOver: (msg) => rec.over.push(msg),
         dayEnd: () => {
           rec.dayEnds++;

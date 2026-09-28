@@ -7,7 +7,7 @@
 // 两种布局共用这里的地图加载、棋盘（BoardCanvas）、决策时钟与棋盘桥；经典布局的棋盘视窗不被 HUD 遮挡（insets 为 0）。
 import type { SeatIndex } from '@rich4/shared/engine';
 import type { RoomView } from '@rich4/shared/net';
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useClient } from '../../app/services';
 import type { Insets } from '../../game/camera/Camera';
 import type { Pt } from '../../game/iso/projection';
@@ -44,39 +44,9 @@ import { SpectatorList } from '../social/SpectatorList';
 import { RotateHint } from '../system/RotateHint';
 import { SystemMenu } from '../system/SystemMenu';
 import { BoardCanvas } from './BoardCanvas';
+import { useHudInsets } from './useHudInsets';
 
 const ZERO: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
-
-/** 右栏、顶栏、底栏的实际尺寸 → 镜头 insets（窗口或布局变化时更新；layout 换了要重新挂观察） */
-function useHudInsets(
-  top: React.RefObject<HTMLElement | null>,
-  right: React.RefObject<HTMLElement | null>,
-  bottom: React.RefObject<HTMLElement | null>,
-  layout: string,
-): Insets {
-  const [insets, setInsets] = useState<Insets>(ZERO);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: layout 变化时 ref 指向的元素换了，要重新量
-  useLayoutEffect(() => {
-    const measure = (): void => {
-      const next: Insets = {
-        top: top.current?.offsetHeight ?? 0,
-        right: right.current?.offsetWidth ?? 0,
-        bottom: bottom.current?.offsetHeight ?? 0,
-        left: 0,
-      };
-      setInsets((cur) => (cur.top === next.top && cur.right === next.right && cur.bottom === next.bottom ? cur : next));
-    };
-    measure();
-    if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', measure);
-      return () => window.removeEventListener('resize', measure);
-    }
-    const ro = new ResizeObserver(measure);
-    for (const r of [top, right, bottom]) if (r.current) ro.observe(r.current);
-    return () => ro.disconnect();
-  }, [top, right, bottom, layout]);
-  return insets;
-}
 
 export default function GameScreen({ room, onLeave }: { room: RoomView; onLeave(): void }): ReactNode {
   const t = useTx();
@@ -100,7 +70,8 @@ export default function GameScreen({ room, onLeave }: { room: RoomView; onLeave(
   const skin = useGameSkin(entry?.def ?? null);
   // 经典布局：原版皮肤且地图已载入（与界面语言、主题的切换时机一致）
   const classic = skin.resolution.skin === 'original' && !!entry?.def;
-  const insets = useHudInsets(topRef, rightRef, bottomRef, classic ? 'classic' : 'default');
+  // 左手模式右栏在左边缘：insets 左右对调，镜头中心才是看得见的棋盘视口正中（与中央倒计时重合）
+  const insets = useHudInsets(topRef, rightRef, bottomRef, classic ? 'classic' : 'default', leftHanded);
 
   useEffect(() => {
     if (!mapId || !mapHash) return;
@@ -261,7 +232,7 @@ export default function GameScreen({ room, onLeave }: { room: RoomView; onLeave(
       <PausedBanner room={room} />
       <PopupLayer map={map} />
       {map && <DecisionLayer view={view} map={map} room={room} />}
-      <DecisionCountdown room={room} variant="hud" />
+      <DecisionCountdown room={room} variant="hud" hudBars={insets} />
       {map && <PanelHost view={view} map={map} room={room} />}
       <GameOverPanel view={view} room={room} onLeave={onLeave} />
       <RotateHint />

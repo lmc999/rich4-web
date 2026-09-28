@@ -24,6 +24,8 @@ import {
   fetchMapList,
   type MapListingLite,
   type SettingsDraft,
+  soloHumanNow,
+  timerHintActive,
 } from '../../lobby/settingsDraft';
 import { useCommitPick, usePickCursor } from '../../lobby/useCharacterPick';
 import { ChatPanel } from '../../social/ChatPanel';
@@ -599,6 +601,8 @@ function LobbySettings({ room }: { room: RoomView }): ReactNode {
     setDraft(d);
     if (!(await run(client.updateSettings(draftToPatch(d))))) setDraft(draftFromSettings(room.settings));
   };
+  // 现在座位上只有一名真人、档位不是 off：开局就不计时，计时说明换成「现在只有一名真人：开局后不计时」并高亮
+  const untimedNow = timerHintActive(draft.timerPreset, soloHumanNow(room));
 
   return (
     <div className={clsx(s.railSettings)} data-testid="room-settings">
@@ -609,6 +613,7 @@ function LobbySettings({ room }: { room: RoomView }): ReactNode {
           draft={draft}
           onChange={(d) => void change(d)}
           disabled={!editable}
+          hintActive={k === 'timerPreset' && untimedNow}
         />
       ))}
     </div>

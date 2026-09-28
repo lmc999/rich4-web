@@ -36,6 +36,11 @@ export interface ModalProps {
   width?: number;
   /** false 时点遮罩与 Esc 不关闭（仍可点关闭按钮） */
   dismissable?: boolean;
+  /**
+   * 层级：'panel'（缺省，遮罩 40、面板 41，决策与游戏面板）；'system'（遮罩 46、面板 47：系统菜单、设置、托管设置这类
+   * 系统界面，盖在画面正中央的决策倒计时 z 45 之上——数字只压在决策内容上，不压系统界面，与原版皮肤一致）
+   */
+  layer?: 'panel' | 'system';
   testId?: string;
 }
 
@@ -49,6 +54,7 @@ export function Modal({
   sheet = 'auto',
   width,
   dismissable = true,
+  layer = 'panel',
   testId,
 }: ModalProps): ReactNode {
   const { t } = useTranslation();
@@ -61,12 +67,13 @@ export function Modal({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className={s.overlay} />
+        <Dialog.Overlay className={s.overlay} data-layer={layer} />
         <Dialog.Content
           className={clsx(s.modal, asSheet && s.sheet)}
           style={style}
           data-testid={testId}
           data-sheet={asSheet ? 'true' : 'false'}
+          data-layer={layer}
           onPointerDownOutside={block}
           onEscapeKeyDown={block}
           {...(description === undefined ? { 'aria-describedby': undefined } : {})}

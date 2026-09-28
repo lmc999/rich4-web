@@ -20,6 +20,8 @@ import {
   AI_THINK_MS,
   DECISION_TIMEOUT_S,
   decisionTimeoutMs,
+  effectiveTimerPreset,
+  isHumanSeatControl,
   MENU_CHAIN_MIN_S,
   MENU_TURN_CAP_S,
   NET_GRACE_MS,
@@ -68,6 +70,19 @@ describe('计时（architecture §5.9）', () => {
     expect(decisionTimeoutMs('confirm', 'fast')).toBe(7_500);
     expect(decisionTimeoutMs('pick', 'slow')).toBe(40_000);
     expect(decisionTimeoutMs('auction', 'off')).toBeNull();
+  });
+
+  it('有效计时档位：真人座位 ≤ 1 时不限时；托管中的真人算真人，电脑与离开的座位不算', () => {
+    expect(effectiveTimerPreset('normal', 1)).toBe('off');
+    expect(effectiveTimerPreset('fast', 0)).toBe('off');
+    expect(effectiveTimerPreset('fast', 2)).toBe('fast');
+    expect(effectiveTimerPreset('slow', 4)).toBe('slow');
+    expect(effectiveTimerPreset('off', 3)).toBe('off');
+    for (const c of ['human', 'autopilot:manual', 'autopilot:afk', 'autopilot:disconnect'] as const) {
+      expect(isHumanSeatControl(c), c).toBe(true);
+    }
+    expect(isHumanSeatControl('ai')).toBe(false);
+    expect(isHumanSeatControl('autopilot:left')).toBe(false);
   });
 });
 

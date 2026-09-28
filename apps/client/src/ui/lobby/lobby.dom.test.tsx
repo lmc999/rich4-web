@@ -199,6 +199,8 @@ describe('CreateRoomForm', () => {
     await userEvent.selectOptions(screen.getByTestId('set-fund'), '100000');
     await userEvent.selectOptions(screen.getByTestId('set-vehicle'), 'car');
     await userEvent.selectOptions(screen.getByTestId('set-timer'), 'fast');
+    // 计时档位下的一行小字：只有一名真人时不计时（服务器按有效计时档位判定）
+    expect(screen.getByTestId('set-timer-hint')).toHaveTextContent('只有一名真人时不计时');
     expect(screen.getByTestId('set-pacing')).toHaveValue('original');
     await userEvent.selectOptions(screen.getByTestId('set-pacing'), 'compact');
     await userEvent.selectOptions(screen.getByTestId('set-visibility'), 'public');
@@ -233,6 +235,60 @@ describe('CreateRoomForm', () => {
   });
 });
 
+describe('计时说明（只有一名真人时不计时，net.md §5.4）', () => {
+  it('服务器下发的有效档位为 off、而设置不是 off（现在只有一名真人）：说明高亮；设置本身照常显示', () => {
+    const room = roomView({ effectiveTimerPreset: 'off' });
+    renderWith(<LobbyView room={room} onLeave={() => {}} />);
+    const box = screen.getByTestId('room-settings');
+    expect(within(box).getByText('决策计时').nextSibling).toHaveTextContent('普通');
+    expect(within(box).getByTestId('room-timer-hint')).toHaveAttribute('data-active', 'true');
+  });
+
+  it('此刻适用时文字本身换成「现在只有一名真人：开局后不计时」（不只靠颜色，读屏也听得出）；两名真人时是规则说明', () => {
+    const solo = renderWith(<LobbyView room={roomView({ effectiveTimerPreset: 'off' })} onLeave={() => {}} />);
+    expect(screen.getByTestId('room-timer-hint')).toHaveTextContent('现在只有一名真人：开局后不计时');
+    solo.unmount();
+    const two = roomView({
+      seats: [human(0, '房主', { isYou: true, host: true }), human(1, '小明'), seat(2), seat(3)],
+      effectiveTimerPreset: 'normal',
+    });
+    renderWith(<LobbyView room={two} onLeave={() => {}} />);
+    const hint = screen.getByTestId('room-timer-hint');
+    expect(hint).toHaveTextContent('只有一名真人时不计时');
+    expect(hint).not.toHaveTextContent('现在');
+    expect(hint).toHaveAttribute('data-active', 'false');
+  });
+
+  it('房主改设置：房间档位是 off、只有一名真人，草稿改成有时限时说明换成「现在只有一名真人…」', async () => {
+    const base = roomView();
+    const room = roomView({ settings: { ...base.settings, timerPreset: 'off' }, effectiveTimerPreset: 'off' });
+    renderWith(<LobbyView room={room} onLeave={() => {}} />);
+    // 房间档位本来就是不限时：不提示
+    expect(screen.getByTestId('room-timer-hint')).toHaveTextContent('只有一名真人时不计时');
+    expect(screen.getByTestId('room-timer-hint')).toHaveAttribute('data-active', 'false');
+    await userEvent.click(screen.getByTestId('settings-edit'));
+    expect(screen.getByTestId('set-timer-hint')).toHaveAttribute('data-active', 'false');
+    await userEvent.selectOptions(screen.getByTestId('set-timer'), 'fast');
+    expect(screen.getByTestId('set-timer-hint')).toHaveTextContent('现在只有一名真人：开局后不计时');
+    expect(screen.getByTestId('set-timer-hint')).toHaveAttribute('data-active', 'true');
+  });
+
+  it('建房：电脑补满其余三个座位时说明换成「现在只有一名真人：开局后不计时」；计时选「不限时」时不提示', async () => {
+    renderWith(<CreateRoomForm onCreated={() => {}} />);
+    const hint = (): HTMLElement => screen.getByTestId('set-timer-hint');
+    expect(hint()).toHaveTextContent('只有一名真人时不计时');
+    expect(hint()).toHaveAttribute('data-active', 'false');
+    await userEvent.selectOptions(screen.getByTestId('set-ai-count'), '2');
+    expect(hint()).toHaveAttribute('data-active', 'false');
+    await userEvent.selectOptions(screen.getByTestId('set-ai-count'), '3');
+    expect(hint()).toHaveTextContent('现在只有一名真人：开局后不计时');
+    expect(hint()).toHaveAttribute('data-active', 'true');
+    await userEvent.selectOptions(screen.getByTestId('set-timer'), 'off');
+    expect(hint()).toHaveTextContent('只有一名真人时不计时');
+    expect(hint()).toHaveAttribute('data-active', 'false');
+  });
+});
+
 describe('演出节奏（original-skin.md U3）', () => {
   it('建房默认「原版」；选项为 原版 / 紧凑', async () => {
     const { transport } = renderWith(<CreateRoomForm onCreated={() => {}} />);
@@ -255,7 +311,10 @@ describe('演出节奏（original-skin.md U3）', () => {
     const { transport } = renderWith(<LobbyView room={room} onLeave={() => {}} />);
     const box = screen.getByTestId('room-settings');
     expect(within(box).getByText('演出节奏').nextSibling).toHaveTextContent('原版');
+    expect(within(box).getByTestId('room-timer-hint')).toHaveTextContent('只有一名真人时不计时');
+    expect(within(box).getByTestId('room-timer-hint')).toHaveAttribute('data-active', 'false');
     await userEvent.click(screen.getByTestId('settings-edit'));
+    expect(within(box).getByTestId('set-timer-hint')).toHaveTextContent('只有一名真人时不计时');
     await userEvent.selectOptions(screen.getByTestId('set-pacing'), 'compact');
     await userEvent.click(screen.getByTestId('settings-save'));
     await waitFor(() => expect(transport.payloads('room:updateSettings')).toHaveLength(1));

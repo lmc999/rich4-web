@@ -372,6 +372,20 @@ describe('SystemMenu', () => {
     expect(screen.getByTestId('system-menu')).toBeInTheDocument();
   });
 
+  it('系统菜单、设置、托管设置都是系统层（盖在画面正中央的决策倒计时之上，遮罩同层）', async () => {
+    const room = roomView({ phase: 'playing' });
+    renderWith(<SystemMenu room={room} open onOpenChange={() => {}} onLeave={() => {}} />);
+    const layerOf = (id: string): string | null => screen.getByTestId(id).getAttribute('data-layer');
+    expect(layerOf('system-menu')).toBe('system');
+    await userEvent.click(screen.getByTestId('menu-settings'));
+    expect(await screen.findByTestId('settings-dialog')).toHaveAttribute('data-layer', 'system');
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByTestId('settings-dialog')).toBeNull());
+    await userEvent.click(screen.getByTestId('menu-trustee'));
+    expect(await screen.findByTestId('trustee-dialog')).toHaveAttribute('data-layer', 'system');
+    for (const o of document.querySelectorAll('[data-layer]')) expect(o.getAttribute('data-layer')).toBe('system');
+  });
+
   it('观战者：没有暂停、解散与托管入口', () => {
     const room = roomView({ phase: 'playing', you: { role: 'spectator', id: 'x', isHost: false } });
     renderWith(<SystemMenu room={room} open onOpenChange={() => {}} onLeave={() => {}} />);

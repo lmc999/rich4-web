@@ -2,6 +2,10 @@
 // 与同一套 data-testid（set-map、set-fund、set-timer…），E2E 在两种皮肤下用同一组选择器。这里只换表现层：
 // - BoxSelect：原版竖栏里烘焙的白框 + 箭头上叠一个透明的原生 <select>（桌面）；
 // - RowField：面板里的一行（标签 + 下拉 / 勾选框），手机横屏时行高 56（≥44 CSS 像素）。
+// 计时档位带一行小字「只有一名真人时不计时」（SelectSpec.hint；服务器按有效计时档位判定，design/net.md §5.4），
+// 此刻就适用时（大厅：现在座位上只有一名真人；建房：电脑补满其余三个座位）换成「现在只有一名真人：开局后不计时」
+// （SelectSpec.hintActive）并高亮：平时排在这一行下方；手机横屏两列面板里这一行占满整行，说明排在下拉框右边
+// （右列的位置，字号 14 逻辑像素——844×390 时约 11 CSS 像素），行高仍是 56。
 import {
   AI_PRESETS,
   INITIAL_FUND_OPTIONS,
@@ -15,7 +19,7 @@ import type { LooseT } from '../../../i18n/tx';
 import { type MapListingLite, PACING_OPTIONS, type SettingsDraft, TIMER_PRESETS } from '../../lobby/settingsDraft';
 import { regionStyle } from '../layout';
 import { Sprite } from '../Sprite';
-import { fieldRect, SETUP_SHEET, type SetupField } from './layout';
+import { fieldRect, SETUP_FIELDS, SETUP_SHEET, type SetupField } from './layout';
 import s from './screens.module.css';
 
 export type SelectKey =
@@ -42,6 +46,10 @@ export interface SelectSpec {
   label: string;
   options: readonly (string | number)[];
   render(v: string | number): string;
+  /** 一行小字说明（RowField 显示；testid 为 `<testId>-hint`） */
+  hint?: string;
+  /** 说明此刻就适用时换成这句（FieldProps.hintActive） */
+  hintActive?: string;
 }
 
 export interface CheckSpec {
@@ -183,6 +191,8 @@ export function fieldSpec(key: FieldKey, t: LooseT, draftMap: string, maps: read
         label: t('lobby:settings.timer'),
         options: TIMER_PRESETS,
         render: (v) => t(`lobby:timer.${v}`),
+        hint: t('lobby:settings.timerHint'),
+        hintActive: t('lobby:settings.timerHintActive'),
       };
     case 'pacing':
       return {
@@ -232,6 +242,8 @@ export interface FieldProps {
   draft: SettingsDraft;
   onChange(d: SettingsDraft): void;
   disabled?: boolean;
+  /** 说明此刻就适用（只有一名真人，开局就不计时）：换成 SelectSpec.hintActive 的文字并高亮 */
+  hintActive?: boolean;
 }
 
 /** 原版竖栏的下拉框：透明 <select> 叠在烘焙的白框与箭头上 */
@@ -264,7 +276,7 @@ export function BoxSelect({
 }
 
 /** 面板里的一行：标签 + 下拉（或勾选框：原版的勾 jump#4 图8） */
-export function RowField({ spec, draft, onChange, disabled }: FieldProps): ReactNode {
+export function RowField({ spec, draft, onChange, disabled, hintActive }: FieldProps): ReactNode {
   if (spec.kind === 'check') {
     const on = draft.allowSpectators;
     return (
@@ -298,7 +310,7 @@ export function RowField({ spec, draft, onChange, disabled }: FieldProps): React
   }
   const value = draftValue(draft, spec.key);
   return (
-    <label className={s.row}>
+    <label className={spec.hint ? `${s.row} ${s.rowHinted}` : s.row}>
       <span>{spec.label}</span>
       <select
         className={s.rowSelect}
@@ -313,6 +325,11 @@ export function RowField({ spec, draft, onChange, disabled }: FieldProps): React
           </option>
         ))}
       </select>
+      {spec.hint && (
+        <small className={s.rowHint} data-testid={`${spec.testId}-hint`} data-active={hintActive ? 'true' : 'false'}>
+          {hintActive && spec.hintActive ? spec.hintActive : spec.hint}
+        </small>
+      )}
     </label>
   );
 }
@@ -326,3 +343,19 @@ export const SETUP_FIELD_KEYS: Readonly<Record<SetupField, SelectKey>> = {
   timeLimitDays: 'timeLimitDays',
   winMultiple: 'winMultiple',
 };
+
+/**
+ * 手机横屏两列面板（开局设置 data-wide）的字段顺序：竖栏 6 项 + 联机设置，只是计时档位挪到演出节奏之后——带说明的
+ * 这一行占满整行（说明排在右列的位置），要落在左列（前面有偶数项）才不会在右列留下空格；14 项（计时档位占两格）+
+ * 快速局 = 16 格，仍是 8 行（screens.test.ts）
+ */
+export const WIDE_FIELDS: readonly FieldKey[] = (() => {
+  const online = ONLINE_FIELDS.filter((k) => k !== 'timerPreset');
+  const at = online.indexOf('pacing') + 1;
+  return [
+    ...SETUP_FIELDS.map((f) => SETUP_FIELD_KEYS[f.field]),
+    ...online.slice(0, at),
+    'timerPreset',
+    ...online.slice(at),
+  ];
+})();

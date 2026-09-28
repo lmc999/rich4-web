@@ -16,7 +16,14 @@ import { InviteLink } from './InviteLink';
 import l from './lobby.module.css';
 import { RoomSettingsFields } from './RoomSettingsFields';
 import { SeatGrid, useRun } from './SeatGrid';
-import { draftFromSettings, draftToPatch, fetchMapList, type MapListingLite } from './settingsDraft';
+import {
+  draftFromSettings,
+  draftToPatch,
+  fetchMapList,
+  type MapListingLite,
+  soloHumanNow,
+  timerHintActive,
+} from './settingsDraft';
 import { useCommitPick, usePickCursor } from './useCharacterPick';
 
 function SettingsBox({ room }: { room: RoomView }): ReactNode {
@@ -42,7 +49,12 @@ function SettingsBox({ room }: { room: RoomView }): ReactNode {
   }, [editing]);
 
   const g = room.settings.game;
-  const rows: [string, string][] = [
+  // 现在座位上只有一名真人：开局就不计时（design/net.md §5.4）
+  const solo = soloHumanNow(room);
+  // 此刻适用（档位不是 off）时说明换成「现在只有一名真人：开局后不计时」并高亮——文字本身不同，读屏与色弱用户也能分辨
+  const untimedNow = timerHintActive(room.settings.timerPreset, solo);
+  // 第三项：值下方的一行小字说明（计时档位：只有一名真人时不计时，design/net.md §5.4）
+  const rows: [string, string, string?][] = [
     [t('lobby:settings.map'), t(`lobby:maps.${g.mapId}`, { defaultValue: g.mapId })],
     [t('lobby:settings.fund'), t('lobby:settings.fundValue', { n: g.initialFund / 10000 })],
     [t('lobby:settings.vehicle'), t(`lobby:vehicle.${g.vehicle}`)],
@@ -56,7 +68,11 @@ function SettingsBox({ room }: { room: RoomView }): ReactNode {
       t('lobby:settings.rules'),
       t(`lobby:rules.${g.rules.preset === 'manual' ? 'manual' : g.rules.preset === 'custom' ? 'custom' : 'program'}`),
     ],
-    [t('lobby:settings.timer'), t(`lobby:timer.${room.settings.timerPreset}`)],
+    [
+      t('lobby:settings.timer'),
+      t(`lobby:timer.${room.settings.timerPreset}`),
+      t(untimedNow ? 'lobby:settings.timerHintActive' : 'lobby:settings.timerHint'),
+    ],
     [t('lobby:settings.pacing'), t(`lobby:pacing.${room.settings.pacing ?? DEFAULT_PACING}`)],
     [t('lobby:settings.visibility'), t(`lobby:visibility.${room.settings.visibility}`)],
     [t('lobby:settings.spectators'), room.settings.allowSpectators ? t('lobby:yes') : t('lobby:no')],
@@ -67,7 +83,7 @@ function SettingsBox({ room }: { room: RoomView }): ReactNode {
       <h2>{t('lobby:room.settings')}</h2>
       {editing ? (
         <>
-          <RoomSettingsFields draft={draft} onChange={setDraft} maps={maps} withAi={false} />
+          <RoomSettingsFields draft={draft} onChange={setDraft} maps={maps} withAi={false} soloHuman={solo} />
           <div className={c.row} style={{ marginTop: 8 }}>
             <button
               type="button"
@@ -87,10 +103,21 @@ function SettingsBox({ room }: { room: RoomView }): ReactNode {
       ) : (
         <>
           <dl className={l.kv}>
-            {rows.map(([k, v]) => (
+            {rows.map(([k, v, hint]) => (
               <div key={k}>
                 <dt>{k}</dt>
-                <dd>{v}</dd>
+                <dd>
+                  {v}
+                  {hint && (
+                    <small
+                      className={l.kvHint}
+                      data-testid="room-timer-hint"
+                      data-active={untimedNow ? 'true' : 'false'}
+                    >
+                      {hint}
+                    </small>
+                  )}
+                </dd>
               </div>
             ))}
           </dl>

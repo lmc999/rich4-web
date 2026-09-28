@@ -230,4 +230,35 @@ describe('RoomManager.restore', () => {
     expect(p.rooms.listActive(0)).toEqual([]);
     p.close();
   });
+
+  it('有效计时档位按恢复出的座位控制方式判定：对局中离开的座位不算真人，离开的人回来后恢复计时', () => {
+    const p = openPersistence({ kind: 'sqlite', location: ':memory:' });
+    const b1 = boot(p);
+    const created = b1.rooms.create(who('T0'), { timerPreset: 'normal' });
+    if (!created.ok) throw new Error('create');
+    const r = created.data.room;
+    expect(r.join(who('T1'), 'player').ok).toBe(true);
+    r.setReady('T1', true);
+    expect(r.start('T0').ok).toBe(true);
+    expect(r.viewFor('T0').effectiveTimerPreset).toBe('normal');
+    expect(r.leave('T1').ok).toBe(true);
+    expect(r.viewFor('T0').effectiveTimerPreset).toBe('off');
+    b1.rooms.suspendAll({ flush: false, autosave: false });
+
+    const b2 = boot(p);
+    expect(b2.restore()).toMatchObject([{ code: r.code, mode: 'journal' }]);
+    const room = b2.rooms.get(r.code)!;
+    expect(room.controlOf(1)).toBe('autopilot:left');
+    expect(room.viewFor('T0').effectiveTimerPreset).toBe('off');
+    // 房主回来：自动继续，仍不限时
+    expect(room.resume(who('T0'), 0, 0).ok).toBe(true);
+    expect(room.phase).toBe('playing');
+    const d = room.runner!.pendingDecisions().find((x) => x.seat === 0)!;
+    expect(room.runner!.deadlineOf(d.id)).toBeNull();
+    // 离开的人回来：两名真人，按档位计时
+    expect(room.resume(who('T1'), 0, 0).ok).toBe(true);
+    expect(room.viewFor('T0').effectiveTimerPreset).toBe('normal');
+    expect(room.runner!.deadlineOf(d.id)).toBe(b2.sched.now() + 30_000);
+    p.close();
+  });
 });

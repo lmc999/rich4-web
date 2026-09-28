@@ -8,6 +8,9 @@
  * - 定时器回调（超时、AI、断线宽限）与提交后的广播 hooks 抛异常时只记日志并通知房间（hooks.fault → 暂停），不外抛。
  * - 序号：每应用一个 action seq+1；epoch 由 Room 在开局、rematch、读档、重启时递增后传入。
  * - 待决策与截止时间：新出现的决策按 Deadlines 计算截止时间（budgetKey 链、拍卖每人独立计时、小游戏票据）。
+ *   档位用「有效计时档位」（effectiveTimerPreset：真人座位 ≤ 1 时不限时；已淘汰的真人不算）；座位控制方式变化或
+ *   对局进展使它改变时（离开、被踢、破产 / 投降后只剩一名真人，离开的真人回来）重新计算当前待决策的截止时间（retime），
+ *   随 game:pending / batch 下发。
  * - 托管状态机（SeatControl）、断线宽限、连续超时进 AFK、暂停恢复、clientActionId 幂等（每座位 LRU 32）。
  * - 小游戏（MinigameReferee）：MINIGAME 决策出现时开会话；输入流与提交经 minigameInput / minigameSubmit，
  *   以服务器重放结果提交系统 action MINIGAME_RESULT；已开局后 MINIGAME_DECLINE 被拒、AI 不再代答，到期用已收到的输入结算；
@@ -39,11 +42,13 @@ import {
   type BatchCause,
   CLIENT_ACTION_LRU,
   type ErrorCode,
+  effectiveTimerPreset,
   fail,
   type GameBatchMsg,
   type GameCatchupMsg,
   type GameOverMsg,
   type GameSnapshotMsg,
+  isHumanSeatControl,
   type MinigameFramesMsg,
   type MinigameInputMsg,
   type MinigameSubmitMsg,
@@ -83,6 +88,7 @@ import {
   resumeDeadline,
   shiftBudget,
   type TimingOptions,
+  visibleAt,
 } from './Deadlines';
 import { MinigameReferee } from './MinigameReferee';
 import { RingBuffer } from './RingBuffer';
@@ -90,6 +96,7 @@ import { RingBuffer } from './RingBuffer';
 /** 房间设置里 GameRunner 关心的部分（每次读取，保证与房间一致） */
 export interface RunnerSettings {
   handVisibility: HandVisibility;
+  /** 房间设置的档位；实际计时用 effectiveTimerPreset()（真人座位 ≤ 1 时不限时） */
   timerPreset: TimerPreset;
   timeoutPolicy: TimeoutPolicy;
   aiPace: AiPace;
@@ -123,6 +130,11 @@ export interface RunnerHooks {
   /** 截止时间或托管状态变了，但没有新的 action */
   pendingChanged(): void;
   controlChanged(seat: SeatIndex, control: SeatControl, prev: SeatControl): void;
+  /**
+   * 有效计时档位因对局进展变了（真人被淘汰后只剩一名真人，net.md §5.4），不经过 controlChanged：房间应广播 room:state。
+   * 在这一批的 batch 之前调用；当前待决策的截止时间已经重新算好
+   */
+  timerPresetChanged?(preset: TimerPreset): void;
   gameOver(msg: GameOverMsg): void;
   /** 引擎发出 DAY_END（M5 用它触发自动存档） */
   dayEnd?(): void;
@@ -315,6 +327,23 @@ export class GameRunner {
     return this.decisions.get(decisionId)?.deadlineAt ?? null;
   }
 
+  /**
+   * 有效计时档位（design/net.md §5.4）：房间设置的档位，但真人座位 ≤ 1 时不限时（同单机）。真人座位按控制方式数
+   * （isHumanSeatControl：在线、断线宽限、托管都算，电脑补位 / 被踢 / 离开不算），并且引擎里这名玩家还在局中——
+   * 已淘汰（破产、投降）的真人不再有决策，不算；观战者不在座位上，不影响。
+   */
+  effectiveTimerPreset(): TimerPreset {
+    let humans = 0;
+    for (const rt of this.seatRts.values()) if (this.isHumanSeat(rt)) humans++;
+    return effectiveTimerPreset(this.deps.settings().timerPreset, humans);
+  }
+
+  /** 算作真人座位：控制方式是真人（含托管），且引擎里这名玩家没有被淘汰（破产 / 投降后 alive 为 false） */
+  private isHumanSeat(rt: SeatRt): boolean {
+    if (!isHumanSeatControl(rt.control)) return false;
+    return this.st.players.find((p) => p.seat === rt.seat)?.alive !== false;
+  }
+
   // ───────────────────────── 提交 ─────────────────────────
 
   /**
@@ -391,6 +420,7 @@ export class GameRunner {
       log.error({ err: e, action: action.type, seat, seq: this.seqNo }, 'engine.applyAction failed');
       return fail('INTERNAL');
     }
+    const presetBefore = this.effectiveTimerPreset();
     this.st = next.state;
     this.seqNo++;
     const raw: RawBatch = {
@@ -405,6 +435,11 @@ export class GameRunner {
     this.ring.push(raw);
     // 持久化 journal 先于广播（崩溃时最多丢最后一个尚未写入的 action）
     if (this.deps.hooks.applied) this.hook('applied', seat, () => this.deps.hooks.applied?.(entry));
+    // 真人被淘汰（破产、投降）使真人座位只剩一名：有效档位变为不限时，当前待决策重新计时（net.md §5.4）；
+    // 新出现的决策随后在 syncPending 里按新档位计时。放在 SYS_SET_CONTROLLER 之前：踢人那条路径由 setControl 自己比较前后
+    const presetAfter = this.effectiveTimerPreset();
+    const presetChanged = result === null && presetAfter !== presetBefore;
+    if (presetChanged) this.retime(presetAfter);
     if (isSystemAction(action) && action.type === 'SYS_SET_CONTROLLER') {
       const rt = this.seatRts.get(action.seat);
       if (rt && action.controller === 'ai') this.setControl(rt, 'ai', true);
@@ -415,7 +450,9 @@ export class GameRunner {
     } else {
       this.syncPending(raw.animMs, pending, playedMinigames(next.events));
     }
-    // 提交之后的广播：投影或发送出错只记日志并暂停房间，不回滚已经生效的 action
+    // 提交之后的广播：投影或发送出错只记日志并暂停房间，不回滚已经生效的 action。
+    // 有效档位变了先通知房间（room:state 带新的 effectiveTimerPreset），与 setControl 里 controlChanged 先于 batch 一致
+    if (presetChanged) this.hook('timerPresetChanged', seat, () => this.deps.hooks.timerPresetChanged?.(presetAfter));
     this.hook('batch', seat, () => this.deps.hooks.batch(raw));
     if (next.events.some((e) => e.type === 'DAY_END')) this.hook('dayEnd', seat, () => this.deps.hooks.dayEnd?.());
     if (result !== null) {
@@ -482,7 +519,7 @@ export class GameRunner {
       }
     }
     const now = clock.now();
-    const settings = this.deps.settings();
+    const preset = this.effectiveTimerPreset();
     for (const d of pending) {
       const existing = this.decisions.get(d.id);
       if (existing) {
@@ -503,7 +540,7 @@ export class GameRunner {
             now,
             animMs,
             timing: t === 'minigame' ? 'pick' : t,
-            preset: settings.timerPreset,
+            preset,
             budget: key !== null ? (this.budgets.get(key) ?? null) : null,
             chained: key !== null,
           },
@@ -688,6 +725,7 @@ export class GameRunner {
   private setControl(rt: SeatRt, control: SeatControl, quiet = false): void {
     const prev = rt.control;
     if (prev === control || prev === 'ai') return;
+    const presetBefore = this.effectiveTimerPreset();
     rt.control = control;
     if (control !== 'human') rt.timeouts = 0;
     const now = this.deps.clock.now();
@@ -701,8 +739,51 @@ export class GameRunner {
       if (this.pausedFlag) dr.remaining = dr.deadlineAt === null ? null : dr.deadlineAt - now;
       else this.schedule(dr);
     }
+    // 真人座位数跨过 1（离开 / 被踢后只剩一名真人，或离开的真人回来）：有效档位变了，当前待决策重新计时。
+    // 先于 hooks：controlChanged 广播的 room:state 与随后的 game:pending（quiet 时是紧跟着的 batch）都带新的结果
+    const presetAfter = this.effectiveTimerPreset();
+    if (presetAfter !== presetBefore) this.retime(presetAfter);
     this.deps.hooks.controlChanged(rt.seat, control, prev);
     if (!quiet) this.deps.hooks.pendingChanged();
+  }
+
+  /**
+   * 有效计时档位变了：重新计算当前待决策的截止时间。变为不限时 → 取消截止时间与超时定时器（计时链一并清掉）；
+   * 从不限时变为有时限 → 从现在（这批动画还没播完则从播完时）起按档位重新给截止时间，计时链从头开始。
+   * 小游戏窗口不受档位影响；由电脑 / 托管代打的决策只改截止时间，AI 定时器不动（它不看截止时间）。
+   * 引擎状态里没有墙钟时间，这只是调度层的事，不影响确定性。
+   */
+  private retime(preset: TimerPreset): void {
+    const { clock, timing } = this.deps;
+    const now = clock.now();
+    this.budgets.clear();
+    const list = [...this.decisions.values()].sort(
+      (a, b) => a.d.seat - b.d.seat || (a.d.id < b.d.id ? -1 : a.d.id > b.d.id ? 1 : 0),
+    );
+    for (const dr of list) {
+      if (dr.ticket) continue;
+      const t = timingOf(dr.d.kind);
+      const key = dr.d.budgetKey;
+      const r = computeDeadline(
+        {
+          now: Math.max(now, visibleAt(dr.shownAt, dr.animMs, timing)),
+          animMs: 0,
+          timing: t === 'minigame' ? 'pick' : t,
+          preset,
+          budget: key !== null ? (this.budgets.get(key) ?? null) : null,
+          chained: key !== null,
+        },
+        timing,
+      );
+      dr.deadlineAt = r.deadlineAt;
+      if (key !== null && r.budget) this.budgets.set(key, r.budget);
+      if (this.pausedFlag) {
+        dr.remaining = dr.deadlineAt === null ? null : dr.deadlineAt - now;
+        continue;
+      }
+      const rt = this.seatRts.get(dr.d.seat);
+      if (!rt || rt.control === 'human') this.schedule(dr);
+    }
   }
 
   /** 决策截止时间从 before 挪到了 dr.deadlineAt（暂停恢复、解除托管）：同一 budgetKey 的计时链整体平移 */

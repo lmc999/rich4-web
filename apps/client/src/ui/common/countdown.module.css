@@ -1,64 +1,56 @@
-/* 画面中央的决策倒计时（DecisionCountdown）。只是提示：整层 pointer-events: none，不拦点击；数字不可聚焦。
- * 程序化布局（data-variant="hud"）：叠在棋盘区域（顶栏以下、行动区以上、右栏以外），跟随 HUD 的 --right-w / --top-h；
- *   左侧日志 / 聊天停靠栏打开时（data-dock）center 的数字不越过停靠栏右缘；
- * 原版布局（data-variant="classic"）：ui/classic/ClassicCountdown 的 640×480 逻辑坐标层里，棋盘视窗 (0,40) 440×440。
- * data-place：center 棋盘区域中线偏上（镜头跟着行动者，正中是自己的角色，数字在角色头顶上方）；回合横幅显示期间隐去（data-yield）；
- *             top 决策框 / 原版场景在棋盘中央时，字号缩小、垫底板：原版在棋盘视窗上缘的中线，程序化在对话框正上方
- *                 （data-anchor="dialog"），放不下时叠到对话框标题栏里圆环的左边（data-anchor="ring"）；位置由组件量好
- *                 left/top 内联给出；连圆环都找不到时 data-anchor="none" 隐去；
- *             stage 原版布局里铺满舞台的场景开着时，摆到场景登记的位置（内联 left/top，缺省舞台顶端中线）。
- * 最后 10 秒（data-urgent）变红、放大，数字每秒重新挂载一次、播一次脉动（最后 3 秒更猛）；prefers-reduced-motion 时不播。 */
+/* 画面正中央的决策倒计时（DecisionCountdown）：始终在画面正中央、大小不变，不避让（用户要求先按这个试）。
+ * 只是提示：整层 pointer-events: none，不拦点击；数字不可聚焦。
+ * 程序化布局（data-variant="hud"）：整层挂在 body 上（盖得过 radix 模态面板；系统界面的层级更高，盖在它上面），铺在棋盘
+ *   视口上——右栏以外（左手模式在右栏右边）、顶栏以下、底栏（等待条 + 行动区）以上，与镜头的有效可视区（GameScreen 的
+ *   insets）同一块。上下缘由组件按 GameScreen 实测的顶栏 / 底栏高度内联给出（行动区折成两行、等待条出现时都跟着变）；
+ *   这里的 top / bottom 只是还没量到时的缺省值。右栏宽 --right-w、顶栏高 --top-h 来自 hud.module.css 的 .hudGeom
+ *   （与 .game 同一套断点）。数字在这一块的正中。
+ * 原版布局（data-variant="classic"）：ui/classic/ClassicCountdown 的 640×480 逻辑坐标层，数字在舞台正中 (320,240)，随舞台缩放。
+ * 回合横幅（「轮到你了」）显示期间照常显示，层级在横幅之上。
+ * 最后 10 秒（data-urgent）变红，数字每秒重新挂载一次、播一次脉动（最后 3 秒更猛）；prefers-reduced-motion 时不播。 */
 
 .hudLayer {
-  position: absolute;
+  /* 缺省下缘（组件还没拿到实测高度时）：行动区（action-pad）一行的高度，桌面 66px、矮屏（字号 13px）64px，再加 .bottom 的底边距 */
+  --cd-pad-h: 66px;
+  position: fixed;
+  /* 高于 radix 模态面板（遮罩 40、面板 41）；低于系统界面（Modal layer="system"：遮罩 46、面板 47）、toast（150）与断线遮罩（200） */
   z-index: 45;
   left: 0;
-  right: var(--right-w, 0px);
-  top: calc(var(--top-h, 50px) + 16px);
-  bottom: 110px;
+  right: var(--right-w, 300px);
+  top: calc(max(6px, env(safe-area-inset-top)) + var(--top-h, 50px));
+  bottom: calc(var(--cd-pad-h) + max(6px, env(safe-area-inset-bottom)));
   pointer-events: none;
 }
 
 .hudLayer[data-left="true"] {
-  left: var(--right-w, 0px);
+  left: var(--right-w, 300px);
   right: 0;
 }
 
-/* 左侧日志 / 聊天停靠栏开着（宽 --dock-w，贴在棋盘区域左缘 6px 处，见 hud.module.css .dock）：center 的数字中点至少离停靠栏
- * 右缘 0.9em（两位数半宽 + 描边与脉动放大的余量，随字号缩放）。桌面宽屏时中线本来就在停靠栏右边很远，保持原位
- * （仍在角色头顶上方）；手机横屏时中线正好压在停靠栏上，往右挪到刚好露出。左撇子布局停靠栏在右边，对称处理。 */
-.hudLayer[data-dock="true"] .countdown[data-place="center"] {
-  left: max(50%, calc(max(6px, env(safe-area-inset-left)) + var(--dock-w, min(340px, 38vw)) + 0.9em));
-}
-
-.hudLayer[data-left="true"][data-dock="true"] .countdown[data-place="center"] {
-  left: min(50%, calc(100% - max(6px, env(safe-area-inset-right)) - var(--dock-w, min(340px, 38vw)) - 0.9em));
-}
-
-/* 手机横屏等矮屏：与决策层同样收窄上下边距 */
-@media (max-height: 560px) {
+/* 与 hud.module.css 的矮屏断点一致 */
+@media (max-width: 1023px), (max-height: 560px) {
   .hudLayer {
-    top: calc(var(--top-h, 42px) + 6px);
-    bottom: 76px;
+    --cd-pad-h: 64px;
+  }
+}
+
+/* 手机竖屏时对局页整个被旋转提示（RotateHint，在 .game 里）挡住；本层在 body 上，跟着隐去 */
+@media (orientation: portrait) and (max-width: 900px) {
+  .hudLayer {
+    display: none;
   }
 }
 
 .countdown {
   position: absolute;
   left: 50%;
-  top: 30%;
+  top: 50%;
   transform: translate(-50%, -50%);
   line-height: 1;
   white-space: nowrap;
   pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
-  transition: opacity 0.2s ease-out;
-}
-
-/* 程序化布局 top：对话框上方放不下、也没找到圆环 */
-.countdown[data-anchor="none"] {
-  visibility: hidden;
 }
 
 .num {
@@ -77,7 +69,7 @@
 
 @keyframes cdPulse {
   from {
-    transform: scale(1.35);
+    transform: scale(1.3);
   }
   to {
     transform: scale(1);
@@ -86,7 +78,7 @@
 
 @keyframes cdPulseFinal {
   from {
-    transform: scale(1.55);
+    transform: scale(1.45);
     filter: brightness(1.6);
   }
   to {
@@ -103,76 +95,30 @@
   }
 }
 
-/* ───── 程序化布局：卡通主题的数字字体，奶油色描深棕粗边 + 块状投影；最后 10 秒红色 ───── */
+/* ───── 程序化布局：卡通主题的数字字体，奶油色描深棕粗边 + 块状投影 + 一圈淡影（压在对话框、棋盘上都看得清）；最后 10 秒红色。
+ * 描边按 em 给，字号随视口高度变化时粗细比例不变。 ───── */
 .countdown[data-variant="hud"] {
   --cd-ink: var(--c-ink, #3a2a1a);
+  --cd-o: 0.05em;
   font-family: var(--font-num);
   font-weight: 600;
-  font-size: 76px;
+  font-size: clamp(56px, 12vh, 108px);
   color: var(--c-cream, #fff6dc);
-  opacity: 0.94;
   text-shadow:
-    -3px -3px 0 var(--cd-ink),
-    0 -3px 0 var(--cd-ink),
-    3px -3px 0 var(--cd-ink),
-    3px 0 0 var(--cd-ink),
-    3px 3px 0 var(--cd-ink),
-    0 3px 0 var(--cd-ink),
-    -3px 3px 0 var(--cd-ink),
-    -3px 0 0 var(--cd-ink),
-    0 7px 0 var(--cd-ink);
+    calc(-1 * var(--cd-o)) calc(-1 * var(--cd-o)) 0 var(--cd-ink),
+    0 calc(-1 * var(--cd-o)) 0 var(--cd-ink),
+    var(--cd-o) calc(-1 * var(--cd-o)) 0 var(--cd-ink),
+    var(--cd-o) 0 0 var(--cd-ink),
+    var(--cd-o) var(--cd-o) 0 var(--cd-ink),
+    0 var(--cd-o) 0 var(--cd-ink),
+    calc(-1 * var(--cd-o)) var(--cd-o) 0 var(--cd-ink),
+    calc(-1 * var(--cd-o)) 0 0 var(--cd-ink),
+    0 0.1em 0 var(--cd-ink),
+    0 0.1em 0.16em rgb(0 0 0 / 0.35);
 }
 
 .countdown[data-variant="hud"][data-urgent="true"] {
-  font-size: 96px;
   color: var(--c-red, #f2545b);
-  opacity: 1;
-}
-
-/* 决策框在中央：对话框正上方（left/top 由组件内联给出：小牌底边中点），垫一块奶油色小牌（与 HUD 面板同一套描边与块状投影） */
-.countdown[data-variant="hud"][data-place="top"] {
-  top: 0;
-  transform: translate(-50%, -100%);
-  padding: 2px 14px 4px;
-  border: var(--border, 3px solid #3a2a1a);
-  border-radius: 999px;
-  background: rgb(255 246 220 / 0.95);
-  box-shadow: var(--shadow-chunky, 0 4px 0 #3a2a1a);
-  font-size: 30px;
-  color: var(--c-ink, #3a2a1a);
-  text-shadow: none;
-  opacity: 1;
-}
-
-.countdown[data-variant="hud"][data-place="top"][data-urgent="true"] {
-  font-size: 34px;
-  color: var(--c-red, #f2545b);
-}
-
-/* 对话框上方放不下（手机横屏）：叠到对话框标题栏里圆环的左边（left/top 为小牌右边中点）；决策层（40）在本层（45）之下 */
-.countdown[data-variant="hud"][data-place="top"][data-anchor="ring"] {
-  transform: translate(-100%, -50%);
-}
-
-@media (max-height: 560px) {
-  /* 矮屏的棋盘区域只有两百多像素高：再往上提、字号收小，脉动放大时也不压到角色头顶的名牌 */
-  .countdown[data-variant="hud"] {
-    top: 17%;
-    font-size: 44px;
-  }
-
-  .countdown[data-variant="hud"][data-urgent="true"] {
-    font-size: 52px;
-  }
-
-  .countdown[data-variant="hud"][data-place="top"] {
-    padding: 0 10px 2px;
-    font-size: 22px;
-  }
-
-  .countdown[data-variant="hud"][data-place="top"][data-urgent="true"] {
-    font-size: 24px;
-  }
 }
 
 /* ───── 原版布局：640×480 逻辑像素（随舞台缩放）；原版界面的金字深棕描边（与侧栏倒计时同色系），最后 10 秒红字 ───── */
@@ -185,87 +131,32 @@
 }
 
 .classicLayer .countdown {
-  /* 棋盘视窗 (0,40) 440×440 的中线；纵向在视窗中心（260）上方 110，行动者的角色与名牌之上 */
-  left: 220px;
-  top: 150px;
-}
-
-.classicLayer .countdown[data-place="top"] {
-  /* 棋盘视窗上缘的中线（工具列下方） */
-  top: 44px;
-  transform: translate(-50%, 0);
-}
-
-.classicLayer .countdown[data-place="stage"] {
-  /* 场景登记的位置（内联 left/top，小牌上缘中点；缺省舞台顶端中线——Stage4x3 状态条的位置）；小牌再小一号 */
+  /* 舞台正中 */
   left: 320px;
-  top: 2px;
-  transform: translate(-50%, 0);
+  top: 240px;
 }
 
 .countdown[data-variant="classic"] {
   --cd-ink: #3a1a06;
+  --cd-o: 0.05em;
   font-family: var(--classic-font, serif);
   font-weight: 700;
-  font-size: 46px;
+  font-size: 64px;
   color: #f6c64a;
-  opacity: 0.95;
   text-shadow:
-    -2px -2px 0 var(--cd-ink),
-    0 -2px 0 var(--cd-ink),
-    2px -2px 0 var(--cd-ink),
-    2px 0 0 var(--cd-ink),
-    2px 2px 0 var(--cd-ink),
-    0 2px 0 var(--cd-ink),
-    -2px 2px 0 var(--cd-ink),
-    -2px 0 0 var(--cd-ink),
-    0 3px 2px rgb(0 0 0 / 0.6);
+    calc(-1 * var(--cd-o)) calc(-1 * var(--cd-o)) 0 var(--cd-ink),
+    0 calc(-1 * var(--cd-o)) 0 var(--cd-ink),
+    var(--cd-o) calc(-1 * var(--cd-o)) 0 var(--cd-ink),
+    var(--cd-o) 0 0 var(--cd-ink),
+    var(--cd-o) var(--cd-o) 0 var(--cd-ink),
+    0 var(--cd-o) 0 var(--cd-ink),
+    calc(-1 * var(--cd-o)) var(--cd-o) 0 var(--cd-ink),
+    calc(-1 * var(--cd-o)) 0 0 var(--cd-ink),
+    0 0.08em 0.06em rgb(0 0 0 / 0.7);
 }
 
 .countdown[data-variant="classic"][data-urgent="true"] {
-  font-size: 62px;
   color: #ff4a2e;
-  opacity: 1;
-}
-
-/* 避让位置：原版消息框配色的小牌（深棕半透明底、金边，与场景状态条同一套），数字缩小 */
-.countdown[data-variant="classic"]:is([data-place="top"], [data-place="stage"]) {
-  min-width: 34px;
-  padding: 1px 7px 2px;
-  border: 1px solid #f6c64a;
-  border-radius: 3px;
-  background: rgb(58 26 6 / 0.88);
-  font-size: 24px;
-  text-align: center;
-  opacity: 1;
-  text-shadow:
-    -1px -1px 0 #000,
-    0 -1px 0 #000,
-    1px -1px 0 #000,
-    1px 0 0 #000,
-    1px 1px 0 #000,
-    0 1px 0 #000,
-    -1px 1px 0 #000,
-    -1px 0 0 #000;
-}
-
-.countdown[data-variant="classic"]:is([data-place="top"], [data-place="stage"])[data-urgent="true"] {
-  border-color: #ff8a7a;
-  font-size: 28px;
-}
-
-.countdown[data-variant="classic"][data-place="stage"] {
-  padding: 0 6px 1px;
-  font-size: 22px;
-}
-
-.countdown[data-variant="classic"][data-place="stage"][data-urgent="true"] {
-  font-size: 25px;
-}
-
-/* 回合横幅（「轮到你了」）与中线偏上的数字同一带：横幅显示期间先隐去（选择器比各皮肤的 opacity 规则更具体） */
-.countdown[data-variant][data-place="center"][data-yield="true"] {
-  opacity: 0;
 }
 
 .srOnly {

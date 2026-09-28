@@ -65,7 +65,14 @@ function recordingSaves(): {
 }
 
 function harness(
-  o: { settings?: Partial<RoomSettings>; ttl?: Partial<RoomTtls>; persist?: RoomPersistence; saves?: RoomSaves } = {},
+  o: {
+    settings?: Partial<RoomSettings>;
+    ttl?: Partial<RoomTtls>;
+    persist?: RoomPersistence;
+    saves?: RoomSaves;
+    /** 记录广播（缺省丢弃） */
+    emit?: (ids: string[], event: string, payload: unknown) => void;
+  } = {},
 ) {
   const sched = new ManualScheduler();
   const catalog = fixtureCatalog();
@@ -77,7 +84,7 @@ function harness(
       clock: sched,
       scheduler: sched,
       log: silentLogger,
-      out: new RoomBroadcaster({ emit: () => {} }),
+      out: new RoomBroadcaster({ emit: o.emit ?? (() => {}) }),
       engine: createStubEngine({ registry: catalog.registry }),
       maps: catalog,
       ai: new AiDriver({ policy: localPolicy, log: silentLogger, thinkMs: { normal: [0, 0], fast: [0, 0] } }),
@@ -433,5 +440,141 @@ describe('Room：演出节奏 pacing（original-skin.md U3）', () => {
     expect(withSettingsDefaults(legacy as RoomSettings).pacing).toBe('original');
     const compact = { ...h.room.settings, pacing: 'compact' } as const;
     expect(withSettingsDefaults(compact)).toBe(compact);
+  });
+});
+
+describe('Room：有效计时档位（只有一名真人时不限时，net.md §5.4）', () => {
+  it('大厅按座位上的真人推算；开局后按座位控制方式判定：真人离开 / 被踢只剩一名时取消截止时间，离开的人回来恢复', () => {
+    const h = harness();
+    expect(h.room.settings.timerPreset).toBe('normal');
+    expect(h.room.setSeatAi('T0', 2, { preset: 'normal' }).ok).toBe(true);
+    // 大厅：只有房主一名真人 + 电脑
+    expect(h.room.viewFor('T0').effectiveTimerPreset).toBe('off');
+    expect(h.room.join(h.who('T1'), 'player').ok).toBe(true);
+    expect(h.room.viewFor('T0').effectiveTimerPreset).toBe('normal');
+    // 房间设置本身不变
+    expect(h.room.viewFor('T0').settings.timerPreset).toBe('normal');
+    h.room.setReady('T1', true);
+    expect(h.room.start('T0')).toEqual({ ok: true });
+    const runner = h.room.runner!;
+    const d = runner.pendingDecisions().find((x) => x.seat === 0)!;
+    expect(runner.deadlineOf(d.id)).not.toBeNull();
+    expect(h.room.viewFor('T0').effectiveTimerPreset).toBe('normal');
+
+    // T1 离开：只剩一名真人
+    expect(h.room.leave('T1').ok).toBe(true);
+    expect(h.room.phase).toBe('playing');
+    expect(h.room.controlOf(1)).toBe('autopilot:left');
+    expect(h.room.viewFor('T0').effectiveTimerPreset).toBe('off');
+    expect(runner.deadlineOf(d.id)).toBeNull();
+    // 同一 token 回来
+    expect(h.room.resume(h.who('T1'), 0, 0).ok).toBe(true);
+    expect(h.room.controlOf(1)).toBe('human');
+    expect(h.room.viewFor('T0').effectiveTimerPreset).toBe('normal');
+    expect(runner.deadlineOf(d.id)).toBe(h.sched.now() + 30_000);
+    // 踢掉 T1：座位转为电脑
+    expect(h.room.kick('T0', { seat: 1 }).ok).toBe(true);
+    expect(h.room.controlOf(1)).toBe('ai');
+    expect(h.room.viewFor('T0').effectiveTimerPreset).toBe('off');
+    expect(runner.deadlineOf(runner.pendingDecisions().find((x) => x.seat === 0)!.id)).toBeNull();
+  });
+
+  it('对局中真人破产出局、只剩一名真人：取消计时，并先于这一批广播 room:state（有效档位 off）', () => {
+    const sent: { event: string; payload: unknown }[] = [];
+    const h = harness({ emit: (_ids, event, payload) => sent.push({ event, payload }) });
+    expect(h.room.setSeatAi('T0', 2, { preset: 'normal' }).ok).toBe(true);
+    expect(h.room.setSeatAi('T0', 3, { preset: 'normal' }).ok).toBe(true);
+    h.startTwo();
+    const runner = h.room.runner!;
+    const mine = (seat: number) => runner.pendingDecisions().find((d) => d.seat === seat)!;
+    // A 买下 L1；B 身无分文也落到 L1，付不起过路费而破产
+    expect(h.room.debug('T0', { op: 'forceNext', purpose: 'dice', values: [1] }).ok).toBe(true);
+    expect(h.room.act('T0', mine(0).id, { type: 'ROLL' }, 'a1').ok).toBe(true);
+    expect(h.room.act('T0', mine(0).id, { type: 'CONFIRM' }, 'a2').ok).toBe(true);
+    expect(h.room.debug('T0', { op: 'setCash', seat: 1, cash: 0, deposit: null }).ok).toBe(true);
+    expect(h.room.debug('T0', { op: 'forceNext', purpose: 'dice', values: [1] }).ok).toBe(true);
+    expect(h.room.viewFor('T0').effectiveTimerPreset).toBe('normal');
+    sent.length = 0;
+    expect(h.room.act('T1', mine(1).id, { type: 'ROLL' }, 'b1').ok).toBe(true);
+    expect(runner.state.players.find((p) => p.seat === 1)!.out).toBe('bankrupt');
+    expect(h.room.controlOf(1)).toBe('human');
+    expect(h.room.viewFor('T0').effectiveTimerPreset).toBe('off');
+    const states = sent.filter((m) => m.event === 'room:state');
+    expect(states.length).toBeGreaterThan(0);
+    expect((states[0]!.payload as { effectiveTimerPreset?: string }).effectiveTimerPreset).toBe('off');
+    expect(sent.findIndex((m) => m.event === 'room:state')).toBeLessThan(
+      sent.findIndex((m) => m.event === 'game:batch'),
+    );
+    // 电脑走完回合后轮到 A（或 A 要在电脑发起的拍卖里出价）：不限时
+    h.sched.advance(10 * 60_000);
+    expect(runner.pendingDecisions().filter((d) => d.seat === 0).length).toBeGreaterThan(0);
+    expect(
+      runner
+        .pendingViews()
+        .filter((v) => v.seat === 0)
+        .every((v) => v.deadlineAt === null),
+    ).toBe(true);
+    expect(h.room.controlOf(0)).toBe('human');
+  });
+
+  it('单机设置（off）不变：一名真人 + 电脑，房间档位与有效档位都是 off', () => {
+    const h = harness({ settings: { timerPreset: 'off' } });
+    expect(h.room.setSeatAi('T0', 1, { preset: 'normal' }).ok).toBe(true);
+    expect(h.room.start('T0')).toEqual({ ok: true });
+    const v = h.room.viewFor('T0');
+    expect(v.settings.timerPreset).toBe('off');
+    expect(v.effectiveTimerPreset).toBe('off');
+  });
+
+  it('读档：存档里两名真人，只有一人认领、另一座位补电脑开局时不限时；两人都认领时按档位计时', () => {
+    const engine = createStubEngine();
+    const state = engine.createGame(
+      { ...defaultGameConfig('test', 20260927), debug: true },
+      [
+        { seat: 0, character: 4, controller: 'human' },
+        { seat: 1, character: 5, controller: 'human' },
+        { seat: 2, character: 6, controller: 'ai', ai: { preset: 'gentle' } },
+      ],
+      '0123456789abcdef0123456789abcdef',
+    );
+    const file = buildSaveFile({
+      name: 'S',
+      savedAt: 0,
+      engine,
+      settings: { ...defaultRoomSettings(state.config), timerPreset: 'fast', reconnectGraceSec: 1 },
+      seats: [
+        { index: 0, characterId: 4, nickname: 'A', kind: 'human', ownerTokenHash: 'T0' },
+        { index: 1, characterId: 5, nickname: 'B', kind: 'human', ownerTokenHash: 'T1' },
+        { index: 2, characterId: 6, nickname: 'C', kind: 'ai', ai: { preset: 'gentle' } },
+      ],
+      state,
+      chat: [],
+    });
+    const ls: LoadedSave = { saveId: 'S1', name: 'S', verified: true, file, warnings: [] };
+    const saves: RoomSaves = {
+      store: () => ok({ saveId: 'x' }),
+      open: (_t, id) => (id === 'S1' ? ok(ls) : fail('SAVE_NOT_FOUND')),
+      addOwners: () => {},
+    };
+
+    const solo = harness({ saves });
+    expect(solo.room.loadSave('T0', 'S1').ok).toBe(true);
+    expect(solo.room.setSeatAi('T0', 1, { preset: 'normal' }).ok).toBe(true);
+    expect(solo.room.viewFor('T0').effectiveTimerPreset).toBe('off');
+    expect(solo.room.start('T0')).toEqual({ ok: true, data: undefined });
+    expect(solo.room.controlOf(1)).toBe('ai');
+    expect(solo.room.viewFor('T0').effectiveTimerPreset).toBe('off');
+    expect(solo.room.viewFor('T0').settings.timerPreset).toBe('fast');
+    const r1 = solo.room.runner!;
+    expect(r1.pendingViews().every((p) => p.deadlineAt === null)).toBe(true);
+
+    const duo = harness({ saves });
+    expect(duo.room.loadSave('T0', 'S1').ok).toBe(true);
+    expect(duo.room.join(duo.who('T1'), 'player').ok).toBe(true);
+    duo.room.setReady('T1', true);
+    expect(duo.room.start('T0')).toEqual({ ok: true, data: undefined });
+    expect(duo.room.viewFor('T0').effectiveTimerPreset).toBe('fast');
+    const r2 = duo.room.runner!;
+    expect(r2.pendingViews().some((p) => p.deadlineAt !== null)).toBe(true);
   });
 });

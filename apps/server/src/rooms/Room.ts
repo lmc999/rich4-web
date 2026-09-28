@@ -32,6 +32,7 @@ import {
   type ChatSender,
   DEFAULT_PACING,
   EMOTE_COOLDOWN_MS,
+  effectiveTimerPreset,
   fail,
   IN_GAME_MUTABLE_SETTINGS,
   isEmoteId,
@@ -50,6 +51,7 @@ import {
   type SystemMsgKey,
   sanitizeChatText,
   sanitizeSaveName,
+  type TimerPreset,
 } from '@rich4/shared/net';
 import type { SaveSeat } from '@rich4/shared/save';
 import { isAutopilot, type SeatControl, type Viewer } from '@rich4/shared/view';
@@ -296,6 +298,17 @@ export class Room implements PersistableRoom {
     return this.seats[seat]!.occupant?.kind === 'ai' ? 'ai' : 'human';
   }
 
+  /**
+   * 有效计时档位（net.md §5.4）：对局中（含已结束）由 runner 按座位控制方式与玩家是否还在局中（未破产 / 投降）判定；
+   * 大厅里按座位上的真人数推算
+   * （开局时每个真人座位都是 human，结果与开局后一致）。只有一名真人、其余都是电脑时不限时。
+   */
+  effectiveTimerPreset(): TimerPreset {
+    if (this.runner && this.phase !== 'lobby') return this.runner.effectiveTimerPreset();
+    const humans = this.seats.filter((s) => s.occupant?.kind === 'human').length;
+    return effectiveTimerPreset(this.settings.timerPreset, humans);
+  }
+
   // ───────────────────────── 视图 ─────────────────────────
 
   viewFor(tokenHash: string): RoomView {
@@ -343,6 +356,7 @@ export class Room implements PersistableRoom {
       seats,
       spectators: [...this.spectators.values()].map((sp) => ({ id: sp.id, nickname: sp.nickname })),
       settings: this.settings,
+      effectiveTimerPreset: this.effectiveTimerPreset(),
       you,
       serverNow: this.deps.clock.now(),
     };
@@ -946,6 +960,8 @@ export class Room implements PersistableRoom {
           batch: (raw) => this.deps.out.gameBatch(this, runner, raw),
           pendingChanged: () => this.deps.out.gamePending(this, runner),
           controlChanged: (seat, control, prev) => this.onControlChanged(seat, control, prev),
+          // 真人被淘汰后只剩一名真人（net.md §5.4）：room:state 带新的有效计时档位
+          timerPresetChanged: () => this.broadcastState(),
           gameOver: (msg) => this.onGameOver(msg),
           timedOut: (seat, by) => {
             if (by === 'default') this.systemMsg('timeoutDefault', { seat });

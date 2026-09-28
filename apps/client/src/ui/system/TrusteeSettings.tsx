@@ -136,6 +136,7 @@ export function TrusteeSettingsDialog({ room }: { room: RoomView }): ReactNode {
       title={t('ui:trustee.title')}
       testId="trustee-dialog"
       width={460}
+      layer="system"
       footer={
         <>
           {auto ? (

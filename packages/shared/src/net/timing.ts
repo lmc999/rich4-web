@@ -7,9 +7,30 @@
  * - MINIGAME：deadlineAt = startsAt + maxTicks × tickMs + MINIGAME_GRACE_MS，startsAt = now + animMs + MINIGAME_COUNTDOWN_MS。
  */
 import type { DecisionTimingClass } from '../engine/types/decision';
+import type { SeatControl } from '../view/types';
 
 /** 房间计时档位；off 不限时（断线托管照常生效） */
 export type TimerPreset = 'fast' | 'normal' | 'slow' | 'off';
+
+/**
+ * 算作「真人座位」的控制方式（有效计时档位的判定，design/net.md §5.4）：真人在线、断线宽限中、各种托管
+ * （manual / afk / disconnect：本人还在这局里，只是临时交给电脑）都算；电脑补位与被踢（ai）、对局中离开
+ * （autopilot:left，由电脑接管到本人 room:resume 回来为止）不算。观战者不占座位，不影响判定。
+ */
+export function isHumanSeatControl(c: SeatControl): boolean {
+  return c !== 'ai' && c !== 'autopilot:left';
+}
+
+/** 真人座位不超过这么多时不限时：只有一名真人、其余都是电脑的房间和单机（/solo 本来就是 off）一样 */
+export const UNTIMED_MAX_HUMAN_SEATS = 1;
+
+/**
+ * 有效计时档位（服务器权威；GameRunner 按它计算截止时间，RoomView.effectiveTimerPreset 下发）：
+ * 房间设置的档位，但真人座位 ≤ UNTIMED_MAX_HUMAN_SEATS 时为 off。房间设置本身不变（多名真人时仍按设置）。
+ */
+export function effectiveTimerPreset(preset: TimerPreset, humanSeats: number): TimerPreset {
+  return humanSeats <= UNTIMED_MAX_HUMAN_SEATS ? 'off' : preset;
+}
 
 /** normal 档的超时（秒）；minigame 按票据计算 */
 export const DECISION_TIMEOUT_S = Object.freeze({

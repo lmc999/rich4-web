@@ -1,5 +1,7 @@
 // 房间设置表单字段（建房与房主改设置共用）：地图、总资金、行进方式、地契、游戏时间、胜利条件、规则预设、
 // 小游戏、计时档位、演出节奏（原版 / 紧凑）、观战、公开/私密；建房时额外有「电脑补位」。
+// 计时档位下有一行小字「只有一名真人时不计时」（服务器按有效计时档位判定，design/net.md §5.4）；此刻就适用时
+// （改设置：现在座位上只有一名真人；建房：电脑补满其余三个座位）换成「现在只有一名真人：开局后不计时」并高亮。
 import {
   AI_PRESETS,
   type AiPreset,
@@ -19,14 +21,23 @@ import type { ReactNode } from 'react';
 import { useTx } from '../../i18n/tx';
 import c from '../common/common.module.css';
 import l from './lobby.module.css';
-import { type MapListingLite, PACING_OPTIONS, type SettingsDraft, TIMER_PRESETS } from './settingsDraft';
+import {
+  draftSoloHuman,
+  type MapListingLite,
+  PACING_OPTIONS,
+  type SettingsDraft,
+  TIMER_PRESETS,
+  timerHintActive,
+} from './settingsDraft';
 
 export interface RoomSettingsFieldsProps {
   draft: SettingsDraft;
   onChange(d: SettingsDraft): void;
   maps: readonly MapListingLite[];
-  /** 建房时显示「电脑补位」 */
+  /** 建房时显示「电脑补位」（补满其余三个座位时计时说明换成「现在只有一名真人」） */
   withAi: boolean;
+  /** 改房间设置：现在座位上只有一名真人（lobby/settingsDraft soloHumanNow） */
+  soloHuman?: boolean;
   disabled?: boolean;
 }
 
@@ -38,6 +49,8 @@ function Select<T extends string | number>({
   onChange,
   testId,
   disabled,
+  hint,
+  hintActive,
 }: {
   label: string;
   value: T;
@@ -46,6 +59,10 @@ function Select<T extends string | number>({
   onChange(v: T): void;
   testId: string;
   disabled?: boolean;
+  /** 下拉框下方的一行小字说明 */
+  hint?: string;
+  /** 说明此刻就适用：高亮（文字由调用方换好） */
+  hintActive?: boolean;
 }): ReactNode {
   return (
     <label className={c.field}>
@@ -66,12 +83,25 @@ function Select<T extends string | number>({
           </option>
         ))}
       </select>
+      {hint && (
+        <small className={l.fieldHint} data-testid={`${testId}-hint`} data-active={hintActive ? 'true' : 'false'}>
+          {hint}
+        </small>
+      )}
     </label>
   );
 }
 
-export function RoomSettingsFields({ draft, onChange, maps, withAi, disabled }: RoomSettingsFieldsProps): ReactNode {
+export function RoomSettingsFields({
+  draft,
+  onChange,
+  maps,
+  withAi,
+  soloHuman = false,
+  disabled,
+}: RoomSettingsFieldsProps): ReactNode {
   const t = useTx();
+  const untimed = timerHintActive(draft.timerPreset, soloHuman || (withAi && draftSoloHuman(draft)));
   const set = <K extends keyof SettingsDraft>(k: K, v: SettingsDraft[K]): void => onChange({ ...draft, [k]: v });
   const mapIds = maps.some((m) => m.id === draft.mapId)
     ? maps.map((m) => m.id)
@@ -158,6 +188,8 @@ export function RoomSettingsFields({ draft, onChange, maps, withAi, disabled }: 
         onChange={(v) => set('timerPreset', v)}
         testId="set-timer"
         disabled={disabled}
+        hint={t(untimed ? 'lobby:settings.timerHintActive' : 'lobby:settings.timerHint')}
+        hintActive={untimed}
       />
       <Select<PacingProfile>
         label={t('lobby:settings.pacing')}

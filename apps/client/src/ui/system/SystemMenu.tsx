@@ -48,6 +48,7 @@ export function SystemMenu({
         title={t('hud:menu.title')}
         testId="system-menu"
         width={520}
+        layer="system"
       >
         <div className={sy.menuRow}>
           {host && room.phase !== 'ended' && (

@@ -1,11 +1,16 @@
 /* 对局 HUD（design/client.md §5.1 桌面 / §5.2 手机横屏 / §8 断点）：
  * ≥1280 完整桌面（右栏 300px）、1024–1279 右栏 260px、<1024 或矮屏（手机横屏）紧凑右栏 200px；
  * 画布铺满全屏，HUD 用 DOM 叠在上层，镜头按 HUD 遮挡（insets）居中。 */
-.game {
+
+/* HUD 尺寸（右栏宽、顶栏高）：对局页根 .game 与画面正中央的决策倒计时层 .hudGeom 共用同一套断点
+ * （倒计时层挂在 body 上、不在 .game 里，见 ui/common/DecisionCountdown） */
+.game,
+.hudGeom {
   --right-w: 300px;
   --top-h: 50px;
-  /* 左侧日志 / 聊天停靠栏的宽度（中央决策倒计时据此避让，ui/common/countdown.module.css） */
-  --dock-w: min(340px, 38vw);
+}
+
+.game {
   position: fixed;
   inset: 0;
   overflow: hidden;
@@ -16,15 +21,20 @@
 }
 
 @media (max-width: 1279px) {
-  .game {
+  .game,
+  .hudGeom {
     --right-w: 260px;
   }
 }
 
 @media (max-width: 1023px), (max-height: 560px) {
-  .game {
+  .game,
+  .hudGeom {
     --right-w: 200px;
     --top-h: 42px;
+  }
+
+  .game {
     font-size: 13px;
   }
 }
@@ -606,7 +616,7 @@
   left: max(6px, env(safe-area-inset-left));
   top: calc(var(--top-h) + 20px);
   bottom: 110px;
-  width: var(--dock-w);
+  width: min(340px, 38vw);
   display: flex;
   flex-direction: column;
   gap: 6px;

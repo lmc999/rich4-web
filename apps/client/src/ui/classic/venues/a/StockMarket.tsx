@@ -156,8 +156,7 @@ export function StockMarketScene({ decision: d, view, map, isMine, ctl, onClose 
       status={status}
       statusTone={tone}
       countdown={{ remainingMs: ctl.remainingMs, totalMs: ctl.totalMs }}
-      countdownAt={STOCK.ring}
-      countdownBadgeAt={STOCK.badge}
+      countdownAt={{ x: 598, y: 446 }}
       onClose={close}
       closeButton={false}
       backdrop="opaque"

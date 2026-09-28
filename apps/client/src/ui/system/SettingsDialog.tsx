@@ -81,7 +81,14 @@ export function SettingsDialog({
   const st = useSettingsStore();
   const [nick, setNick] = useState(st.nickname);
   return (
-    <Modal open={open} onOpenChange={onOpenChange} title={t('hud:settings.title')} testId="settings-dialog" width={420}>
+    <Modal
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('hud:settings.title')}
+      testId="settings-dialog"
+      width={420}
+      layer="system"
+    >
       <div className={sy.form}>
         {!inGame && (
           <label className={c.field}>
