@@ -14,8 +14,14 @@
 # 最终镜像（runtime）只有三样东西：server/main.mjs(+.map)（esbuild 产物，@rich4/shared 已打进包里）、
 # public/（vite 产物）、node_modules/（server 的生产依赖）。以 node 用户（uid 1000）运行，/data 属主 node。
 
+# 交叉构建（例如在 Apple 芯片的 Mac 上构建 linux/amd64 镜像，再 docker save | ssh … docker load 传到服务器）：
+# build 与 deps 两个阶段固定在构建机自己的架构（$BUILDPLATFORM）上运行，产物是纯 JS（前端静态文件、esbuild 单文件）
+# 与不含原生模块的 node_modules（server 的生产依赖里没有 .node 文件），与目标架构无关；runtime 阶段只用目标架构的
+# 基础镜像并且不执行任何 RUN，所以不需要 QEMU/Rosetta 模拟：
+#   docker buildx build --platform linux/amd64 -f deploy/Dockerfile -t rich4:local --load .
+
 # ───────────── build：全量依赖 + 构建前端与服务端 ─────────────
-FROM node:24-slim AS build
+FROM --platform=$BUILDPLATFORM node:24-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
@@ -44,7 +50,7 @@ RUN node --disable-warning=ExperimentalWarning scripts/scan-tree.ts --profile ar
 # ───────────── deps：只装 server 的生产依赖 ─────────────
 # @rich4/shared 已由 esbuild 打进 main.mjs；npm 为 workspace 建的 node_modules/@rich4/* 链接指向本阶段并不存在的源码目录，
 # 直接删掉（运行时用不到它们，容器能起服即证明）。再删掉运行时用不到的类型声明、source map 与文档，缩小镜像。
-FROM node:24-slim AS deps
+FROM --platform=$BUILDPLATFORM node:24-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
@@ -56,7 +62,9 @@ RUN --mount=type=cache,target=/root/.npm \
     && rm -rf node_modules/@rich4 node_modules/.bin \
     && find node_modules -type f \( -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' -o -name '*.map' \
          -o -iname 'README*' -o -iname 'CHANGELOG*' -o -iname 'HISTORY*' \) -delete \
-    && find node_modules -depth -type d -empty -delete
+    && find node_modules -depth -type d -empty -delete \
+    && if find node_modules -name '*.node' | grep -q .; then echo "生产依赖里出现原生模块，不能再按构建机架构安装（见文件头）" >&2; exit 1; fi \
+    && mkdir -p /skel/data /skel/data-rich4 /skel/assets-rich4
 
 # ───────────── runtime ─────────────
 FROM node:24-slim AS runtime
@@ -73,8 +81,11 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/apps/server/dist ./server
 COPY --from=build /app/apps/client/dist ./public
 # /data：读写卷（sqlite、备份）；命名卷首次创建时沿用这里的属主 node:node（绑定宿主目录时要自己 chown 1000:1000）。
-# /data-rich4、/assets-rich4：只读挂载点（原版地图数据与原版皮肤素材包；镜像里是空目录）
-RUN mkdir -p /data /data-rich4 /assets-rich4 && chown node:node /data
+# /data-rich4、/assets-rich4：只读挂载点（原版地图数据与原版皮肤素材包；镜像里是空目录）。
+# 用 COPY 建空目录而不是 RUN mkdir：runtime 阶段不执行命令，交叉构建时不需要模拟目标架构
+COPY --from=deps --chown=node:node /skel/data /data
+COPY --from=deps /skel/data-rich4 /data-rich4
+COPY --from=deps /skel/assets-rich4 /assets-rich4
 USER node
 VOLUME ["/data"]
 EXPOSE 3000

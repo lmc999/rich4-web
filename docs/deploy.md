@@ -131,6 +131,8 @@ docker save rich4:local | gzip | ssh user@rich4.example.com 'gunzip | docker loa
 docker compose up -d --no-build --wait
 ```
 
+- 跨架构构建（`--platform linux/amd64`）不需要在 Docker Desktop 里打开 amd64 模拟：Dockerfile 的 build、deps 阶段固定在构建机架构上运行（产物是纯 JS），最终镜像不执行任何 `RUN`（见 Dockerfile 文件头）。但本机没有模拟时跑不了 amd64 容器，`scan-image.sh` 的第一道检查（在容器里列文件）会以退出码 2 失败——这时把扫描放到服务器上做：镜像 `docker load` 之后，在服务器仓库目录执行 `bash deploy/scan-image.sh rich4:local`。
+
 ## 7. 上线检查清单
 
 - [ ] `SAVE_HMAC_SECRET`：本机 `scripts/access.ts secret` 生成的随机值（≥32 字节）。更换它会让之前导出的存档文件验签失败。
