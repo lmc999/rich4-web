@@ -17,6 +17,7 @@ import { resetSkinStoreForTest } from '../../skin/skinStore';
 import { ORIGINAL_FONT_STACK } from '../../skin/theme';
 import { useGameStore } from '../../store/gameStore';
 import { useMapStore } from '../../store/mapStore';
+import { useRoomStore } from '../../store/roomStore';
 import { useUiStore } from '../../store/uiStore';
 import { makeTestClient } from '../../test/fakeTransport';
 import { ai, human, roomView } from '../../test/roomFixtures';
@@ -33,6 +34,8 @@ import { MONTH_GRID, MOON_RECT, SUN_RECT } from './CalendarPanel';
 import { diceFaceFrame } from './ClassicDice';
 import { ClassicLayout } from './ClassicLayout';
 import { ClassicStage } from './ClassicStage';
+import { installSceneAssets } from './common/testing';
+import { a11FakeSheets, a11PackClient } from './dialogs/testing';
 import { GO_MASK_REGIONS, goFrame, nearestIcon, onGoFace } from './GoButton';
 import { DICE_COUNT_RECT, DICE_FACE_POINT, diceFlcPlacement, diceFlcRect, diceSlotIcons, GO_RECT } from './layout';
 import { PROFILE_PAGES, profileNumbers, profileRows } from './profileStats';
@@ -248,6 +251,64 @@ describe('GameScreen 按皮肤切换布局', () => {
     expect(await screen.findByTestId('top-bar')).toBeInTheDocument();
     expect(screen.getByTestId('screen-game')).not.toHaveAttribute('data-layout');
     expect(screen.queryByTestId('classic-stage')).toBeNull();
+  });
+});
+
+describe('系统菜单里的托管设置（两种皮肤）', () => {
+  afterEach(() => {
+    useRoomStore.getState().clear();
+    resetSkinStoreForTest();
+  });
+
+  function renderGame(): void {
+    const t = makeTestClient();
+    load(sp.batches[10]!.view);
+    act(() => useRoomStore.getState().setRoom(room));
+    render(
+      <ClientProvider client={t.client}>
+        <GameScreen room={room} onLeave={() => {}} />
+      </ClientProvider>,
+    );
+  }
+
+  it('原版皮肤：原版托管画面接管时收起系统菜单——画面在经典舞台里可见、可点，焦点在画面里，Esc 关闭', async () => {
+    resetSkinStoreForTest({ client: a11PackClient() });
+    renderGame();
+    const stage = await screen.findByTestId('classic-stage');
+    // 经典布局懒加载原版弹窗宿主：等它挂上（开始接管托管设置）；素材在布局按（假的）皮肤判定绑定过素材包之后再装
+    await act(async () => {
+      await import('./popups/ClassicPopupHost');
+    });
+    act(() => installSceneAssets({ sprites: a11FakeSheets() }));
+    await userEvent.click(within(stage).getByTestId('top-menu'));
+    await userEvent.click(await screen.findByTestId('menu-trustee'));
+    const dlg = await within(stage).findByTestId('trustee-dialog');
+    expect(dlg).toHaveAttribute('data-classic', 'true');
+    expect(useTrusteeDialog.getState().open).toBe(false);
+    // 挂在 body 上的系统菜单（盖在舞台之上）收起，程序化托管对话框也没有出现
+    await waitFor(() => expect(screen.queryByTestId('system-menu')).toBeNull());
+    expect(screen.getAllByTestId('trustee-dialog')).toHaveLength(1);
+    expect(dlg.contains(document.activeElement)).toBe(true);
+    // 可点（菜单开着时 body 的 pointer-events 为 none，userEvent 会拒绝点击）
+    const pick = within(dlg).getByTestId('trustee-personality-2');
+    await userEvent.click(pick);
+    expect(pick).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByTestId('trustee-dialog')).toBeNull());
+    expect(screen.queryByTestId('system-menu')).toBeNull();
+  });
+
+  it('程序化皮肤：托管设置对话框照旧叠在系统菜单之上，关掉对话框回到菜单', async () => {
+    skinMock.skin = 'procedural';
+    renderGame();
+    await userEvent.click(await screen.findByTestId('top-menu'));
+    await userEvent.click(await screen.findByTestId('menu-trustee'));
+    const dlg = await screen.findByTestId('trustee-dialog');
+    expect(dlg).not.toHaveAttribute('data-classic');
+    expect(screen.getByTestId('system-menu')).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByTestId('trustee-dialog')).toBeNull());
+    expect(screen.getByTestId('system-menu')).toBeInTheDocument();
   });
 });
 

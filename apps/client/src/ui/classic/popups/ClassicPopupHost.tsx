@@ -8,6 +8,8 @@
 // 3) 工具列打开的原版界面：资产表（工具列「查询」→ uiStore 打开 info 面板时改开原版资产表）、托管设置
 //    （openTrusteeSettings → 改开原版托管对话框）、存读档（工具列 LOAD / SAVE 经 ./screenRequests 请求 → 原版风格的 Data#479 窗）。
 //    素材不可用时不接管，照旧打开程序化面板 / 对话框；精灵还在加载时等它就绪（有上限）再开原版界面。
+//    开原版界面时收起系统菜单（closeSystemMenu）：菜单是挂在 body 上的模态框，盖在经典舞台之上，托管设置又是从菜单里
+//    打开的——不收起的话原版托管画面被菜单挡住、点不到（程序化对话框同样挂在 body 上，照旧叠在菜单之上）。
 // 挂载时（空闲时）预取这些弹窗与界面的精灵，演出出现时通常已就绪。
 import type { MapIndex } from '@rich4/shared/data';
 import type { SeatIndex } from '@rich4/shared/engine';
@@ -17,6 +19,7 @@ import { mySeat, useRoomStore } from '../../../store/roomStore';
 import { useUiStore } from '../../../store/uiStore';
 import { LotteryDrawPopup } from '../../popups/LotteryDrawPopup';
 import { type OpenPopup, usePopupStore } from '../../popups/popupStore';
+import { closeSystemMenu } from '../../system/SystemMenu';
 import { useTrusteeDialog } from '../../system/TrusteeSettings';
 import { useClassicAssets } from '../assets';
 import { ensureSceneSprite, prepareSceneKeys, sceneKeysStatus, scenePackClient } from '../common/sceneAssets';
@@ -189,6 +192,11 @@ function ClassicScreens({ map }: { map: MapIndex | null }): ReactNode {
 
   useEffect(() => {
     let live = true;
+    /** 开原版界面（先收起盖在舞台之上的系统菜单） */
+    const show = (s: Exclude<Screen, null>): void => {
+      closeSystemMenu();
+      setScreen(s);
+    };
     const status = (keys: readonly string[]) => sceneKeysStatus(keys, scenePackClient());
     const ready = (keys: readonly string[]): boolean => status(keys) === 'ready';
     /** 接管：就绪 → 立即开；加载中 → 等待后开，等不到调用 fallback（重新打开程序化面板，这一次不接管） */
@@ -222,7 +230,7 @@ function ClassicScreens({ map }: { map: MapIndex | null }): ReactNode {
       useUiStore.getState().openPanel(null);
       takeOver(
         ASSETS_KEYS,
-        () => setScreen({ k: 'assets', seat }),
+        () => show({ k: 'assets', seat }),
         () => {
           bypassInfo = true;
           useUiStore.getState().openPanel('info');
@@ -241,7 +249,7 @@ function ClassicScreens({ map }: { map: MapIndex | null }): ReactNode {
       useTrusteeDialog.getState().setOpen(false);
       takeOver(
         TRUSTEE_KEYS,
-        () => setScreen({ k: 'trustee' }),
+        () => show({ k: 'trustee' }),
         () => {
           bypassTrustee = true;
           useTrusteeDialog.getState().setOpen(true);
@@ -254,7 +262,7 @@ function ClassicScreens({ map }: { map: MapIndex | null }): ReactNode {
       if (req.k !== 'saves' || !ready(SAVELOAD_KEYS)) return false;
       const r = useRoomStore.getState().room;
       if (!r || mySeat(r) === null) return false;
-      setScreen({ k: 'saves', mode: req.mode });
+      show({ k: 'saves', mode: req.mode });
       return true;
     });
     return () => {

@@ -20,7 +20,7 @@ import { Toasts } from '../hud/Overlays';
 import GameScreen from '../screens/GameScreen';
 import { ReconnectOverlay } from './ReconnectOverlay';
 import { SaveLoadMenu, saveErrorText } from './SaveLoadMenu';
-import { SystemMenu } from './SystemMenu';
+import { closeSystemMenu, SystemMenu } from './SystemMenu';
 import {
   openTrusteeSettings,
   snapRatio,
@@ -393,6 +393,32 @@ describe('SystemMenu', () => {
     expect(screen.queryByTestId('menu-dissolve')).toBeNull();
     expect(screen.queryByTestId('menu-trustee')).toBeNull();
     expect(screen.getByTestId('menu-leave')).toBeInTheDocument();
+  });
+
+  it('closeSystemMenu：菜单开着时经 onOpenChange(false) 收起（解散确认行一并复位）；关着或已卸载时什么也不做', async () => {
+    const room = roomView({ phase: 'playing' });
+    const onOpenChange = vi.fn();
+    const { client } = makeTestClient();
+    const ui = (open: boolean) => (
+      <ClientProvider client={client}>
+        <SystemMenu room={room} open={open} onOpenChange={onOpenChange} onLeave={() => {}} />
+      </ClientProvider>
+    );
+    const { rerender, unmount } = render(ui(false));
+    act(() => closeSystemMenu());
+    expect(onOpenChange).not.toHaveBeenCalled();
+    rerender(ui(true));
+    await userEvent.click(screen.getByTestId('menu-dissolve'));
+    expect(screen.getByTestId('menu-dissolve-confirm-row')).toBeInTheDocument();
+    act(() => closeSystemMenu());
+    expect(onOpenChange).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    rerender(ui(false));
+    rerender(ui(true));
+    expect(screen.queryByTestId('menu-dissolve-confirm-row')).toBeNull();
+    unmount();
+    act(() => closeSystemMenu());
+    expect(onOpenChange).toHaveBeenCalledTimes(1);
   });
 });
 
