@@ -920,6 +920,13 @@
   box-shadow: var(--shadow-chunky);
 }
 
+/* 左手模式右栏在左边：横幅、骰子、暂停条改在右栏右边那块棋盘视口的水平正中（与镜头 insets、决策倒计时层同一个中心） */
+.game[data-left="true"] .banner,
+.game[data-left="true"] .dice,
+.game[data-left="true"] .paused {
+  left: calc(var(--right-w) + (100% - var(--right-w)) / 2);
+}
+
 /* ───── 终局 ───── */
 .gameOver {
   position: absolute;
