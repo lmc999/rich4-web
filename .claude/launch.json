@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["-w", "@rich4/client", "run", "dev", "--", "--port", "5199", "--strictPort"],
       "port": 5199
+    },
+    {
+      "name": "dev",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["PORT=3000", "npm", "run", "dev"],
+      "port": 5173
     }
   ]
 }
