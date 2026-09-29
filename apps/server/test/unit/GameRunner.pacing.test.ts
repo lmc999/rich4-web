@@ -65,7 +65,7 @@ describe('GameRunner：按房间演出节奏计时', () => {
     expect(h.runner.rawBatches().at(-1)!.animMs).toBe(raw.animMs);
   });
 
-  it('同一批事件：original 比 compact 多出卡片 FLIC 的差额，截止时间随之后移', () => {
+  it('同一批事件：original 比 compact 多出卡片 FLIC 与掷骰演出（速度 1 对速度 2）的差额，截止时间随之后移', () => {
     const run = (pacing: PacingProfile) => {
       const h = makeRunner({ settings: { pacing } });
       const raw = rollToCardSquare(h);
@@ -74,9 +74,13 @@ describe('GameRunner：按房间演出节奏计时', () => {
     const o = run('original');
     const c = run('compact');
     expect(o.raw.events).toEqual(c.raw.events);
-    const card = o.raw.events.find((e) => e.type === 'CARD_GAINED')!;
-    const diff = eventBudgetMs(card, 'original') - eventBudgetMs(card, 'compact');
-    expect(diff).toBeGreaterThan(0);
+    let diff = 0;
+    for (const t of ['CARD_GAINED', 'DICE_ROLLED'] as const) {
+      const e = o.raw.events.find((x) => x.type === t)!;
+      const d = eventBudgetMs(e, 'original') - eventBudgetMs(e, 'compact');
+      expect(d, t).toBeGreaterThan(0);
+      diff += d;
+    }
     expect(o.raw.animMs - c.raw.animMs).toBe(diff);
     expect(o.deadline - o.now - (c.deadline - c.now)).toBe(diff);
   });

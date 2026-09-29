@@ -128,6 +128,15 @@ async function stepOnto(page: Page, seat: number, node: number, prev: number): P
   await acted(page, () => page.getByTestId('action-roll').click());
 }
 
+/**
+ * 观战页（演出页）先把积压播完，再做它要看的那一步。两名真人页是 instant，几乎同时连发一串批次；演出页积压超过 5 批
+ * （或落后 15 秒）会自动 skipAll 追帧（EventPlayer AUTO_SKIP_QUEUE / AUTO_SKIP_BACKLOG_MS），后面那一批的弹窗就被跳过。
+ * 掷骰按原版时序演出（持骰动作 + 骰子 FLC 36 帧 + 停留，original 节奏每次约 2.3 s）之后，这里不同步就会积压到阈值
+ */
+async function watcherCaughtUp(page: Page): Promise<void> {
+  await waitIdle(page);
+}
+
 /** 原版场景（决策 kind）出现在本页 */
 function classicScene(page: Page, kind: string) {
   return page.locator(`[data-testid="decision-${kind}"][data-scene="classic"]`);
@@ -186,6 +195,7 @@ test('原版对话框与弹窗：买地、升级、设施、轮盘、新闻板�
       return { inScene: !!el?.closest('[data-scene]'), inBoard: !!el?.closest('[data-testid="classic-board-slot"]') };
     });
     expect(passThrough).toEqual({ inScene: false, inBoard: true });
+    await watcherCaughtUp(W);
     const cell = menu.getByTestId(`inv-card-${slot}`);
     await expect(cell).toBeEnabled();
     await cell.click();
@@ -234,6 +244,7 @@ test('原版对话框与弹窗：买地、升级、设施、轮盘、新闻板�
 
     // ── 轮盘：对手住进旅馆（转盘强制停在 3 天），观战页弹出原版旅馆转盘 ──
     await waitMyTurn(B);
+    await watcherCaughtUp(W);
     await acted(B, () => debugAct(B, { op: 'forceNext', purpose: 'wheel', values: [7] }));
     await stepOnto(B, 1, 16, 15);
     const wheel = W.locator('[data-scene="classic"] [data-testid="roulette-popup"]');
@@ -245,6 +256,7 @@ test('原版对话框与弹窗：买地、升级、设施、轮盘、新闻板�
 
     // ── 新闻板：所得税（观战页：原版新闻板 + 插图） ──
     await waitMyTurn(A);
+    await watcherCaughtUp(W);
     await acted(A, () => debugAct(A, { op: 'stackDeck', deck: 'news', ids: [11] }));
     await stepOnto(A, 0, 1, 18);
     const news = W.locator('[data-scene="classic"] [data-testid="news-popup"]');
@@ -255,6 +267,7 @@ test('原版对话框与弹窗：买地、升级、设施、轮盘、新闻板�
 
     // ── 命运：继承遗产（命运插图未核实，guess 整体回退 → 程序化命运弹窗，不在原版紫板上拼） ──
     await waitMyTurn(A);
+    await watcherCaughtUp(W);
     await acted(A, () => debugAct(A, { op: 'stackDeck', deck: 'fate', ids: [25] }));
     await stepOnto(A, 0, 2, 1);
     const fate = W.getByTestId('fate-popup');

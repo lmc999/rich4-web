@@ -180,7 +180,11 @@ function synthFrameSet(it: SpriteItem, count: number): FrameSet {
 
 function frameCount(it: SpriteItem): number {
   if (typeof it.frames === 'number') return it.frames;
-  return /walk/.test(it.key) ? 72 : 8;
+  if (/walk/.test(it.key)) return 72;
+  // 持骰动作（原版步行每方向 7–9 帧、机车 / 汽车 / 快艇 4–8 帧，掷骰时逐 tick 播一遍）：步行 9 帧、其余 4 帧
+  if (/^char\.\d+\.dice$/.test(it.key)) return 72;
+  if (/\.dice$/.test(it.key)) return 32;
+  return 8;
 }
 
 // ───────────────────────── 合成地面（GND 格式） ─────────────────────────

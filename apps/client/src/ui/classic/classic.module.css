@@ -781,7 +781,8 @@
   background: linear-gradient(90deg, #2b1552 0 20%, #fff3a8 20%, #ffe34d);
 }
 
-.go[data-state="disabled"] .goFallback {
+.go[data-state="disabled"] .goFallback,
+.go[data-state="stay"] .goFallback {
   filter: grayscale(1) brightness(0.8);
 }
 
@@ -804,6 +805,14 @@
   cursor: default;
 }
 
+/* 竖槽里的一个小骰子（15×15，画点见 layout.diceSlotIcons） */
+.diceIcon {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  pointer-events: none;
+}
+
 .diceCountFallback {
   display: grid;
   place-items: center;
@@ -818,9 +827,10 @@
   line-height: 1;
 }
 
-/* 原版小图的灰帧就是不能切换的样子；只有回退画法才靠透明度表示 */
-.diceCount:disabled .diceCountFallback {
-  opacity: 0.6;
+/* 回退画法：没选中（或停留）的小骰子画灰，与原版灰帧同义 */
+.diceCountFallback[data-on="false"] {
+  background: #bbb;
+  color: #555;
 }
 
 .dice {
@@ -836,17 +846,14 @@
   height: 285px;
 }
 
+/* 点数面：按原版画点绝对定位（layout.DICE_FACE_POINT 与 Panel#3 的锚点；回退骰子用 DICE_FACE_FALLBACK） */
 .diceFaces {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: 150px;
-  display: flex;
-  justify-content: center;
-  gap: 6px;
+  inset: 0;
 }
 
 .dieFallback {
+  position: absolute;
   display: grid;
   place-items: center;
   width: 34px;
@@ -875,18 +882,6 @@
   .dieFallback[data-rolling="true"] {
     animation: none;
   }
-}
-
-.diceSum {
-  --outline: #000;
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 196px;
-  text-align: center;
-  font-size: 16px;
-  font-weight: 700;
-  color: #ffe34d;
 }
 
 /* ───── 侧栏与抽屉 ───── */

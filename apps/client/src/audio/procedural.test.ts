@@ -90,5 +90,16 @@ describe('真实 zzfx 模块', () => {
       expect(peak, id).toBeGreaterThan(0.01);
       expect(Array.from(b)).toEqual(Array.from(a));
     }
+    // 掷骰的一声「咚」（原版 Effect#10：139 ms、单起音）：短于 200 ms，能量集中在开头
+    const knock = build!(ZZFX_PRESETS.dice, 44_100);
+    expect(knock.length / 44_100).toBeLessThan(0.2);
+    let head = 0;
+    let tail = 0;
+    for (let i = 0; i < knock.length; i++) {
+      const v = Math.abs(knock[i]!);
+      if (i < 44_100 * 0.04) head = Math.max(head, v);
+      else tail = Math.max(tail, v);
+    }
+    expect(head).toBeGreaterThan(tail);
   });
 });

@@ -90,7 +90,14 @@ describe('formatEvent', () => {
   it('每种事件都有预算（handler 的时长上限）', () => {
     for (const t of GAME_EVENT_TYPES) {
       expect(
-        eventBudgetMs({ type: t, path: [1, 2], wheel: null, slot: null, mode: 'played' } as unknown as GameEvent),
+        eventBudgetMs({
+          type: t,
+          path: [1, 2],
+          dice: [3],
+          wheel: null,
+          slot: null,
+          mode: 'played',
+        } as unknown as GameEvent),
       ).toBeGreaterThanOrEqual(0);
     }
   });

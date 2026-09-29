@@ -108,13 +108,16 @@ export class AudioSystem {
 
   /**
    * PresentationContext.audio 的实现：handler 里 ctx.audio.play(id) 可播逻辑键（`sfx.049`、`zzfx.coin`）
-   * 或裸 ZzFX 预设名（`coin`）
+   * 或裸 ZzFX 预设名（`coin`）；ctx.audio.cue(提示) 按 soundMap 同一套规则解析（原版音效集或 ZzFX 回退）
    */
   port(): AudioPort {
     return {
       play: (id: string) => {
         const preset = isZzfxPreset(id) ? id : null;
         this.engine.playSfx(preset ? zzfxKey(preset) : id);
+      },
+      cue: (c) => {
+        this.director.playCue(c);
       },
     };
   }

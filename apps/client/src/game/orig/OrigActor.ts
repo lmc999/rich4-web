@@ -4,6 +4,8 @@
 // - 每格行走在节点世界坐标之间直线插值（原版忽略 via 连接格；原版速度表 [8,12,16,8] px/tick 只作参考，
 //   时长遵循 pacing 预算：每步 stepMs）；
 // - 机车 / 汽车 / 快艇（快艇节点段）/ 梦游 / 乞丐 / 住院 / 坐牢外观；工程车（k=9–11，guess）走程序化载具回退；
+// - 掷骰动作（throwDice）：等待掷骰时静止站立；收到掷骰结果后把持骰库每方向的帧逐 tick 播一遍（抱骰 → 抛出 → 空手），
+//   停在最后一帧直到开始行走（exe fcn.0040d28a case 2 0x40d43b–0x40d470；渲染 0x4083a9 帧 = 方向槽 × perDir + 计数）；
 // - 附身神明、身上的定时炸弹（原版附身物件）、冬眠 / 梦游 ZZZ、乌龟；头顶名牌与聊天 / 表情气泡；同格多人偏移；
 // - 开局跳伞：hop 时若刚被放上棋盘，播角色的棋盘伞 FLIC（Data#518–529，按预算 playFit），素材不可用时程序化降落。
 // 测试钩子与程序化 PlayerActor 同形：seat、tile、isWalking、root（visible、children 的 label 'speech'）、currentStatus。
@@ -27,7 +29,6 @@ import type { OrigAssets, SpriteSheet } from './OrigAssets';
 import type { OrigProjection } from './OrigProjection';
 import {
   characterPose,
-  DICE_FRAME_MS,
   dirOfWorldStep,
   dollPose,
   needsOverlay,
@@ -130,7 +131,14 @@ export class OrigActor {
   private tagLift = 0;
   private tagBase: number | null = null;
   private current = false;
-  private dicePose = false;
+  /** 掷骰动作的帧（持骰库每方向内的下标）；null = 不在持骰姿态 */
+  private throwFrame: number | null = null;
+  /**
+   * 掷骰动作的代号：每次 throwDice、clearThrow、开始行走都加 1。throwDice 等待持骰库下载或逐帧等待之后，代号变了就不再
+   * 摆姿态——EventPlayer.reset 先同步中止当前 handler、再 syncBoard（clearThrow），被中止的 throwDice 在之后的微任务里才继续，
+   * 不能在同步之后又把持骰姿态摆回去
+   */
+  private throwToken = 0;
   private landing: TileId | null = null;
   /** 刚被放上棋盘、等下一次 hop 播降落：本体与名牌先藏起来（镜头推移、FLIC 载入期间不先站在落点上） */
   private dropPending = false;
@@ -205,6 +213,16 @@ export class OrigActor {
 
   get frameIndex(): number {
     return this.frame;
+  }
+
+  /** 屏幕方向槽 (8 − 视角 + 朝向) & 7（帧号、原版骰子 FLC 画点表 0x4730ac 的下标） */
+  get screenDir(): number {
+    return (8 - this.o.proj.view + this.dir) & 7;
+  }
+
+  /** 正在摆持骰姿态（掷骰动作中，或动作播完停在最后一帧） */
+  get throwing(): boolean {
+    return this.throwFrame !== null;
   }
 
   get inBoat(): boolean {
@@ -309,7 +327,7 @@ export class OrigActor {
     this.placeTag();
   }
 
-  /** 当前行动者：持骰姿态、深度层 0xD */
+  /** 当前行动者：深度层 0xD */
   setCurrent(on: boolean): void {
     if (this.current === on) return;
     this.current = on;
@@ -317,12 +335,66 @@ export class OrigActor {
     this.refresh();
   }
 
-  /** 待机时是否摆持骰姿态（轮到自己、等待掷骰） */
-  setDicePose(on: boolean): void {
-    if (this.dicePose === on) return;
-    this.dicePose = on;
-    this.idleMs = 0;
+  /**
+   * 掷骰动作：持骰库（按当前外观：步行 / 机车 / 汽车 / 快艇）每方向的帧逐 tick 播一遍，播完停在最后一帧（空手）直到
+   * 开始行走或 clearThrow。没有持骰库（梦游、住院、坐牢、素材缺失）时不动；instant 或中止时直接落到最后一帧
+   */
+  async throwDice(tickMs: number, signal?: AbortSignal): Promise<void> {
+    if (this.dead || this.walking) return;
+    const token = ++this.throwToken;
+    const live = (): boolean => !this.dead && !this.walking && this.throwToken === token;
+    const got = await this.diceSheet(signal);
+    if (!live() || !got) return;
+    // 为下载持骰库等过、其间演出被中止（封顶、reset、skipAll）：不再摆姿态，接下来就是行走或批尾同步
+    if (got.waited && signal?.aborted) return;
+    const sheet = got.sheet;
+    const perDir = sheet.dirs === 8 ? Math.max(1, Math.trunc(sheet.count / 8)) : Math.max(1, sheet.count);
+    const clock = this.o.clock;
+    const quick = (): boolean => clock.instant || signal?.aborted === true;
+    this.throwFrame = quick() ? perDir - 1 : 0;
     this.refresh();
+    // 原版：计数每 tick +1，到 perDir 才掷骰，所以每帧都停留一个 tick。按起点算绝对时刻（逐帧等待不累积误差）
+    const t0 = clock.now();
+    for (let f = 1; f <= perDir && !quick(); f++) {
+      const due = t0 + f * tickMs - clock.now();
+      if (due > 0) await clock.wait(due, signal);
+      if (!live() || this.throwFrame === null) return;
+      if (f < perDir) {
+        this.throwFrame = f;
+        this.refresh();
+      }
+    }
+    if (live() && this.throwFrame !== null && this.throwFrame !== perDir - 1) {
+      this.throwFrame = perDir - 1;
+      this.refresh();
+    }
+  }
+
+  /** 收起持骰姿态（开始行走、表情姿态、批尾同步）；还在等持骰库下载的 throwDice 随之作废 */
+  clearThrow(): void {
+    this.throwToken++;
+    if (this.throwFrame === null) return;
+    this.throwFrame = null;
+    this.refresh();
+  }
+
+  /**
+   * 首个可用的持骰库（按姿态候选的次序）；候选里第一个可用的不是持骰库（回退到站姿）时为 null。
+   * waited：为下载等过（没有预取到的库，例如第一次在快艇上掷骰）
+   */
+  private async diceSheet(signal?: AbortSignal): Promise<{ sheet: SpriteSheet; waited: boolean } | null> {
+    let waited = false;
+    for (const k of this.choice('dice').keys) {
+      let s: SpriteSheet | null;
+      if (this.o.assets.settled(k)) s = this.o.assets.sheetNow(k);
+      else {
+        waited = true;
+        s = await this.o.assets.sheet(k);
+      }
+      if (this.dead || signal?.aborted) return s && k.endsWith('.dice') ? { sheet: s, waited } : null;
+      if (s) return k.endsWith('.dice') ? { sheet: s, waited } : null;
+    }
+    return null;
   }
 
   /** 状态外观（幂等） */
@@ -337,9 +409,9 @@ export class OrigActor {
     this.refresh();
   }
 
-  /** 预取当前状态下站、走两种姿态的精灵库（行走开始前就绪，帧选择不用等加载） */
+  /** 预取当前状态下站、走、持骰三种姿态的精灵库（行走、掷骰开始前就绪，帧选择不用等加载） */
   preload(): void {
-    for (const mode of ['stand', 'walk'] as const) {
+    for (const mode of ['stand', 'walk', 'dice'] as const) {
       for (const k of this.choice(mode).keys) void this.o.assets.sheet(k);
     }
   }
@@ -392,7 +464,7 @@ export class OrigActor {
 
   private mode(): PoseMode {
     if (this.walking) return 'walk';
-    return this.dicePose && this.current ? 'dice' : 'stand';
+    return this.throwFrame !== null ? 'dice' : 'stand';
   }
 
   private choice(mode: PoseMode): PoseChoice {
@@ -429,11 +501,7 @@ export class OrigActor {
       });
     }
     this.usedKey = used;
-    const anim = this.walking
-      ? Math.floor(this.walkMs / WALK_FRAME_MS)
-      : mode === 'dice'
-        ? Math.floor(this.idleMs / DICE_FRAME_MS)
-        : 0;
+    const anim = this.walking ? Math.floor(this.walkMs / WALK_FRAME_MS) : mode === 'dice' ? (this.throwFrame ?? 0) : 0;
     if (sheet) {
       const f = sheetFrame(sheet, this.dir, this.o.proj.view, anim);
       this.frame = f;
@@ -620,13 +688,11 @@ export class OrigActor {
   private tick(dt: number): void {
     if (this.dead) return;
     const prevWalk = Math.floor(this.walkMs / WALK_FRAME_MS);
-    const prevIdle = Math.floor(this.idleMs / DICE_FRAME_MS);
     const prevZ = Math.floor(this.idleMs / ZZZ_FRAME_MS);
     if (this.walking) this.walkMs += dt;
     this.idleMs += dt;
+    // 站姿与持骰姿态不随时间循环（原版等待掷骰时静止；掷骰动作由 throwDice 逐 tick 推进）
     if (this.walking && Math.floor(this.walkMs / WALK_FRAME_MS) !== prevWalk) this.refresh();
-    else if (!this.walking && this.mode() === 'dice' && Math.floor(this.idleMs / DICE_FRAME_MS) !== prevIdle)
-      this.refresh();
     if (this.zzz && Math.floor(this.idleMs / ZZZ_FRAME_MS) !== prevZ) this.animateZzz();
   }
 
@@ -660,6 +726,8 @@ export class OrigActor {
     };
     this.walking = true;
     this.walkMs = 0;
+    this.throwFrame = null;
+    this.throwToken++;
     try {
       await tweenValue(
         0,

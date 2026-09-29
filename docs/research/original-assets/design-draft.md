@@ -468,7 +468,7 @@ export interface PackManifestV1 {
 | 破产 | 514（100） | 0.7 s | BANKRUPT 2500 | 原速 |
 | 节日：元旦、国庆 / 圣诞 | 482（90）/ 513（114） | 2.8 / 7.65 s | HOLIDAY 2000 | 482 加速 1.4×；513 截尾 |
 | 开局跳伞（PARACHUTE） | 518–529 棋盘伞（按角色） | 1.3–1.7 s | 1500 | 原速；全屏的 jump#41–66 只在 A13 可选播放，不占预算 |
-| 骰子（DICE_ROLLED） | Panel#4/5/6（1/2/3 颗） | 36×14 ms = 0.5 s | 900 | 原速，之后定格为 Panel#3 的点数 |
+| 骰子（DICE_ROLLED） | Panel#4/5/6（1/2/3 颗） | 36 帧；头部 14 ms 被 exe 覆盖为 [50,30,20] ms/帧（按游戏速度），默认 1.08 s | original 2400 / compact 1480（含持骰动作与落定停留，见 shared/view/pacing 的 DICE_TIMING） | 只播一遍，第 30 帧与播完各放 Effect#10；之后定格为 Panel#3 的点数 |
 | 乐透开奖（LOTTERY_DRAW） | Panel#16/17 | 3.0 / 2.6 s | 4200 | 原速 |
 | 魔法屋施法（MAGIC_CAST） | Panel#20（不透明，640×480） | 1.8 s | 2000 | 原速，放在场所屏里 |
 | cheer / sad 姿态 | 375–398，每个角色 2 段 | 0.4–2.3 s | — | 在角色旁循环 |

@@ -30,10 +30,11 @@ import { SystemMenu } from '../system/SystemMenu';
 import { useTrusteeDialog } from '../system/TrusteeSettings';
 import { GO_MASK_KEY, type MaskAsset, resetClassicAssetsForTest, type SpriteFrame, type SpriteSheet } from './assets';
 import { MONTH_GRID, MOON_RECT, SUN_RECT } from './CalendarPanel';
+import { diceFaceFrame } from './ClassicDice';
 import { ClassicLayout } from './ClassicLayout';
 import { ClassicStage } from './ClassicStage';
-import { diceCountFrame, GO_MASK_REGIONS, onGoFace } from './GoButton';
-import { DICE_COUNT_RECT, GO_RECT } from './layout';
+import { GO_MASK_REGIONS, goFrame, nearestIcon, onGoFace } from './GoButton';
+import { DICE_COUNT_RECT, DICE_FACE_POINT, diceFlcPlacement, diceFlcRect, diceSlotIcons, GO_RECT } from './layout';
 import { PROFILE_PAGES, profileNumbers, profileRows } from './profileStats';
 
 vi.mock('../screens/BoardCanvas', () => ({
@@ -735,7 +736,19 @@ describe('GO 钮、骰子数与快捷键', () => {
     expect(go).toHaveAttribute('data-state', 'normal');
     expect(go).toHaveTextContent('掷骰（1 颗）');
     const dc = screen.getByTestId('action-dice-count');
-    await userEvent.click(dc);
+    // 点竖槽里第 2 个小骰子（汽车 3 个：钮内 y=9+16i，竖槽从钮内 y=9 起）→ 2 颗；D 键循环 → 3 颗
+    vi.spyOn(dc, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 16,
+      height: 48,
+      right: 16,
+      bottom: 48,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    fireEvent.click(dc, { detail: 1, clientX: 8, clientY: 16 + 7 });
     expect(dc).toHaveAttribute('data-value', '2');
     fireEvent.keyDown(window, { key: 'd' });
     expect(dc).toHaveAttribute('data-value', '3');
@@ -777,20 +790,138 @@ describe('GO 钮、骰子数与快捷键', () => {
     expect(screen.getByTestId('action-dice-count')).toBeDisabled();
   });
 
-  it('骰子：滚动中 → 落定显示点数与合计（素材缺失时画 CSS 骰子）', () => {
+  it('停留：GO 画「停留」帧 2/3（原版 fcn.004169f6 0x416ab4），与全灰的竖槽一致；仍可按下，发不带骰子数的 ROLL', async () => {
+    expect([goFrame(true, 'stay', false), goFrame(true, 'stay', true)]).toEqual([2, 3]);
+    expect([goFrame(true, null, false), goFrame(true, 'tortoise', true), goFrame(false, null, false)]).toEqual([
+      0, 5, 2,
+    ]);
+    const view = sp.batches[10]!.view;
+    const d = turnMenu(view) as YourDecision & { options: { dice: unknown } };
+    d.options.dice = { current: 3, allowed: [1, 2, 3], locked: 'stay' };
+    load(view, d);
+    resetClassicAssetsForTest({ sprites: { 'ui.goButton': fakeSheet('ui.goButton', 12) } });
+    const { transport } = renderClassic();
+    const go = screen.getByTestId('action-roll');
+    expect(go).toBeEnabled();
+    expect(go).toHaveAttribute('data-state', 'stay');
+    expect(go).toHaveAttribute('data-frame', '2');
+    expect(go.querySelector('[data-sprite]')).toHaveAttribute('data-sprite', 'ui.goButton/2');
+    const dc = screen.getByTestId('action-dice-count');
+    expect(
+      within(dc)
+        .getAllByTestId('dice-count-die')
+        .map((e) => e.getAttribute('data-on')),
+    ).toEqual(['false', 'false', 'false']);
+    await userEvent.click(go);
+    expect(transport.payloads('game:act')[0]!.intent).toEqual({ type: 'ROLL' });
+  });
+
+  it('骰子：滚动中 → 落定显示点数（素材缺失时在原版落点画 CSS 骰子；合计只给读屏）', () => {
     load(sp.batches[10]!.view);
     renderClassic();
     act(() => {
-      useUiStore.getState().setDice({ seat: 0, faces: [3, 4], rolling: true });
+      useUiStore.getState().setDice({ seat: 0, faces: [3, 4], rolling: true, slot: 5 });
     });
     const dice = screen.getByTestId('dice-overlay');
     expect(dice).toHaveAttribute('data-rolling', 'true');
     act(() => {
-      useUiStore.getState().setDice({ seat: 0, faces: [3, 4], rolling: false });
+      useUiStore.getState().setDice({ seat: 0, faces: [3, 4], rolling: false, slot: 5 });
     });
-    expect(screen.getByTestId('dice-overlay')).toHaveAttribute('data-sum', '7');
-    expect(screen.getByTestId('dice-overlay')).toHaveTextContent('3');
-    expect(screen.getByTestId('dice-overlay')).toHaveTextContent('4');
+    const settled = screen.getByTestId('dice-overlay');
+    expect(settled).toHaveAttribute('data-sum', '7');
+    expect(settled).toHaveTextContent('3');
+    expect(settled).toHaveTextContent('4');
+    // 画点 (136,48) + 表 0x4730ac[5] = (−24,−12)；方向槽未知时按槽 0 = (4,12)
+    expect(diceFlcRect(5)).toEqual({ x: 112, y: 36, w: 189, h: 285 });
+    expect(diceFlcRect(null)).toEqual({ x: 140, y: 60, w: 189, h: 285 });
+    expect([settled.style.left, settled.style.top]).toEqual(['112px', '36px']);
+    const faces = within(settled).getAllByTestId('dice-face');
+    expect(faces.map((f) => f.getAttribute('data-face'))).toEqual(['3', '4']);
+    // 回退骰子落在 FLC 底部的左、中（原版三套锚点的落点）
+    expect(faces.map((f) => [f.firstElementChild?.getAttribute('style') ?? ''])).toEqual([
+      [expect.stringContaining('left: 1px; top: 243px')],
+      [expect.stringContaining('left: 96px; top: 248px')],
+    ]);
+  });
+
+  it('骰子跟着人物摆：按人物在画布上的位置与棋盘缩放 / 舞台缩放放置、同比缩放（手机横屏棋盘缩放 1、舞台 0.8125）', () => {
+    load(sp.batches[10]!.view);
+    renderClassic();
+    // 画布 357.5×357.5（440 × 0.8125），人物锚点在画布 (180,220)，镜头缩放 1
+    const at = { x: 180, y: 220, w: 357.5, h: 357.5, zoom: 1 };
+    act(() => {
+      useUiStore.getState().setDice({ seat: 0, faces: [3, 4], rolling: true, slot: 0, at });
+    });
+    const ov = screen.getByTestId('dice-overlay');
+    const want = diceFlcPlacement(0, at);
+    expect(want.tracked).toBe(true);
+    expect(want.scale).toBeCloseTo(440 / 357.5, 9);
+    expect(ov).toHaveAttribute('data-tracked', 'true');
+    expect(Number(ov.getAttribute('data-scale'))).toBeCloseTo(want.scale, 9);
+    expect([ov.style.left, ov.style.top, ov.style.width, ov.style.height]).toEqual([
+      `${want.x}px`,
+      `${want.y}px`,
+      '189px',
+      '285px',
+    ]);
+    expect(ov.style.transform).toBe(`scale(${want.scale})`);
+    // 人物锚点（舞台坐标）= 视窗左上 + 画布坐标 × 440 / 357.5；FLC 左上 − 锚点 = ((140,60) − (220,260)) × k
+    const ax = (180 * 440) / 357.5;
+    expect(want.x - ax).toBeCloseTo((140 - 220) * want.scale, 6);
+  });
+
+  it('骰子显示期间镜头移动（拖动后恢复跟随）：逐帧读人物位置，骰子一直贴着人物', () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    try {
+      load(sp.batches[10]!.view);
+      renderClassic();
+      let pos = { x: 407, y: 436.6, w: 814, h: 814, zoom: 1.85 };
+      act(() => {
+        useUiStore.getState().setDice({ seat: 0, faces: [4], rolling: true, slot: 3, at: pos, locate: () => pos });
+      });
+      const ov = screen.getByTestId('dice-overlay');
+      const p0 = diceFlcPlacement(3, pos);
+      expect([ov.style.left, ov.style.top]).toEqual([`${p0.x}px`, `${p0.y}px`]);
+      // 镜头平移：人物在画布上右移 111、下移 74（舞台坐标各 60、40）
+      pos = { ...pos, x: 518, y: 510.6 };
+      act(() => {
+        frames.splice(0).forEach((f) => {
+          f(0);
+        });
+      });
+      const p1 = diceFlcPlacement(3, pos);
+      expect(p1.x).toBeCloseTo(p0.x + 60, 6);
+      expect(p1.y).toBeCloseTo(p0.y + 40, 6);
+      expect([ov.style.left, ov.style.top]).toEqual([`${p1.x}px`, `${p1.y}px`]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([
+    [[5], 1],
+    [[2, 6], 2],
+    [[1, 3, 5], 3],
+  ])('点数面：%j → %i 颗，第 i 颗画 Panel#3 帧 6i+点数−1，画点 FLC 左上 +(0x55,0x91)', (faces, n) => {
+    load(sp.batches[10]!.view);
+    resetClassicAssetsForTest({ sprites: { 'ui.diceFaces': fakeSheet('ui.diceFaces', 18) } });
+    renderClassic();
+    act(() => {
+      useUiStore.getState().setDice({ seat: 0, faces, rolling: false, slot: 0 });
+    });
+    const ov = screen.getByTestId('dice-overlay');
+    expect(ov).toHaveAttribute('data-count', String(n));
+    const els = within(ov).getAllByTestId('dice-face');
+    expect(els).toHaveLength(n);
+    els.forEach((el, i) => {
+      const spr = el.querySelector('[data-sprite]') as HTMLElement;
+      expect(spr).toHaveAttribute('data-sprite', `ui.diceFaces/${diceFaceFrame(i, faces[i]!)}`);
+      expect(spr.getAttribute('data-sprite')).toBe(`ui.diceFaces/${6 * i + faces[i]! - 1}`);
+      // 假图集的锚点为 (2,3)：落点 = 画点 − 锚点
+      expect([spr.style.left, spr.style.top]).toEqual([`${DICE_FACE_POINT.x - 2}px`, `${DICE_FACE_POINT.y - 3}px`]);
+    });
   });
 });
 
@@ -816,24 +947,177 @@ describe('审查修正', () => {
     return { w, h, data };
   }
 
-  it('骰子数小图：图6–11 两两成对（1/2/3 点，灰 / 白底红点）；可切换时画白底红点，不能切换时画灰', async () => {
-    expect([1, 2, 3].map((n) => diceCountFrame(n, false))).toEqual([6, 8, 10]);
-    expect([1, 2, 3].map((n) => diceCountFrame(n, true))).toEqual([7, 9, 11]);
+  it('骰子数竖槽（exe fcn.004169f6）：步行 1、机车 2、汽车 3 个小骰子竖着叠放；选中的画亮图 2i+7（x7），其余或停留画灰图 2i+6（x8）', () => {
+    expect(diceSlotIcons(1, 1, false)).toEqual([{ frame: 7, x: 7, y: 26, on: true }]);
+    expect(diceSlotIcons(2, 2, false)).toEqual([
+      { frame: 7, x: 7, y: 16, on: true },
+      { frame: 9, x: 7, y: 35, on: true },
+    ]);
+    expect(diceSlotIcons(2, 1, false).map((i) => [i.frame, i.x, i.y])).toEqual([
+      [7, 7, 16],
+      [8, 8, 35],
+    ]);
+    expect(diceSlotIcons(3, 3, false).map((i) => [i.frame, i.x, i.y])).toEqual([
+      [7, 7, 9],
+      [9, 7, 25],
+      [11, 7, 41],
+    ]);
+    expect(diceSlotIcons(3, 1, false).map((i) => i.frame)).toEqual([7, 8, 10]);
+    // 停留：全灰
+    expect(diceSlotIcons(3, 3, true).map((i) => [i.frame, i.x])).toEqual([
+      [6, 8],
+      [8, 8],
+      [10, 8],
+    ]);
+    // 点竖槽：按纵坐标取最近的小骰子
+    const three = diceSlotIcons(3, 1, false);
+    expect([10, 25, 33, 52].map((y) => nearestIcon(three, y))).toEqual([0, 1, 1, 2]);
+  });
+
+  it.each([
+    [[1] as (1 | 2 | 3)[], 'walk'],
+    [[1, 2] as (1 | 2 | 3)[], 'moto'],
+    [[1, 2, 3] as (1 | 2 | 3)[], 'car'],
+  ])('竖槽按允许的颗数 %j（%s）画小骰子，画点与帧按原版；点第 i 个选 i+1 颗', async (allowed) => {
     const view = sp.batches[10]!.view;
-    load(view, turnMenu(view));
+    const d = turnMenu(view, allowed) as YourDecision & { options: { dice: { current: number } } };
+    d.options.dice.current = allowed.length as 1 | 2 | 3;
+    load(view, d);
+    resetClassicAssetsForTest({ sprites: { 'ui.goButton': fakeSheet('ui.goButton', 12) } });
+    const { transport } = renderClassic();
+    const dc = screen.getByTestId('action-dice-count');
+    expect(dc).toHaveAttribute('data-slots', String(allowed.length));
+    expect(dc).toHaveAttribute('data-value', String(allowed.length));
+    const dies = () => within(dc).getAllByTestId('dice-count-die');
+    const want = diceSlotIcons(allowed.length, allowed.length, false);
+    expect(dies().map((e) => [e.getAttribute('data-frame'), e.style.left, e.style.top])).toEqual(
+      want.map((w) => [String(w.frame), `${w.x - 7}px`, `${w.y - 9}px`]),
+    );
+    expect(dies().map((e) => e.querySelector('[data-sprite]')?.getAttribute('data-sprite'))).toEqual(
+      want.map((w) => `ui.goButton/${w.frame}`),
+    );
+    if (allowed.length > 1) {
+      // 点第 1 个小骰子：只亮第 1 个，掷 1 颗
+      vi.spyOn(dc, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 16,
+        height: 48,
+        right: 16,
+        bottom: 48,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
+      fireEvent.click(dc, { detail: 1, clientX: 8, clientY: want[0]!.y - 9 + 7 });
+      expect(dc).toHaveAttribute('data-value', '1');
+      expect(dies().map((e) => e.getAttribute('data-on'))).toEqual(allowed.map((_, i) => String(i === 0)));
+      await userEvent.click(screen.getByTestId('action-roll'));
+      expect(transport.payloads('game:act')[0]!.intent).toEqual({ type: 'ROLL', dice: 1 });
+    } else {
+      expect(dc).toBeDisabled();
+    }
+  });
+
+  it('不是我的 TURN_MENU：竖槽按本人的交通工具与引擎记着的骰子数画；上一回合的选择不带到这一回合', () => {
+    const view = structuredClone(sp.batches[10]!.view);
+    const me = view.players.find((p) => p.seat === 0)!;
+    me.vehicle = 'car';
+    me.diceCount = 2;
+    load(view);
     resetClassicAssetsForTest({ sprites: { 'ui.goButton': fakeSheet('ui.goButton', 12) } });
     renderClassic();
     const dc = screen.getByTestId('action-dice-count');
-    const sprite = () => within(dc).getByTestId('dice-count-sprite');
-    expect(sprite()).toHaveAttribute('data-sprite', 'ui.goButton/7');
-    await userEvent.click(dc);
-    expect(sprite()).toHaveAttribute('data-sprite', 'ui.goButton/9');
-    await userEvent.click(dc);
-    expect(sprite()).toHaveAttribute('data-sprite', 'ui.goButton/11');
-    // 不是我的回合：灰图（当前颗数）
-    act(() => useGameStore.getState().resetTo({ epoch: 1, seq: 11, view, pending: [], decision: null }));
     expect(dc).toBeDisabled();
-    expect(sprite()).toHaveAttribute('data-sprite', 'ui.goButton/6');
+    expect(dc).toHaveAttribute('data-slots', '3');
+    expect(
+      within(dc)
+        .getAllByTestId('dice-count-die')
+        .map((e) => e.getAttribute('data-frame')),
+    ).toEqual(['7', '9', '10']);
+    // 上一回合里选过 1 颗（作用域的 turnNo 不同）：这一回合的 TURN_MENU 按引擎给的 current
+    const d = turnMenu(view, [1, 2, 3]) as YourDecision & { options: { dice: { current: 1 | 2 | 3 } } };
+    d.options.dice.current = 3;
+    act(() =>
+      useUiStore.getState().setDiceChoice(1, { seat: d.seat, turnNo: view.clock.turnNo - 1, cap: 3, current: 3 }),
+    );
+    load(view, d);
+    expect(dc).toHaveAttribute('data-value', '3');
+    // 看到作用域不同的 TURN_MENU 就清掉旧的选择
+    expect(useUiStore.getState().diceChoice).toBeNull();
+  });
+
+  /** 汽车（或换车后）的 TURN_MENU：decisionId、允许的颗数与引擎记着的 current */
+  function carMenu(view: GameView, id: string, allowed: (1 | 2 | 3)[] = [1, 2, 3], current: 1 | 2 | 3 = 3) {
+    const d = turnMenu(view, allowed) as YourDecision & { options: { dice: { current: 1 | 2 | 3 } } };
+    d.decisionId = id;
+    d.options.dice.current = current;
+    return d;
+  }
+
+  /** 点竖槽里第 i 个小骰子（竖槽按钮 16×48，小骰子画点按 diceSlotIcons） */
+  function clickSlot(i: number, slots: number): void {
+    const dc = screen.getByTestId('action-dice-count');
+    vi.spyOn(dc, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 16,
+      height: 48,
+      right: 16,
+      bottom: 48,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    const ic = diceSlotIcons(slots, slots, false)[i]!;
+    fireEvent.click(dc, { detail: 1, clientX: 8, clientY: ic.y - 9 + 7 });
+  }
+
+  it('回归：同一回合里选的颗数跨决策保留——选 1 颗后用道具 / 买股票（引擎换 decisionId 重发 TURN_MENU），按 GO 仍掷 1 颗', async () => {
+    const view = sp.batches[10]!.view;
+    load(view, carMenu(view, 'd4'));
+    const { transport } = renderClassic();
+    const dc = screen.getByTestId('action-dice-count');
+    expect(dc).toHaveAttribute('data-value', '3');
+    clickSlot(0, 3);
+    expect(dc).toHaveAttribute('data-value', '1');
+    // 菜单操作之后的新 TURN_MENU：current 要到 ROLL 才写回，仍为 3
+    load(view, carMenu(view, 'd5'));
+    expect(dc).toHaveAttribute('data-value', '1');
+    expect(
+      within(dc)
+        .getAllByTestId('dice-count-die')
+        .map((e) => e.getAttribute('data-on')),
+    ).toEqual(['true', 'false', 'false']);
+    expect(screen.getByTestId('action-roll')).toHaveTextContent('掷骰（1 颗）');
+    load(view, carMenu(view, 'd6'));
+    await userEvent.click(screen.getByTestId('action-roll'));
+    const sent = transport.payloads('game:act')[0]!;
+    expect([sent.decisionId, sent.intent]).toEqual(['d6', { type: 'ROLL', dice: 1 }]);
+  });
+
+  it('换车后选择作废：新上限取代旧的选择；同一回合里换回原来的车也不复活（原版换车改写 +0x0A）', () => {
+    const view = sp.batches[10]!.view;
+    load(view, carMenu(view, 'd4'));
+    renderClassic();
+    const dc = screen.getByTestId('action-dice-count');
+    clickSlot(0, 3);
+    expect(dc).toHaveAttribute('data-value', '1');
+    // 用机车道具：上限 2，引擎把 current 置为 2
+    load(view, carMenu(view, 'd5', [1, 2], 2));
+    expect(dc).toHaveAttribute('data-slots', '2');
+    expect(dc).toHaveAttribute('data-value', '2');
+    // 再用汽车道具：上限与 current 又和选择时相同，但选择已作废
+    load(view, carMenu(view, 'd6', [1, 2, 3], 3));
+    expect(dc).toHaveAttribute('data-value', '3');
+    // 在机车上选 1 颗，下一回合（turnNo + 1）的 TURN_MENU 按引擎写回的 current
+    load(view, carMenu(view, 'd7', [1, 2], 2));
+    clickSlot(0, 2);
+    expect(dc).toHaveAttribute('data-value', '1');
+    const next = structuredClone(view);
+    next.clock.turnNo += 1;
+    load(next, carMenu(next, 'd8', [1, 2], 2));
+    expect(dc).toHaveAttribute('data-value', '2');
   });
 
   it('骰子数竖槽在 GO 钮掩膜的区 1 里（不再压在棋盘上）；GO 只认区 2、3：点透明四角与竖槽不掷骰', async () => {

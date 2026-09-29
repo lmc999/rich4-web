@@ -12,6 +12,7 @@ import { useGameStore } from '../../store/gameStore';
 import { mySeat } from '../../store/roomStore';
 import { type AnimSpeed, useSettingsStore } from '../../store/settingsStore';
 import { type PanelId, useUiStore } from '../../store/uiStore';
+import { useDiceChoice } from '../common/useDiceChoice';
 import { openTrusteeSettings } from '../system/TrusteeSettings';
 import h from './hud.module.css';
 
@@ -96,10 +97,12 @@ export function ActionPad({ room, onFocusMe }: { room: RoomView; onFocusMe(): vo
   const decision = useGameStore((s) => s.decision);
   const submitting = useGameStore((s) => s.submitting);
   const playing = useGameStore((s) => s.anim.playing);
-  const diceChoice = useUiStore((s) => s.diceChoice);
   const panel = useUiStore((s) => s.panel);
   const speed = useSettingsStore((s) => s.speed);
   const me = mySeat(room);
+  const turn = me !== null && decision && isDecisionForYouOf(decision, 'TURN_MENU') ? decision : null;
+  // 选过的颗数在本回合里一直有效（用卡、用道具后引擎换 decisionId 重发 TURN_MENU 也不丢），换车时作废（useDiceChoice）
+  const { chosen, pick } = useDiceChoice(turn);
   if (me === null) {
     return (
       <nav className={h.actionPad} data-testid="action-pad" data-role="spectator">
@@ -108,12 +111,10 @@ export function ActionPad({ room, onFocusMe }: { room: RoomView; onFocusMe(): vo
       </nav>
     );
   }
-  const turn = decision && isDecisionForYouOf(decision, 'TURN_MENU') ? decision : null;
   const ready = turn !== null && submitting !== turn.decisionId;
   const dice = turn?.options.dice;
   const locked = dice ? dice.locked !== null : true;
   const allowed: readonly DiceCount[] = dice?.allowed ?? [];
-  const chosen: DiceCount = diceChoice && allowed.includes(diceChoice) ? diceChoice : (dice?.current ?? 1);
   const control = room.seats[me]?.control ?? 'human';
   const auto = isAutopilot(control);
 
@@ -204,7 +205,7 @@ export function ActionPad({ room, onFocusMe }: { room: RoomView; onFocusMe(): vo
                 aria-pressed={chosen === n}
                 className={clsx(h.diceBtn, chosen === n && h.diceOn)}
                 disabled={!allowed.includes(n) || !ready}
-                onClick={() => useUiStore.getState().setDiceChoice(n)}
+                onClick={() => pick(n)}
                 data-testid={`action-dice-${n}`}
                 title={t('hud:action.diceN', { n })}
               >

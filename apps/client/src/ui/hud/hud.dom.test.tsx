@@ -88,6 +88,33 @@ describe('GameScreen HUD', () => {
     await waitFor(() => expect(screen.getByTestId('action-roll')).toBeDisabled());
   });
 
+  it('行动区：选过的颗数在同一回合里跨决策保留（菜单操作后引擎换 decisionId 重发 TURN_MENU），换车后作废', async () => {
+    const i = sp.batches.findIndex((x) => x.yourDecision?.kind === 'TURN_MENU');
+    const b = sp.batches[i]!;
+    const menu = (id: string, allowed: (1 | 2 | 3)[], current: 1 | 2 | 3): YourDecision => {
+      const d = structuredClone(b.yourDecision!) as YourDecision & { options: { dice: unknown } };
+      d.decisionId = id;
+      d.options.dice = { allowed, current, locked: null };
+      return d;
+    };
+    const load = (d: YourDecision) =>
+      act(() => useGameStore.getState().resetTo({ epoch: 1, seq: b.seq, view: b.view, pending: [], decision: d }));
+    load(menu('d4', [1, 2, 3], 3));
+    const { transport } = renderGame();
+    expect(screen.getByTestId('action-dice-3')).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(screen.getByTestId('action-dice-1'));
+    expect(screen.getByTestId('action-dice-1')).toHaveAttribute('aria-pressed', 'true');
+    // 用道具 / 买股票之后的新 TURN_MENU（current 仍为 3）：仍是 1 颗
+    load(menu('d5', [1, 2, 3], 3));
+    expect(screen.getByTestId('action-dice-1')).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(screen.getByTestId('action-roll'));
+    const sent = transport.payloads('game:act')[0]!;
+    expect([sent.decisionId, sent.intent]).toEqual(['d5', { type: 'ROLL', dice: 1 }]);
+    // 换成机车（上限 2、current 2）：新上限取代旧的选择
+    load(menu('d6', [1, 2], 2));
+    expect(screen.getByTestId('action-dice-2')).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('不是我的决策：掷骰按钮禁用，等待条显示「等待 X …」与倒计时', () => {
     const b = sp.batches.find((x) => x.pending[0] && x.pending[0].seat !== 0)!;
     const pending = [{ ...b.pending[0]!, deadlineAt: Date.now() + 12_000 }];

@@ -125,6 +125,16 @@ export const SFX_CUES: readonly SfxCueDef[] = [
     confidence: 'guess',
     evidence: ['0x440927', '0x4100c8', '0x44524a'],
   },
+  {
+    // GO 钮（fcn.00417623）：鼠标点在钮面（掩膜区 3）时先 push 0; push 0x47f602; call fcn.004529ee（0x417ac9–0x417ad0，
+    // 全局音效表 0x47f5fa 第 2 项 = Effect#1），再隐去 GO（0x417ae2）、开始掷骰（0x417aec）；点骰子数竖槽（区 1、未停留）
+    // 同样先放这一声（0x417a08–0x417a0f）。键盘的 GO（0x40126d–0x401283）与 D 键（0x4012c9–0x401306）不出声
+    key: 'ui.go',
+    ids: [1],
+    desc: '按下 GO 钮 / 点骰子数竖槽（鼠标）',
+    confidence: 'exe',
+    evidence: ['0x417ac9', '0x417a08'],
+  },
   { key: 'setup.click', ids: [5], desc: '开局设定界面的点击', confidence: 'guess', evidence: ['0x406bb9'] },
   // 棋盘
   {
@@ -142,11 +152,20 @@ export const SFX_CUES: readonly SfxCueDef[] = [
     evidence: ['0x4365ec'],
   },
   {
+    // 掷骰函数 fcn.00418d0b：0x418d88 以棋盘集下标 2（0x47f63a = Effect#10）登记骰子 FLC 的逐帧同步音效，flags bits24–30 = 0x1e
+    // → fcn.0044f72b 在第 30 帧（0x44fb9d–0x44fbc0）播放；FLC 播完后 0x418dc8 再播一次：一次掷骰「咚咚」两声，与颗数无关
+    key: 'dice.roll',
+    ids: [10],
+    desc: '掷骰：骰子 FLC 第 30 帧与播完时各一声「咚」',
+    confidence: 'exe',
+    evidence: ['0x418d88', '0x44fb9d', '0x418dc8'],
+  },
+  {
     key: 'item.timeBomb.place',
     ids: [10],
-    desc: '放置定时炸弹（道具处理函数内，紧跟炸弹台词）',
+    desc: '放置定时炸弹（道具处理函数内，紧跟炸弹台词；同一个「咚」也用于掷骰，见 dice.roll）',
     confidence: 'guess',
-    evidence: ['0x4459be', '0x418dc8'],
+    evidence: ['0x4459be'],
   },
   {
     key: 'money.giveBeggar',

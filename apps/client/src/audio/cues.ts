@@ -24,6 +24,11 @@ export interface SfxCue {
   bus?: 'sfx' | 'ui';
   /** 原版皮肤里这一演出有带同步音效的 FLIC（由 FLIC 播放器出声），导演层不再另放音效 */
   flicCovered?: boolean;
+  /**
+   * 由 handler 在演出的指定时刻经 ctx.audio.cue 放出（可放多次），导演层在事件开始时不放：掷骰的两声「咚」
+   * （FLC 第 30 帧与播完时，exe 0x44fb9d / 0x418dc8）
+   */
+  timed?: boolean;
 }
 
 interface VoiceCueBase {

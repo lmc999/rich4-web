@@ -103,7 +103,5 @@ export function defaultFacing(seat: number, prev: Pt | null, cur: Pt | null): nu
 
 /** 行走动画帧间隔（原版分频 2 档 ≈ 40 ms 一帧，按动画时钟计） */
 export const WALK_FRAME_MS = 40;
-/** 持骰待机动画帧间隔 */
-export const DICE_FRAME_MS = 90;
 /** ZZZ 动画帧间隔 */
 export const ZZZ_FRAME_MS = 160;

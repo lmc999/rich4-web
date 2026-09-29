@@ -24,6 +24,16 @@ export type SfxId = ZzfxPresetId;
 const z = (zzfx: ZzfxPresetId, cue?: string): SfxCue => (cue === undefined ? { zzfx } : { cue, zzfx });
 const flic = (zzfx: ZzfxPresetId, cue?: string): SfxCue => ({ ...z(zzfx, cue), flicCovered: true });
 
+/**
+ * 掷骰的一声「咚」：原版 Effect#10（棋盘音效集 0x47f62a 的下标 2 = 0x47f63a；139 ms、单起音、主频约 570 Hz）。
+ * 一次掷骰响两声：骰子 FLC 第 30 帧（0x418d88 登记、fcn.0044f72b 0x44fb9d–0x44fbc0 播放）与播完时（0x418dc8），
+ * 和颗数无关。由 DICE_ROLLED 的 handler 按演出时刻放（timed，经 ctx.audio.cue）；没有素材包时用 ZzFX 预设 dice
+ */
+export const DICE_KNOCK: SfxCue = Object.freeze({ cue: 'dice.roll', zzfx: 'dice', timed: true });
+
+/** 进对局就预载的事件音效：按演出时刻放、每回合都响（第一声不因现场下载或合成超过 maxSfxLatencyMs 被丢掉） */
+export const GAME_PRELOAD_CUES: readonly SfxCue[] = Object.freeze([DICE_KNOCK]);
+
 /** 衰神、穷神、死神（事件槽 22 / 23） */
 const BAD_GODS: ReadonlySet<GodKind> = new Set<GodKind>([
   GOD.SMALL_POOR,
@@ -60,7 +70,7 @@ export const SOUND_MAP = {
   RETURNED: {},
   TURN_ENDED: {},
   // ── move
-  DICE_ROLLED: { sfx: z('dice') },
+  DICE_ROLLED: { sfx: DICE_KNOCK },
   MOVE_SEGMENT: {
     sfx: (e, q) => {
       const seat = seatOf(e.actor);

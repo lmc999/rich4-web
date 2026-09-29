@@ -1,6 +1,9 @@
 // 回合与移动类事件演出（design/client.md §4.5）：回合横幅 + 镜头飞向玩家、跳伞、骰子、逐格行走（镜头跟随）、
 // 四大恶人的棋子行走、撞上路障、回到棋盘。出狱 / 出院（RELEASED）见 status.ts。
+import { DICE_TIMING } from '@rich4/shared/view';
+import { DICE_KNOCK } from '../soundMap';
 import type { EventHandler } from '../types';
+import { currentPacing } from './budget';
 import { brief, syncFromPost } from './common';
 import { stageOf } from './stage';
 
@@ -69,8 +72,28 @@ export const RETURNED: EventHandler<'RETURNED'> = async (e, ctx) => {
 
 export const TURN_ENDED: EventHandler<'TURN_ENDED'> = async () => {};
 
+/**
+ * 掷骰（原版时序，shared/view/pacing 的 DICE_TIMING）：等待掷骰时人物静止；收到结果后人物把持骰动作播一遍（原版皮肤），
+ * 然后骰子 FLC 只播一遍，第 30 帧与播完时各「咚」一声（Effect#10），画上点数面、停留后起步（下一个 MOVE_SEGMENT）。
+ * 停留 / 乌龟不掷骰（dice 为空，原版 fcn.0040d7e5 直接起步）：没有动作、骰子与声音
+ */
 export const DICE_ROLLED: EventHandler<'DICE_ROLLED'> = async (e, ctx) => {
-  await ctx.ui.dice(e.seat, e.dice, ctx.signal);
+  if (e.dice.length === 0) return;
+  const t = DICE_TIMING[currentPacing()];
+  const slot = (await ctx.board.throwDice?.(e.seat, t.throwTickMs, ctx.signal)) ?? null;
+  // 动作播完时人物在画面上的位置：原版皮肤的骰子 FLC 按它摆在人物头顶一带（镜头不在人物身上、缩放不同时也跟着人物）；
+  // 骰子显示期间镜头仍可能移动（拖动后恢复跟随），覆盖层再用 locate 逐帧读取
+  const board = ctx.board;
+  const at = board.actorScreen?.(e.seat) ?? null;
+  const locate = board.actorScreen ? () => board.actorScreen?.(e.seat) ?? null : undefined;
+  await ctx.ui.dice(e.seat, e.dice, ctx.signal, {
+    frameMs: t.flicFrameMs,
+    holdMs: t.holdMs,
+    slot,
+    at,
+    ...(locate ? { locate } : {}),
+    onKnock: () => ctx.audio.cue?.(DICE_KNOCK),
+  });
 };
 
 export const MOVE_SEGMENT: EventHandler<'MOVE_SEGMENT'> = async (e, ctx) => {

@@ -4,6 +4,7 @@ import { buildMapIndex, buildTestMap } from '@rich4/shared/data';
 import type { GameEvent } from '@rich4/shared/engine';
 import { describe, expect, it } from 'vitest';
 import { HANDLERS } from '../presentation/handlers';
+import { DICE_KNOCK } from '../presentation/soundMap';
 import type { HandlerMap, PresentationContext } from '../presentation/types';
 import { selfPlay } from '../test/selfPlay';
 import { AudioEngine } from './AudioEngine';
@@ -111,26 +112,28 @@ describe('UI 场景层', () => {
     expect(e.keys).toEqual(['music.scene-magic']);
   });
 
-  it('按场景预载原版音效集（每组只预载一次）', () => {
+  it('按场景预载原版音效集（每组只预载一次）；进对局另预载掷骰的「咚」', () => {
     const { e, d } = spy();
     d.setUi({ screen: 'game' });
-    expect(e.preloaded).toEqual(['sfx.000', 'sfx.001', 'sfx.044', 'sfx.049', 'sfx.050']);
+    expect(e.preloaded).toEqual(['sfx.000', 'sfx.001', 'sfx.044', 'sfx.049', 'sfx.050', 'sfx.010']);
     d.setUi({ screen: 'game', venue: { kind: 'SHOP' } });
-    expect(e.preloaded.length).toBe(5);
+    expect(e.preloaded.length).toBe(6);
   });
 
   it('素材包晚于 setUi(game) 到达（实际接线的顺序）：setMaps 之后照样按当前 UI 预载', () => {
     const e = new SpyEngine();
     const d = new AudioDirector(e);
     d.setUi({ screen: 'game' });
-    expect(e.preloaded).toEqual([]); // 还没有素材包
+    // 还没有素材包：只预合成掷骰「咚」与按 GO 点击声的 ZzFX 回退
+    expect(e.preloaded).toEqual(['zzfx.dice', 'zzfx.click']);
     d.setMaps(testAudioMaps());
-    expect(e.preloaded).toEqual(['sfx.000', 'sfx.001', 'sfx.044', 'sfx.049', 'sfx.050']);
-    // 换一份映射表（新素材包）重新预载；没有素材包时不预载
+    // 有素材包：GO 的点击声（cue.ui.go = sfx.001）已在全局音效集里
+    expect(e.preloaded.slice(2)).toEqual(['sfx.000', 'sfx.001', 'sfx.044', 'sfx.049', 'sfx.050', 'sfx.010']);
+    // 换一份映射表（新素材包）重新预载；没有素材包时只有 ZzFX
     d.setMaps(testAudioMaps());
-    expect(e.preloaded.length).toBe(10);
+    expect(e.preloaded.length).toBe(14);
     d.setMaps(null);
-    expect(e.preloaded.length).toBe(10);
+    expect(e.preloaded.slice(14)).toEqual(['zzfx.dice', 'zzfx.click']);
   });
 
   it('没有素材包：场景曲与语音静默，音效走 ZzFX', () => {
@@ -234,6 +237,21 @@ describe('事件', () => {
     expect(e.ops.filter((o) => o.startsWith('sfx'))).toEqual(['sfx zzfx.step sfx', 'sfx sfx.044 sfx']);
   });
 
+  it('掷骰（timed）：事件开始时不放；handler 按演出时刻经 playCue 放原版 Effect#10，没有素材包时放 ZzFX 预设 dice', () => {
+    const { e, d } = spy();
+    const roll: GameEvent = { type: 'DICE_ROLLED', seat: 0, dice: [3, 4], steps: 7, forced: false, diceCount: 2 };
+    const a = d.onEvent(roll, actx());
+    expect(a.sfx).toBeNull();
+    expect(e.ops.filter((o) => o.startsWith('sfx'))).toEqual([]);
+    expect(d.playCue(DICE_KNOCK)?.key).toBe('sfx.010');
+    expect(d.playCue(DICE_KNOCK)?.key).toBe('sfx.010');
+    expect(e.ops).toEqual(['sfx sfx.010 sfx', 'sfx sfx.010 sfx']);
+    const bare = new SpyEngine();
+    const d2 = new AudioDirector(bare);
+    expect(d2.playCue(DICE_KNOCK)?.key).toBe('zzfx.dice');
+    expect(bare.ops).toEqual(['sfx zzfx.dice sfx']);
+  });
+
   it('界面音：guess 默认 ZzFX，走 ui 总线', () => {
     const { e, d } = spy();
     expect(d.uiCue('click')?.key).toBe('zzfx.click');
@@ -241,6 +259,15 @@ describe('事件', () => {
     expect(d.uiCue('click')?.key).toBe('sfx.001');
     expect(d.uiCue('tick')?.key).toBe('zzfx.tick');
     expect(e.ops).toEqual(['sfx zzfx.click ui', 'sfx sfx.001 ui', 'sfx zzfx.tick ui']);
+  });
+
+  it('GO 钮的点击声：cue.ui.go 是 exe 置信度（0x417ac9 = Effect#1），不开 guessOriginal 也用原版；没有素材包时 ZzFX click', () => {
+    const { e, d } = spy();
+    expect(d.uiCue('go')?.key).toBe('sfx.001');
+    expect(e.ops).toEqual(['sfx sfx.001 ui']);
+    const bare = new SpyEngine();
+    expect(new AudioDirector(bare).uiCue('go')?.key).toBe('zzfx.click');
+    expect(bare.ops).toEqual(['sfx zzfx.click ui']);
   });
 
   it('决策倒计时提示音：只用 ZzFX（素材包里没有对应音效），走音效总线；可预载', async () => {

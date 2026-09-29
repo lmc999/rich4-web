@@ -136,9 +136,11 @@ async function stepFrom(
   }
 }
 
-/** 骰子数小图的帧（图6–11：1/2/3 点两两成对，先灰后白底红点） */
-function diceCountFrame(n: number, active: boolean): number {
-  return 6 + 2 * (n - 1) + (active ? 1 : 0);
+/**
+ * 骰子数竖槽第 i 个小骰子的帧（exe fcn.004169f6：图6–11 两两成对，第 i 个选中画亮图 2i+7、未选中或停留画灰图 2i+6）
+ */
+function diceIconFrame(i: number, on: boolean): number {
+  return 2 * i + (on ? 7 : 6);
 }
 
 /**
@@ -257,13 +259,22 @@ test('桌面 1920×1080：经典布局、工具列可用、GO 钮与空格键走
       /^ui\.goButton\/[0-5]$/,
     );
     for (const p of pages) {
+      // 小骰子个数 = 交通工具的上限（开局交通工具随机：步行 1、机车 2、汽车 3），前「骰子数」个亮
       const dc = p.getByTestId('action-dice-count');
       const n = Number(await dc.getAttribute('data-value'));
-      const active = (await dc.getAttribute('data-active')) === 'true';
-      await expect(p.getByTestId('dice-count-sprite')).toHaveAttribute(
-        'data-sprite',
-        `ui.goButton/${diceCountFrame(n, active)}`,
-      );
+      const slots = Number(await dc.getAttribute('data-slots'));
+      expect(slots).toBeGreaterThanOrEqual(1);
+      expect(slots).toBeLessThanOrEqual(3);
+      const dies = p.getByTestId('dice-count-die');
+      await expect(dies).toHaveCount(slots);
+      for (let i = 0; i < slots; i++) {
+        const on = (await dies.nth(i).getAttribute('data-on')) === 'true';
+        expect(on).toBe(i < n);
+        await expect(dies.nth(i).locator('[data-sprite]')).toHaveAttribute(
+          'data-sprite',
+          `ui.goButton/${diceIconFrame(i, on)}`,
+        );
+      }
     }
     // 骰子数竖槽在 GO 钮里（掩膜区 1）：钮内 (7,9) 16×48
     const goBox = (await a.getByTestId('action-roll').boundingBox())!;

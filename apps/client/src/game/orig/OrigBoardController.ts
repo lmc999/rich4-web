@@ -1,6 +1,7 @@
 // 原版棋盘控制器（skin/BoardSurface 的 BoardControllerLike；presentation 的 BoardPort）：用 GameView 驱动原版棋盘
-// （地块归属 / 等级 / 连锁店 / 设施 / 涨价查封、企业董事长、角色位置与可见性、当前行动者的持骰姿态），并实现演出端口
-// （行走、跳伞降落、镜头、飘字、金币、插旗、升级弹跳、格子脉冲、气泡）。舞台为 stage/OrigStage（原版 FLIC、原版精灵与
+// （地块归属 / 等级 / 连锁店 / 设施 / 涨价查封、企业董事长、角色位置与可见性），并实现演出端口
+// （掷骰动作、行走、跳伞降落、镜头、飘字、金币、插旗、升级弹跳、格子脉冲、气泡）。等待掷骰时人物静止站立，
+// 收到掷骰结果（DICE_ROLLED）才播持骰动作（throwDice）。舞台为 stage/OrigStage（原版 FLIC、原版精灵与
 // FxSystem 回退；A8），FLIC 来自素材包（stage/OrigFlics），同步音效经事件的 ctx.audio 播放。
 // 地产主人色用原版角色代表色（shared/data CHARACTERS[c].color；与 ownerMark 按角色画好的旗子一致）。
 import { CHARACTER_KEYS, CHARACTERS, type CharacterId, type LotId } from '@rich4/shared/data';
@@ -10,6 +11,7 @@ import { Graphics, Sprite } from 'pixi.js';
 import type { Anchor, FloatTone, LotLook } from '../../presentation/types';
 import type { BoardControllerLike, BoardControllerOptions } from '../../skin/BoardSurface';
 import type { FlicPlayer } from '../../skin/flic/FlicPlayer';
+import type { DiceAnchor } from '../../store/uiStore';
 import { STEP_MS } from '../actors/PlayerActor';
 import { backOut } from '../anim/easing';
 import { FxSystem } from '../fx/FxSystem';
@@ -40,7 +42,6 @@ export class OrigBoardController implements BoardControllerLike {
   private readonly characters = new Map<number, number>();
   private readonly names = new Map<number, string>();
   private followSeat: SeatIndex | null = null;
-  private currentSeat: number | null = null;
   private highlighted: TileId[] = [];
 
   /** 原版 FLIC（素材包不支持 FLIC 时为 null） */
@@ -145,8 +146,6 @@ export class OrigBoardController implements BoardControllerLike {
     }
     for (const c of view.companies) this.applyLot(c.id, { owner: view.stocks[c.stock]?.chairman ?? null, level: 1 });
     const cur = view.clock.cursor.t === 'seat' ? view.clock.cursor.seat : null;
-    const turnChanged = cur !== this.currentSeat;
-    this.currentSeat = cur;
     const tileWorld = (id: TileId): Pt | null => this.renderer.boardView?.tileWorld(id) ?? null;
     for (const p of view.players) {
       const a = this.ensureActor(p.seat, p.character, this.o.nameOf(p.seat, view), p.node);
@@ -162,7 +161,8 @@ export class OrigBoardController implements BoardControllerLike {
       a.cancelDrop();
       if (visible) a.settleAt(p.node);
       a.setCurrent(cur === p.seat);
-      if (turnChanged) a.setDicePose(cur === p.seat);
+      // 批尾（或快照）：掷骰动作都已播完、行走也已结束，持骰姿态一律收起，等待掷骰时是静止的站姿
+      a.clearThrow();
     }
     // 先同步状态外观（交通工具、冬眠 ZZZ 会改变身高与名牌要让开的高度），再按同格多人错开
     this.stageObj.syncWorld(view);
@@ -218,8 +218,10 @@ export class OrigBoardController implements BoardControllerLike {
     }
     // 棋盘伞 FLIC 的可用时长按当前节奏的 PARACHUTE 预算（original 节奏原速播完）
     a.dropFitMs = () => this.stageObj.parachuteFitMs(PARACHUTE_FIT_MS);
-    // 姿态库懒加载：站 / 走 / 持骰先取（地图有快艇节点时连快艇姿态一起取；其余在状态变化时预取）
-    const keys = ['stand', 'walk', 'dice', ...(r.skin.boatTiles.length > 0 ? ['boat.stand', 'boat.walk'] : [])];
+    // 姿态库懒加载：站 / 走 / 持骰先取（地图有快艇节点时连快艇的站 / 走 / 持骰一起取——快艇不是状态外观，OrigActor.preload
+    // 不会因为进了快艇节点而预取，第一次在快艇上掷骰不能等现场下载；其余在状态变化时预取）
+    const boat = r.skin.boatTiles.length > 0 ? ['boat.stand', 'boat.walk', 'boat.dice'] : [];
+    const keys = ['stand', 'walk', 'dice', ...boat];
     for (const k of keys) void r.assets.sheet(`char.${character}.${k}`);
     return a;
   }
@@ -230,7 +232,7 @@ export class OrigBoardController implements BoardControllerLike {
     const a = this.actor(seat);
     if (!a || path.length === 0) return;
     a.root.visible = true;
-    a.setDicePose(false);
+    a.clearThrow();
     a.setOffset({ x: 0, y: 0 });
     await a.walk(path, { stepMs: STEP_MS, signal, ...(onStep ? { onStep } : {}) });
     this.renderer.spreadActors();
@@ -251,9 +253,34 @@ export class OrigBoardController implements BoardControllerLike {
     await this.actor(seat)?.hop(signal);
   }
 
+  /**
+   * 掷骰动作（BoardPort.throwDice）：持骰库每方向的帧逐 tick 播一遍，停在最后一帧直到开始行走；返回人物的屏幕方向槽
+   * （骰子 FLC 的画点按它取原版表 0x4730ac）。人物不在棋盘上时返回 null
+   */
+  async throwDice(seat: SeatIndex, tickMs: number, signal: AbortSignal): Promise<number | null> {
+    const a = this.actor(seat);
+    if (!a || !this.ready || !a.root.visible) return null;
+    await a.throwDice(tickMs, signal);
+    return a.destroyed ? null : a.screenDir;
+  }
+
+  /**
+   * 人物脚下锚点（boardPos，含同格偏移）在棋盘画布上的位置、画布尺寸与镜头缩放（BoardPort.actorScreen）：原版每 tick 把镜头
+   * 拉回行动者（0x40d35c–0x40d394 → fcn.00407ebd(p.x,p.y)），骰子 FLC 画点相对人物固定；我们的镜头跟随偏上 16、可以手动拖动、
+   * 关闭跟随或 pin 别的座位，棋盘缩放也可能与舞台缩放不同，所以把人物实际的画面位置交给骰子覆盖层。人物不在棋盘上时为 null
+   */
+  actorScreen(seat: SeatIndex): DiceAnchor | null {
+    const a = this.actor(seat);
+    if (!a || !this.ready || !a.root.visible) return null;
+    const cam = this.renderer.camera;
+    const p = cam.worldToScreen(a.boardPos());
+    const v = this.renderer.viewportSize();
+    return { x: p.x, y: p.y, w: v.w, h: v.h, zoom: cam.zoom };
+  }
+
   setActorPose(seat: SeatIndex, pose: 'idle' | 'cheer' | 'sad' | 'hurt' | 'sleep' | 'cast'): void {
     // 原版的欢呼 / 沮丧是角色表情 FLIC（Data#375–398，flic-map 置信度 guess，暂不取用）；这里只处理持骰姿态的收起
-    if (pose !== 'idle') this.actor(seat)?.setDicePose(false);
+    if (pose !== 'idle') this.actor(seat)?.clearThrow();
   }
 
   anchorPos(at: Anchor, lift = false): Pt | null {

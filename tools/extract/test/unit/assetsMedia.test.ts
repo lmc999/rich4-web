@@ -144,6 +144,8 @@ describe('sfx-sets / music-map 契约版', () => {
     expect(s.sets.global!.sfx).toEqual([0, 1, 2, 4, 3].map(sfxKey));
     expect(s.sets['mg.xicong']).toBeDefined();
     expect(s.sets['cue.ui.click']!.sfx).toEqual([sfxKey(1)]);
+    // 按下 GO 钮（鼠标）：exe 0x417ac9 放全局音效表的 Effect#1
+    expect(s.sets['cue.ui.go']).toMatchObject({ sfx: [sfxKey(1)], confidence: 'exe' });
     const none = toSfxSetsV1(buildSfxSets(), () => false);
     expect(Object.keys(none.sets)).toEqual([]);
   });

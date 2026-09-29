@@ -9,9 +9,11 @@ import { useUiStore } from '../../store/uiStore';
 import { selfPlay } from '../../test/selfPlay';
 import { usePopupStore } from '../../ui/popups/popupStore';
 import { makeNames } from '../names';
+import { DICE_KNOCK } from '../soundMap';
 import type { BoardPort, PresentationContext, UiPort } from '../types';
 import { createUiPresenter } from '../UiPresenter';
 import { HANDLERS } from '.';
+import { setPacingOverride } from './budget';
 
 beforeAll(() => {
   initI18n('original');
@@ -89,6 +91,136 @@ describe('handlers', () => {
     useUiStore.getState().clear();
     await run({ type: 'DICE_ROLLED', seat: 0, dice: [2, 5], steps: 7, forced: false, diceCount: 2 }, view);
     expect(useUiStore.getState().dice).toMatchObject({ seat: 0, faces: [2, 5], rolling: false });
+  });
+
+  describe('DICE_ROLLED 的原版时序（持骰动作 → FLC 36 帧、第 30 帧与播完各「咚」→ 落定停留）', () => {
+    /** 假时钟上跑一次掷骰，记录各时刻发生的事 */
+    async function timeline(profile: 'original' | 'compact', dice: number[]) {
+      setPacingOverride(profile);
+      useUiStore.getState().clear();
+      const clock = new AnimClock();
+      const log: [number, string, ...unknown[]][] = [];
+      const calls: Call[] = [];
+      const ctx = ctxFor(view, calls);
+      const board = ctx.board;
+      // 持骰动作：步行 9 帧，每 tick 一帧
+      board.throwDice = async (seat, tick, signal) => {
+        log.push([clock.now(), 'throw', seat, tick]);
+        await clock.wait(9 * tick, signal);
+        return 5;
+      };
+      // 动作播完时人物在画布上的位置（原版皮肤的骰子 FLC 按它摆）
+      board.actorScreen = (seat) => {
+        log.push([clock.now(), 'at', seat]);
+        return { x: 200, y: 230, w: 400, h: 400, zoom: 1.5 };
+      };
+      const ui = createUiPresenter({ wait: (ms, s) => clock.wait(ms, s) });
+      const cues: unknown[] = [];
+      const c: PresentationContext = {
+        ...ctx,
+        wait: (ms) => clock.wait(ms),
+        ui,
+        audio: {
+          play: () => {},
+          cue: (x) => {
+            cues.push(x);
+            log.push([clock.now(), 'knock']);
+          },
+        },
+      };
+      const off = useUiStore.subscribe((st, prev) => {
+        if (st.dice !== prev.dice)
+          log.push([clock.now(), st.dice ? (st.dice.rolling ? 'rolling' : 'settled') : 'none']);
+      });
+      const h = HANDLERS.DICE_ROLLED as unknown as (x: GameEvent, c: PresentationContext) => Promise<void>;
+      let done = false;
+      const p = h(
+        {
+          type: 'DICE_ROLLED',
+          seat: 0,
+          dice,
+          steps: 7,
+          forced: false,
+          diceCount: Math.max(1, dice.length),
+        } as GameEvent,
+        c,
+      ).then(() => {
+        done = true;
+        log.push([clock.now(), 'end']);
+      });
+      for (let i = 0; i < 400 && !done; i++) {
+        clock.advance(10);
+        // 让这一步到期的等待与后续的 then 链都跑完，再推进下一步
+        for (let k = 0; k < 12; k++) await Promise.resolve();
+      }
+      await p;
+      off();
+      setPacingOverride(null);
+      return { log, cues, dice: useUiStore.getState().dice };
+    }
+
+    it('original（速度 1）：持骰 9×80 → FLC 30 ms/帧，870 与 1080 ms 两声「咚」→ 停留 500 ms', async () => {
+      const { log, cues, dice } = await timeline('original', [2, 5]);
+      expect(log.map((x) => x[1])).toEqual(['throw', 'at', 'rolling', 'knock', 'settled', 'knock', 'end']);
+      expect(log[1]).toEqual([720, 'at', 0]);
+      const at = (k: string) => log.find((x) => x[1] === k)![0];
+      expect(log[0]).toEqual([0, 'throw', 0, 80]);
+      expect(at('rolling')).toBe(720);
+      expect(log.filter((x) => x[1] === 'knock').map((x) => x[0] - 720)).toEqual([870, 1080]);
+      expect(at('settled') - 720).toBe(1080);
+      expect(at('end') - 720).toBe(1080 + 500);
+      expect(cues).toEqual([DICE_KNOCK, DICE_KNOCK]);
+      // 骰子 FLC 的时序与画点方向槽写进 uiStore（ClassicDice 按它播放与摆放）
+      expect(dice).toMatchObject({
+        faces: [2, 5],
+        rolling: false,
+        frameMs: 30,
+        holdMs: 500,
+        slot: 5,
+        at: { x: 200, y: 230, w: 400, h: 400, zoom: 1.5 },
+      });
+      // 骰子显示期间覆盖层逐帧读人物位置（镜头移动时仍贴着人物）
+      expect(dice?.locate?.()).toEqual({ x: 200, y: 230, w: 400, h: 400, zoom: 1.5 });
+    });
+
+    it('compact（速度 2）：持骰 9×40 → FLC 20 ms/帧，580 与 720 ms 两声 → 停留 300 ms', async () => {
+      const { log } = await timeline('compact', [3]);
+      const at = (k: string) => log.find((x) => x[1] === k)![0];
+      expect(log[0]).toEqual([0, 'throw', 0, 40]);
+      expect(log.filter((x) => x[1] === 'knock').map((x) => x[0] - 360)).toEqual([580, 720]);
+      expect(at('end') - 360).toBe(720 + 300);
+    });
+
+    it('停留 / 乌龟（dice 为空）：没有持骰动作、骰子与声音', async () => {
+      const { log, cues, dice } = await timeline('original', []);
+      expect(log.map((x) => x[1])).toEqual(['end']);
+      expect(cues).toEqual([]);
+      expect(dice).toBeNull();
+    });
+
+    it('演出被中止（封顶 / reset）：之后不再「咚」', async () => {
+      setPacingOverride('original');
+      useUiStore.getState().clear();
+      const clock = new AnimClock();
+      const calls: Call[] = [];
+      const ac = new AbortController();
+      const cues: unknown[] = [];
+      const c: PresentationContext = {
+        ...ctxFor(view, calls),
+        signal: ac.signal,
+        wait: (ms) => clock.wait(ms, ac.signal),
+        ui: createUiPresenter({ wait: (ms, s) => clock.wait(ms, s) }),
+        audio: { play: () => {}, cue: (x) => cues.push(x) },
+      };
+      const h = HANDLERS.DICE_ROLLED as unknown as (x: GameEvent, c: PresentationContext) => Promise<void>;
+      const p = h({ type: 'DICE_ROLLED', seat: 0, dice: [4], steps: 4, forced: false, diceCount: 1 } as GameEvent, c);
+      clock.advance(300);
+      await Promise.resolve();
+      ac.abort();
+      await p;
+      setPacingOverride(null);
+      expect(cues).toEqual([]);
+    });
   });
 
   it('MOVE_SEGMENT：从当前格出发逐格行走', async () => {

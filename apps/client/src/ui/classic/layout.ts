@@ -39,11 +39,135 @@ export const GO_RECT: Rect = { x: 360, y: 400, w: 72, h: 67 };
  * 骰子数小图（Panel#7 图6–11，15×15，锚点 0,0）画在槽内竖直居中（槽内亮区 x7..20，偏左 0 像素）
  */
 export const DICE_COUNT_RECT: Rect = { x: GO_RECT.x + 7, y: GO_RECT.y + 9, w: 16, h: 48 };
-/** 骰子数小图在竖槽按钮内的画点（按钮左上角为原点） */
-export const DICE_COUNT_SPRITE = { x: 0, y: 16 } as const;
+/**
+ * GO 钮骰子数竖槽里的小骰子（exe fcn.004169f6，按 vehicle&3 分支，跳表 0x4169e6）：步行 / 工程车 1 个、机车 2 个、汽车 3 个
+ * 竖着叠放；第 i 个在「i < 骰子数且没有停留」时画亮图 2i+7、画点 x=7，否则画灰图 2i+6、x=8（图 6–11 两两成对：
+ * 第 1/2/3 个骰子 = 1/2/3 点）。坐标为 GO 钮内（锚点 0,0）：
+ * - 1 个：y=26（0x416b67–0x416bb6）；2 个：y=16+19i（0x416bb8–0x416c64）；3 个：y=9+16i（0x416c66–0x416d06）
+ */
+export interface DiceSlotIcon {
+  frame: number;
+  x: number;
+  y: number;
+  on: boolean;
+}
 
-/** 滚骰 FLC（Panel#4/5/6 189×285）：棋盘视窗正中 */
-export const DICE_FLC_RECT: Rect = { x: (440 - 189) / 2, y: 40 + (440 - 285) / 2, w: 189, h: 285 };
+export function diceSlotIcons(slots: number, count: number, stay: boolean): DiceSlotIcon[] {
+  const n = Math.min(3, Math.max(1, Math.trunc(slots)));
+  const out: DiceSlotIcon[] = [];
+  for (let i = 0; i < n; i++) {
+    const y = n === 1 ? 26 : n === 2 ? 16 + 19 * i : 9 + 16 * i;
+    const on = i < count && !stay;
+    out.push(on ? { frame: 2 * i + 7, x: 7, y, on } : { frame: 2 * i + 6, x: 8, y, on });
+  }
+  return out;
+}
+
+/** 骰子 FLC（Panel#4/5/6 189×285）的尺寸 */
+export const DICE_FLC_W = 189;
+export const DICE_FLC_H = 285;
+/**
+ * 骰子 FLC 的画点（exe fcn.00418d0b 0x418d50–0x418d83，屏幕 640×480 坐标）：(136, 48) + 表 0x4730ac[方向槽]，
+ * 方向槽 = (8 − 视角 + 朝向) & 7（与人物精灵的方向槽同一公式）。原版镜头跟着行动者，所以 FLC 落在人物头顶一带、
+ * 随朝向偏移（不在棋盘视窗正中）
+ */
+export const DICE_FLC_ORIGIN = { x: 136, y: 48 } as const;
+export const DICE_FLC_OFFSETS: readonly (readonly [number, number])[] = Object.freeze([
+  [4, 12],
+  [12, 12],
+  [8, 6],
+  [-4, -6],
+  [-12, -12],
+  [-24, -12],
+  [-20, -6],
+  [-12, 6],
+]);
+
+/** 骰子 FLC 的矩形（舞台坐标，人物在棋盘视窗中心、1 源像素 = 1 舞台像素时）；方向槽未知时按槽 0 */
+export function diceFlcRect(slot: number | null | undefined): Rect {
+  const s = slot === null || slot === undefined ? 0 : ((Math.trunc(slot) % 8) + 8) % 8;
+  const [dx, dy] = DICE_FLC_OFFSETS[s]!;
+  return { x: DICE_FLC_ORIGIN.x + dx, y: DICE_FLC_ORIGIN.y + dy, w: DICE_FLC_W, h: DICE_FLC_H };
+}
+
+/**
+ * 原版的渲染基准：镜头对准的世界点画在屏幕 (220,260)，即棋盘视窗 (0,40) 440×440 的中心（render.md §1.3）。
+ * 原版每 tick 把镜头设为行动者的世界坐标（0x40d35c–0x40d394 → fcn.00407ebd(p.x,p.y)），所以掷骰时人物锚点恒在这里
+ */
+export const BOARD_RENDER_BASE = { x: 220, y: 260 } as const;
+/** 骰子相对人物的比例（棋盘缩放 / 舞台缩放）的上下限：太小看不清点数，太大超出棋盘视窗 */
+export const DICE_SCALE_MIN = 0.5;
+export const DICE_SCALE_MAX = 1.5;
+/** FLC 上缘可以伸出棋盘视窗的高度（原版方向槽 4、5 的 FLC 顶在 y=36，比视窗上缘高 4 像素） */
+const DICE_TOP_SLACK = 12;
+
+/** 掷骰的人在棋盘画布上的位置（与 uiStore 的 DiceAnchor 同形；这里是纯函数，不依赖 store） */
+export interface DiceAnchorLike {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  zoom: number;
+}
+
+export interface DicePlacement {
+  /** FLC 左上角（舞台坐标） */
+  x: number;
+  y: number;
+  /** FLC 与点数面相对原版尺寸的比例（1 = 1 个棋盘源像素对 1 个舞台像素） */
+  scale: number;
+  /** 按人物实际的画面位置摆的（false：没有位置或人物不在视窗里，按人物在视窗中心摆） */
+  tracked: boolean;
+}
+
+/**
+ * 骰子 FLC 的摆放（exe fcn.00418d0b 0x418d50–0x418d83 的画点 (136,48)+表 0x4730ac[槽]，相对人物锚点 (220,260) 换算）：
+ * FLC 左上 = 人物锚点 + ((136,48) − (220,260) + T[槽]) × k，k = 棋盘缩放 / 舞台缩放（1 个棋盘源像素是几个舞台像素），
+ * FLC 与点数面按同一比例缩放——骰子相对人物的位置和大小与原版一致，不受镜头跟随偏移、手动拖动、缩放的影响。
+ * - 锚点（舞台坐标）= 棋盘视窗左上 + 画布坐标 × 440 / 画布宽；k 夹在 [DICE_SCALE_MIN, DICE_SCALE_MAX]；
+ * - 没有位置（程序化棋盘、人物不在棋盘上），或人物不在棋盘视窗里（关闭跟随、pin 别的座位时走出了画面）：按人物在视窗中心摆，
+ *   与原版镜头对准行动者时相同，不画到看不见的地方；
+ * - 整块 FLC 夹在棋盘视窗之内（上缘按原版允许伸出 12 像素）。
+ */
+export function diceFlcPlacement(
+  slot: number | null | undefined,
+  at: DiceAnchorLike | null | undefined,
+): DicePlacement {
+  const base = diceFlcRect(slot);
+  const vp = REGION.board;
+  if (!at || !(at.w > 0) || !(at.h > 0) || !(at.zoom > 0)) return { x: base.x, y: base.y, scale: 1, tracked: false };
+  const k = Math.min(DICE_SCALE_MAX, Math.max(DICE_SCALE_MIN, (at.zoom * vp.w) / at.w));
+  let ax = vp.x + (at.x * vp.w) / at.w;
+  let ay = vp.y + (at.y * vp.h) / at.h;
+  const inside = ax >= vp.x && ax <= vp.x + vp.w && ay >= vp.y && ay <= vp.y + vp.h;
+  if (!inside) {
+    ax = BOARD_RENDER_BASE.x;
+    ay = BOARD_RENDER_BASE.y;
+  }
+  const w = DICE_FLC_W * k;
+  const h = DICE_FLC_H * k;
+  const x = ax + (base.x - BOARD_RENDER_BASE.x) * k;
+  const y = ay + (base.y - BOARD_RENDER_BASE.y) * k;
+  const clamp = (v: number, lo: number, hi: number): number => Math.min(Math.max(v, lo), Math.max(lo, hi));
+  return {
+    x: clamp(x, vp.x, vp.x + vp.w - w),
+    y: clamp(y, vp.y - DICE_TOP_SLACK, vp.y + vp.h - h),
+    scale: k,
+    tracked: inside,
+  };
+}
+
+/**
+ * 点数面（Panel#3）的画点，相对 FLC 左上角（exe 0x418de8–0x418e1c：(x0+0x55, y0+0x91)，第 i 颗画帧 6i+点数−1）。
+ * 三套角度的锚点把它们分别摆到 FLC 底部的左、中、右，和 FLC 末帧的骰子重合
+ */
+export const DICE_FACE_POINT = { x: 0x55, y: 0x91 } as const;
+/** 点数面素材缺失时 CSS 骰子的左上角（相对 FLC 左上角；按原版三套锚点换算的落点） */
+export const DICE_FACE_FALLBACK: readonly (readonly [number, number])[] = Object.freeze([
+  [1, 243],
+  [96, 248],
+  [153, 244],
+]);
 
 /** 侧栏至少这么宽才整栏显示，否则收成抽屉（844×390 的手机横屏两侧各约 162px → 抽屉） */
 export const RAIL_FULL_MIN = 180;

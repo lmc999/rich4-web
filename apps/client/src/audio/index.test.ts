@@ -1,5 +1,5 @@
 // AudioSystem：组装（ZzFX 回退常驻）、切换素材包、ctx.audio 端口、调试钩子、收尾。
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AudioSystem } from './index';
 import { FakeAudioWorld, flushMicrotasks } from './testing/fakeAudio';
 
@@ -15,6 +15,11 @@ describe('AudioSystem', () => {
     expect(hooks.state).toBe('running');
     sys.port().play('coin');
     sys.port().play('zzfx.nope');
+    // ctx.audio.cue：按 soundMap 同一套提示解析（没有素材包 → ZzFX 预设）
+    const played = vi.spyOn(sys.engine, 'playSfx');
+    sys.port().cue?.({ cue: 'dice.roll', zzfx: 'dice', timed: true });
+    expect(played).toHaveBeenCalledWith('zzfx.dice', { bus: 'sfx' });
+    played.mockRestore();
     await flushMicrotasks();
     expect(hooks.log.some((e) => e.op === 'missing' && e.key === 'zzfx.nope')).toBe(true);
     expect(hooks.music()?.mode).toBe('idle');

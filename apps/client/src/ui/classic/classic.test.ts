@@ -264,7 +264,7 @@ describe('素材帧与掩膜', () => {
     ]);
   });
 
-  it('骰子定格面：第 i 颗用第 i 套角度；GO 钮帧：乌龟 4/5、禁止 2/3、常态 0/1', () => {
+  it('骰子定格面：第 i 颗用第 i 套角度；GO 钮帧：乌龟 4/5、停留（与禁止同帧）2/3、常态 0/1', () => {
     expect(diceFaceFrame(0, 1)).toBe(0);
     expect(diceFaceFrame(1, 6)).toBe(11);
     expect(diceFaceFrame(2, 3)).toBe(14);
@@ -273,7 +273,9 @@ describe('素材帧与掩膜', () => {
     expect(goFrame(false, null, false)).toBe(2);
     expect(goFrame(false, 'tortoise', true)).toBe(3);
     expect(goFrame(true, 'tortoise', false)).toBe(4);
-    expect(goFrame(true, 'stay', true)).toBe(1);
+    // 停留：原版 fcn.004169f6 0x416ab4 画「停留」帧 2/3（与全灰的骰子数竖槽同一个判断）
+    expect(goFrame(true, 'stay', false)).toBe(2);
+    expect(goFrame(true, 'stay', true)).toBe(3);
   });
 });
 

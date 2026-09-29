@@ -42,10 +42,24 @@ export function DiceOverlay(): ReactNode {
   if (!d) return null;
   const sum = d.faces.reduce((a, b) => a + b, 0);
   return (
-    <div className={h.dice} data-testid="dice-overlay" data-rolling={d.rolling ? 'true' : 'false'} data-sum={sum}>
+    <div
+      className={h.dice}
+      data-testid="dice-overlay"
+      data-rolling={d.rolling ? 'true' : 'false'}
+      data-sum={sum}
+      data-seat={d.seat}
+      data-count={d.faces.length}
+    >
       {d.faces.map((f, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: 骰子位置固定
-        <span key={i} className={clsx(h.die, d.rolling && h.dieRolling)} style={{ color: `var(--c-p${d.seat + 1})` }}>
+        <span
+          // biome-ignore lint/suspicious/noArrayIndexKey: 骰子位置固定
+          key={i}
+          className={clsx(h.die, d.rolling && h.dieRolling)}
+          style={{ color: `var(--c-p${d.seat + 1})` }}
+          data-testid="dice-face"
+          data-index={i}
+          data-face={d.rolling ? '' : f}
+        >
           {d.rolling ? FACES[(i * 2 + 3) % 6] : FACES[(f - 1) % 6]}
         </span>
       ))}

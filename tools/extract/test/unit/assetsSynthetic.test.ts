@@ -61,6 +61,11 @@ describe('合成素材包', () => {
     for (const k of boardKeys) expect(m.entries[k]?.type, k).toBe('sprite');
     const walk = m.entries['char.0.walk']!;
     expect(walk.type === 'sprite' && [walk.frames.count, walk.dirs]).toEqual([72, 8]);
+    // 持骰动作每方向多帧（步行 9、机车 / 汽车 4）：客户端掷骰时逐 tick 播一遍
+    const dice = m.entries['char.0.dice']!;
+    const motoDice = m.entries['char.0.moto.dice']!;
+    expect(dice.type === 'sprite' && [dice.frames.count, dice.dirs]).toEqual([72, 8]);
+    expect(motoDice.type === 'sprite' && [motoDice.frames.count, motoDice.dirs]).toEqual([32, 8]);
     for (const g of Object.values(m.groups)) expect(g.provenance).toBe('synthetic');
     // 合成内容不是原版派生：PNG 不写派生标记
     const png = Object.values(m.files).find((f) => f.contentType === 'image/png')!;

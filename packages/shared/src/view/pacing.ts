@@ -24,6 +24,52 @@ export const STEP_MS = 180;
 /** 单个事件的预算：常数，或按载荷计算 */
 export type EventBudget<T extends GameEventType> = number | ((e: GameEventOf<T>) => number);
 
+// ───────────────────────── 掷骰（原版时序） ─────────────────────────
+
+/**
+ * 掷骰演出的原版时序（exe v2.06；v3.11 对应代码 0x419595–0x41967a 结构相同）。按下 GO（fcn.0040d7e5 0x40d84d 置 state=2、
+ * 0x40d9b3 帧清零）之后：
+ * 1. 持骰动作：状态机 fcn.0040d28a case 2（0x40d43b–0x40d470）每 tick 帧 +1，把持骰库（Data#87+21c+3·vehicle+2）每方向的
+ *    帧数播完（步行 7–9、机车 / 汽车 4–8）才调用掷骰函数 fcn.00418d0b，人物停在最后一帧（空手）；
+ *    tick = 20 ms × 分频表 0x46a9d0 [6,4,2][速度]（0x40212d timeSetEvent 20 ms，0x401f44–0x401f6b）；
+ * 2. 骰子 FLC（Panel#4/5/6 = 1/2/3 颗）36 帧只播一遍，帧间隔 = 表 0x4730ec [5,3,2][速度] × 10 ms（flags bits4–7，
+ *    fcn.0044f514 0x44f6fb–0x44f711，覆盖 FLC 头部的 14 ms）；第 30 帧（flags bits24–30 = 0x1e，fcn.0044f72b
+ *    0x44fb9d–0x44fbc0）与播完时（0x418dc8）各放一次 Effect#10，就是「咚咚」两声；
+ * 3. 画上点数面（Panel#3），忙等 500 ms（0x418e73 fcn.00450f3f）后起步。
+ * 游戏速度 = RICH4.CFG 偏移 0（没有 CFG 时默认 1，0x4117fa）。original 节奏取原版默认的速度 1；compact 取速度 2
+ * （与原版皮肤的行走帧间隔 40 ms 同档），落定后的停留缩短为 300 ms。停留 / 乌龟不掷骰（fcn.0040d7e5 直接起步），
+ * 事件的 dice 为空，没有演出。
+ * @source docs/research/original-assets/ui.md §6（FLC 帧间隔的未决项由上述 exe 地址回答）
+ */
+export interface DiceTiming {
+  /** 持骰动作每帧（原版 tick，ms） */
+  readonly throwTickMs: number;
+  /** 骰子 FLC 每帧（ms） */
+  readonly flicFrameMs: number;
+  /** 画上点数面之后的停留（ms） */
+  readonly holdMs: number;
+}
+
+export const DICE_TIMING: Readonly<Record<PacingProfile, DiceTiming>> = Object.freeze({
+  original: Object.freeze({ throwTickMs: 80, flicFrameMs: 30, holdMs: 500 }),
+  compact: Object.freeze({ throwTickMs: 40, flicFrameMs: 20, holdMs: 300 }),
+});
+
+/** 骰子 FLC（Panel#4/5/6）的帧数 */
+export const DICE_FLIC_FRAMES = 36;
+/** 第一声「咚」在 FLC 第 30 帧（1 起算；flags 0x1e000000）；第二声在播完时 */
+export const DICE_KNOCK_FRAME = 30;
+/** 持骰动作每方向的帧数上限（12 个角色 × 步行 / 机车 / 汽车里最多 9 帧）：事件不带交通工具，预算按它保守估计 */
+export const DICE_THROW_FRAMES_MAX = 9;
+
+/** 掷骰演出时长：持骰动作 throwFrames 帧 + FLC 36 帧 + 落定停留 */
+export function diceShowMs(t: DiceTiming, throwFrames: number = DICE_THROW_FRAMES_MAX): number {
+  return throwFrames * t.throwTickMs + DICE_FLIC_FRAMES * t.flicFrameMs + t.holdMs;
+}
+
+/** 掷骰事件的余量（首帧对齐与载入，约一帧） */
+const DICE_SLACK_MS = 100;
+
 /** 一种节奏的完整预算表：以 GameEvent['type'] 为键穷举 */
 export type EventBudgetTable = { readonly [T in GameEventType]: EventBudget<T> };
 
@@ -37,8 +83,8 @@ export const COMPACT_BUDGET_MS = Object.freeze({
   RELEASED: 1000,
   RETURNED: 800,
   TURN_ENDED: 0,
-  // move
-  DICE_ROLLED: 900,
+  // move（掷骰：原版时序的速度 2 档，见 DICE_TIMING；停留 / 乌龟不掷骰为 0）
+  DICE_ROLLED: (e) => (e.dice.length === 0 ? 0 : diceShowMs(DICE_TIMING.compact) + DICE_SLACK_MS),
   MOVE_SEGMENT: (e) => e.path.length * STEP_MS + 250,
   ROADBLOCK_HIT: 800,
   REVERSED: 500,
@@ -220,7 +266,10 @@ export const ORIGINAL_FLICS = Object.freeze({
   christmas: flic('Data', 513, 'holiday.christmas', 90, 85),
   /** 房屋倒塌：破产（fcn.0040c84d）；音效 100 */
   bankrupt: flic('Data', 514, 'fx.bankrupt', 10, 71),
-  /** 骰子 1 / 2 / 3 颗（帧间隔 14 ms 标 visual） */
+  /**
+   * 骰子 1 / 2 / 3 颗：FLC 头部写 14 ms；exe 播放时用 flags 覆盖帧间隔（表 0x4730ec [5,3,2]×10 ms），实际时长见
+   * DICE_TIMING / DICE_ROLLED 的预留（这里保留文件头的事实值，与 flic-map 源数据一致）
+   */
   dice1: flic('Panel', 4, 'dice.roll1', 36, 14),
   dice2: flic('Panel', 5, 'dice.roll2', 36, 14),
   dice3: flic('Panel', 6, 'dice.roll3', 36, 14),
@@ -255,10 +304,13 @@ export const PARACHUTE_FLICS: readonly FlicTiming[] = Object.freeze(
 
 const LONGEST_PARACHUTE = PARACHUTE_FLICS.reduce((a, b) => (flicMs(b) > flicMs(a) ? b : a));
 
+/** 骰子 FLC 实际的播放时长：帧间隔按 exe 覆盖后的原版默认速度 1（DICE_TIMING.original），不用文件头的 14 ms */
+const playedDice = (f: FlicTiming): FlicTiming =>
+  flic(f.mkf, f.res, f.use, DICE_FLIC_FRAMES, DICE_TIMING.original.flicFrameMs);
 const DICE_FLICS: Readonly<Record<DiceCount, FlicTiming>> = {
-  1: ORIGINAL_FLICS.dice1,
-  2: ORIGINAL_FLICS.dice2,
-  3: ORIGINAL_FLICS.dice3,
+  1: playedDice(ORIGINAL_FLICS.dice1),
+  2: playedDice(ORIGINAL_FLICS.dice2),
+  3: playedDice(ORIGINAL_FLICS.dice3),
 };
 
 const STRIKE_FLICS: Readonly<Record<StrikeKind, FlicTiming | null>> = {
@@ -288,11 +340,16 @@ export const FLIC_SLACK_MS = 100;
  * - PARACHUTE：事件不带角色号，按 12 个角色里最长的一段预留。
  * - CARD_GAINED / POINTS_GAINED：原版只在落到卡片格 / 点券格时播放（exe 调用点都在落点处理里）。
  * - OBJECT_REMOVED：被踩中的地雷 / 路面炸弹（与 handlers/items.ts 的 removalOf → 'boom' 同一口径）。
- * - DICE_ROLLED、LOTTERY_DRAW、BANKRUPT：原长本来就在 compact 预算内，列出只为给原版皮肤同一份对应表。
+ * - DICE_ROLLED：按实际掷出的颗数（遥控骰子只有 1 颗）；FLC 之外是持骰动作（按最多 9 帧）与落定停留（DICE_TIMING.original）；
+ *   停留 / 乌龟不掷骰（dice 为空）没有预留。
+ * - LOTTERY_DRAW、BANKRUPT：原长本来就在 compact 预算内，列出只为给原版皮肤同一份对应表。
  */
 const FLIC_RESERVES = {
   PARACHUTE: { extraMs: 600, flic: () => LONGEST_PARACHUTE },
-  DICE_ROLLED: { extraMs: 0, flic: (e) => DICE_FLICS[e.diceCount] },
+  DICE_ROLLED: {
+    extraMs: diceShowMs(DICE_TIMING.original) - DICE_FLIC_FRAMES * DICE_TIMING.original.flicFrameMs,
+    flic: (e) => (e.dice.length === 0 ? null : DICE_FLICS[Math.min(3, e.dice.length) as DiceCount]),
+  },
   POINTS_GAINED: { extraMs: 0, flic: (e) => (e.source === 'square' ? ORIGINAL_FLICS.pointsGain : null) },
   CARD_GAINED: { extraMs: 0, flic: (e) => (e.source === 'square' ? ORIGINAL_FLICS.cardGain : null) },
   OBJECT_REMOVED: {

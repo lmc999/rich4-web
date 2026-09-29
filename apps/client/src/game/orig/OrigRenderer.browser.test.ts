@@ -211,6 +211,128 @@ describe('OrigRenderer（合成素材包，Chromium + WebGL）', () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 
+  it('掷骰动作：等待掷骰时静止站立；throwDice 逐 tick 播完持骰库一个方向的帧、停在最后一帧，开始行走或批尾同步才收起', async () => {
+    const { clock, surface: s, ctrl } = await create();
+    const base = placedView();
+    const view = { ...base, clock: { ...base.clock, cursor: { t: 'seat', seat: 0 } } } as typeof base;
+    ctrl.syncView(view);
+    const c = view.players[0]!.character;
+    for (const k of ['stand', 'walk', 'dice', 'moto.stand', 'moto.dice']) await s.assets.sheet(`char.${c}.${k}`);
+    const a = s.actor(0)!;
+    a.setStatus({ ...a.currentStatus, vehicle: 'walk' });
+    // 轮到自己、等待掷骰：静止的站姿（原版 state 0），帧不随时间变化
+    const idle = new Set<string>();
+    const offIdle = clock.onFrame(() => idle.add(`${a.poseKey}#${a.frameIndex}`));
+    for (let i = 0; i < 90; i++) clock.advance(16);
+    offIdle();
+    expect([...idle]).toEqual([`char.${c}.stand#${a.frameIndex}`]);
+    expect(a.throwing).toBe(false);
+    // 收到掷骰结果：持骰库（步行 9 帧 / 方向）逐 tick 播一遍
+    const seen: number[] = [];
+    const offThrow = clock.onFrame(() => {
+      if (a.poseKey === `char.${c}.dice` && seen.at(-1) !== a.frameIndex) seen.push(a.frameIndex);
+    });
+    const t0 = clock.now();
+    const p = ctrl.throwDice(0, 80, new AbortController().signal);
+    await drive(clock, p);
+    offThrow();
+    const took = clock.now() - t0;
+    const slot = await p;
+    expect(slot).toBe(a.screenDir);
+    const first = slot! * 9;
+    expect(seen).toEqual(Array.from({ length: 9 }, (_, i) => first + i));
+    expect(took).toBeGreaterThanOrEqual(9 * 80);
+    expect(took).toBeLessThan(9 * 80 + 48);
+    // 播完停在最后一帧（空手），直到开始行走
+    for (let i = 0; i < 30; i++) clock.advance(16);
+    expect([a.poseKey, a.frameIndex, a.throwing]).toEqual([`char.${c}.dice`, first + 8, true]);
+    await drive(clock, ctrl.walk(0, [3, 4], new AbortController().signal));
+    expect(a.throwing).toBe(false);
+    expect(a.poseKey).toBe(`char.${c}.stand`);
+    // 机车：持骰库 moto.dice（合成包每方向 1 帧）；批尾同步收起
+    a.setStatus({ ...a.currentStatus, vehicle: 'moto' });
+    await drive(clock, ctrl.throwDice(0, 80, new AbortController().signal));
+    expect(a.poseKey).toBe(`char.${c}.moto.dice`);
+    ctrl.syncView({
+      ...view,
+      players: view.players.map((p) => (p.seat === 0 ? { ...p, node: 4, vehicle: 'moto' } : p)),
+    });
+    expect(a.throwing).toBe(false);
+    expect(a.poseKey).toBe(`char.${c}.moto.stand`);
+    // 中止：直接落到最后一帧
+    a.setStatus({ ...a.currentStatus, vehicle: 'walk' });
+    const ac = new AbortController();
+    ac.abort();
+    await ctrl.throwDice(0, 80, ac.signal);
+    expect([a.poseKey, a.frameIndex % 9]).toEqual([`char.${c}.dice`, 8]);
+    // 人物在画布上的位置（骰子 FLC 按它摆）：脚下锚点经镜头换算的画布坐标、画布尺寸与镜头缩放
+    const scr = ctrl.actorScreen(0)!;
+    const foot = s.camera.worldToScreen(a.boardPos());
+    const vp = s.viewportSize();
+    expect(scr).toEqual({ x: foot.x, y: foot.y, w: vp.w, h: vp.h, zoom: s.camera.zoom });
+    expect([vp.w, vp.h]).toEqual([960, 640]);
+    expect(ctrl.actorScreen(9 as 0)).toBeNull();
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it('快艇：持骰库 boat.dice 随角色一起预取；持骰库下载期间 reset（先中止、再批尾同步）后不再摆回持骰姿态', async () => {
+    const def = buildTestMap();
+    const pack = buildFakePack(def, { boatTiles: [3] });
+    // 拦住快艇持骰库的图集：下载一直挂着，直到放行
+    let release!: () => void;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+    const load = pack.loadAtlas.bind(pack);
+    const asked: string[] = [];
+    pack.loadAtlas = async (lp, signal) => {
+      asked.push(lp);
+      if (lp.endsWith('.boat.dice.json')) await gate;
+      return load(lp, signal);
+    };
+    const clock = new AnimClock();
+    const created = await createOrigBoard(
+      {
+        host,
+        clock,
+        quality: 'low',
+        def,
+        insets: { top: 0, right: 0, bottom: 0, left: 0 },
+        controller: controllerOpts,
+      },
+      pack,
+    );
+    surface = created.surface as OrigRenderer;
+    const s = surface;
+    const ctrl = created.controller as OrigBoardController;
+    const base = placedView();
+    const view = { ...base, clock: { ...base.clock, cursor: { t: 'seat', seat: 0 } } } as typeof base;
+    ctrl.syncView(view);
+    const c = view.players[0]!.character;
+    // 一建角色就请求快艇的持骰库（不等第一次在快艇上掷骰）
+    expect(asked).toContain(`sprites/fake/char.${c}.boat.dice.json`);
+    await s.assets.sheet(`char.${c}.boat.stand`);
+    const a = s.actor(0)!;
+    expect(a.inBoat).toBe(true);
+    const ac = new AbortController();
+    const p = ctrl.throwDice(0, 80, ac.signal);
+    await new Promise((res) => setTimeout(res, 0));
+    expect(a.throwing).toBe(false);
+    // EventPlayer.reset 的次序：同步中止当前 handler → syncBoard（clearThrow），被中止的 throwDice 在之后才继续
+    ac.abort();
+    ctrl.syncView(view);
+    release();
+    await p;
+    await s.assets.sheet(`char.${c}.boat.dice`);
+    await new Promise((res) => setTimeout(res, 0));
+    expect(a.throwing).toBe(false);
+    expect(a.poseKey).toBe(`char.${c}.boat.stand`);
+    // 下载完成后：下一次掷骰直接用快艇持骰库
+    await drive(clock, ctrl.throwDice(0, 80, new AbortController().signal));
+    expect([a.poseKey, a.throwing]).toEqual([`char.${c}.boat.dice`, true]);
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
   it('拾取：点节点的画布坐标命中该节点；点空白为 null；轻点回调可替换', async () => {
     const { def, surface: s, ctrl } = await create();
     ctrl.syncView(selfPlay({ seed: 5, steps: 1 }).initial.view);

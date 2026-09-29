@@ -8,6 +8,7 @@
 import type { MapIndex } from '@rich4/shared/data';
 import type { GameEvent, GameEventType } from '@rich4/shared/engine';
 import type { GameView } from '@rich4/shared/view';
+import { GAME_PRELOAD_CUES } from '../presentation/soundMap';
 import type { AnyHandler, HandlerMap, PresentationContext } from '../presentation/types';
 import type { SfxOptions } from './AudioEngine';
 import { makeSoundQuery, type SfxCue } from './cues';
@@ -68,8 +69,11 @@ export interface EventAudio {
   end(): void;
 }
 
-/** 界面音（countdown / countdownFinal：决策倒计时最后 10 秒的提示音，走音效总线，受音效音量控制） */
-export type UiCue = 'click' | 'back' | 'open' | 'move' | 'use' | 'tick' | 'countdown' | 'countdownFinal';
+/**
+ * 界面音（countdown / countdownFinal：决策倒计时最后 10 秒的提示音，走音效总线，受音效音量控制；
+ * go：原版皮肤用鼠标按下 GO 钮、点骰子数竖槽时的 Effect#1，exe 0x417ac9 / 0x417a08，素材包 cue.ui.go）
+ */
+export type UiCue = 'click' | 'back' | 'open' | 'move' | 'use' | 'go' | 'tick' | 'countdown' | 'countdownFinal';
 
 const UI_CUES: Readonly<Record<UiCue, SfxCue>> = {
   click: { cue: 'ui.click', zzfx: 'click', bus: 'ui' },
@@ -77,6 +81,7 @@ const UI_CUES: Readonly<Record<UiCue, SfxCue>> = {
   open: { cue: 'ui.open', zzfx: 'open', bus: 'ui' },
   move: { cue: 'ui.move', zzfx: 'click', bus: 'ui' },
   use: { cue: 'ui.use', zzfx: 'magic', bus: 'ui' },
+  go: { cue: 'ui.go', zzfx: 'click', bus: 'ui' },
   tick: { zzfx: 'tick' as ZzfxPresetId, bus: 'ui' },
   // 原版没有决策计时，素材包里没有语义对应的音效（audio_video.md §2）：只用 ZzFX
   countdown: { zzfx: 'countdown', bus: 'sfx' },
@@ -97,6 +102,9 @@ const SCENE_SFX_SETS: Readonly<Partial<Record<string, readonly string[]>>> = {
   xicong: ['mg.xicong', 'mg.common'],
   setup: ['setup'],
 };
+
+/** preloaded 里代表「对局里按时刻放的事件音效」的标记（不是音效集名） */
+const TIMED_PRELOAD = '#timed';
 
 interface UiLayer {
   scene: SceneRequest;
@@ -195,17 +203,29 @@ export class AudioDirector {
   }
 
   private preloadFor(ui: AudioUiState): void {
-    const sets = this.maps.sfxSets;
-    if (!sets) return;
-    const names: string[] = ['global'];
-    if (ui.screen === 'game') names.push('board');
-    const v = sceneLayersFor(ui).venue;
-    if (v) names.push(...(SCENE_SFX_SETS[v.scene] ?? []));
     const keys: string[] = [];
-    for (const n of names) {
-      if (this.preloaded.has(n) || !Object.hasOwn(sets.sets, n)) continue;
-      this.preloaded.add(n);
-      keys.push(...sets.sets[n]!.sfx);
+    const sets = this.maps.sfxSets;
+    if (sets) {
+      const names: string[] = ['global'];
+      if (ui.screen === 'game') names.push('board');
+      const v = sceneLayersFor(ui).venue;
+      if (v) names.push(...(SCENE_SFX_SETS[v.scene] ?? []));
+      for (const n of names) {
+        if (this.preloaded.has(n) || !Object.hasOwn(sets.sets, n)) continue;
+        this.preloaded.add(n);
+        keys.push(...sets.sets[n]!.sfx);
+      }
+    }
+    // 按演出时刻放、每回合都响的事件音效（掷骰的「咚」）与按 GO 的点击声：没有素材包时预合成 ZzFX
+    if (ui.screen === 'game' && !this.preloaded.has(TIMED_PRELOAD)) {
+      this.preloaded.add(TIMED_PRELOAD);
+      // 已随某个音效集预载过的（GO 的 Effect#1 在全局音效集里）不再重复
+      const inSets = (k: string): boolean =>
+        sets !== null && [...this.preloaded].some((n) => sets.sets[n]?.sfx.includes(k) === true);
+      for (const c of [...GAME_PRELOAD_CUES, UI_CUES.go]) {
+        const r = resolveSfxCue({ ...c, timed: false }, sets, 0, { guessOriginal: this.opts.guessOriginal });
+        if (r && !keys.includes(r.key) && !inSets(r.key)) keys.push(r.key);
+      }
     }
     if (keys.length > 0) void this.engine.preload(keys);
   }
@@ -241,12 +261,14 @@ export class AudioDirector {
     let token: number | null = null;
     try {
       const cue = sfxCueFor(e, q);
-      sfx = cue
-        ? resolveSfxCue(cue, this.maps.sfxSets, voiceSeed(e, seedCtx), {
-            guessOriginal: this.opts.guessOriginal,
-            flicSfx: this.opts.flicSfx,
-          })
-        : null;
+      // timed：handler 在演出的指定时刻经 ctx.audio.cue 自己放（playCue），事件开始时不放
+      sfx =
+        cue && !cue.timed
+          ? resolveSfxCue(cue, this.maps.sfxSets, voiceSeed(e, seedCtx), {
+              guessOriginal: this.opts.guessOriginal,
+              flicSfx: this.opts.flicSfx,
+            })
+          : null;
       if (sfx) this.engine.playSfx(sfx.key, { bus: sfx.bus });
       voices = voiceFor(e, q, this.maps.voiceMap, seedCtx, { allowGuess: this.opts.allowGuessVoice });
       for (const v of voices) {
@@ -299,6 +321,22 @@ export class AudioDirector {
       };
     }
     return out as unknown as HandlerMap;
+  }
+
+  /**
+   * 放一个事件音效提示（ctx.audio.cue 的实现）：与事件开始时同一套解析（cue 音效集、置信度、ZzFX 回退），
+   * 由 handler 在演出的指定时刻调用（soundMap 里标 timed 的提示，例如掷骰的两声「咚」）
+   */
+  playCue(c: SfxCue): ResolvedSfx | null {
+    let r: ResolvedSfx | null = null;
+    try {
+      r = resolveSfxCue({ ...c, timed: false }, this.maps.sfxSets, 0, { guessOriginal: this.opts.guessOriginal });
+      if (r) this.engine.playSfx(r.key, { bus: r.bus });
+    } catch (err) {
+      // 声音永远不能打断演出
+      if (typeof console !== 'undefined') console.warn('[audio] cue', c.cue ?? c.zzfx, err);
+    }
+    return r;
   }
 
   // ───────────────────────── 界面音 ─────────────────────────

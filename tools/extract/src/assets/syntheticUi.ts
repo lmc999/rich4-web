@@ -312,21 +312,25 @@ function goButtonFrames(count: number): UiFrame[] {
   return out;
 }
 
+/**
+ * 点数面（Panel#3 同结构：3 套角度 × 6 面）。锚点与原版包同语义：客户端在骰子 FLC 左上 +(0x55,0x91) 画第 i 颗
+ * （exe 0x418de8–0x418e1c），三套锚点把它们分别摆到 FLC 底部的左、中、右（框内约 (1,243)、(96,248)、(153,244)）
+ */
 function diceFaceFrames(count: number): UiFrame[] {
-  const sizes: readonly [number, number][] = [
-    [35, 41],
-    [30, 36],
-    [34, 40],
+  const sets: readonly { w: number; h: number; ax: number; ay: number }[] = [
+    { w: 35, h: 41, ax: 84, ay: -98 },
+    { w: 30, h: 36, ax: -11, ay: -103 },
+    { w: 34, h: 40, ax: -68, ay: -99 },
   ];
   const out: UiFrame[] = [];
   for (let f = 0; f < count; f++) {
-    const [w, h] = sizes[Math.floor(f / 6) % 3]!;
+    const { w, h, ax, ay } = sets[Math.floor(f / 6) % 3]!;
     const face = (f % 6) + 1;
     const c = new Canvas(w, h);
     c.rect(1, 1, w - 2, h - 2, WHITE);
     c.frame(0, 0, w, h, INK, 2);
     c.dots(5, 5, face, face === 1 || face === 4 ? RED : INK, 4);
-    out.push(frameOf(c));
+    out.push(frameOf(c, ax, ay));
   }
   return out;
 }

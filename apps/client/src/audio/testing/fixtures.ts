@@ -93,6 +93,8 @@ export function testSfxSets(): SfxSetsV1 {
       global: set(['sfx.000', 'sfx.001'], 'exe'),
       board: set(['sfx.044', 'sfx.049', 'sfx.050'], 'exe'),
       'cue.land.buy': set(['sfx.049'], 'exe'),
+      'cue.dice.roll': set(['sfx.010'], 'exe'),
+      'cue.ui.go': set(['sfx.001'], 'exe'),
       'cue.land.build': set(['sfx.050'], 'exe'),
       'cue.gain.points': set(['sfx.036'], 'exe'),
       'cue.move.walk': set(['sfx.044'], 'guess'),

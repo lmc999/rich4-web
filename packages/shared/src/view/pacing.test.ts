@@ -8,6 +8,11 @@ import {
 import {
   COMPACT_BUDGET_MS,
   DEFAULT_PACING,
+  DICE_FLIC_FRAMES,
+  DICE_KNOCK_FRAME,
+  DICE_THROW_FRAMES_MAX,
+  DICE_TIMING,
+  diceShowMs,
   EVENT_BUDGET_MS,
   estimateAnimMs,
   eventBudgetMs,
@@ -38,6 +43,7 @@ function stub(type: GameEventType): GameEvent {
     obj: { id: 1, kind: 'mine', node: 1, placedBy: 0 },
     source: 'square',
     kind: 1,
+    dice: [3],
     diceCount: 1,
     giveCard: false,
   } as unknown as GameEvent;
@@ -88,7 +94,6 @@ describe('pacing：两种节奏的预算表', () => {
 describe('pacing：compact（architecture §5.9 的示例值）', () => {
   it('示例值', () => {
     expect(STEP_MS).toBe(180);
-    expect(COMPACT_BUDGET_MS.DICE_ROLLED).toBe(900);
     expect(COMPACT_BUDGET_MS.TOLL_PAID).toBe(1100);
     expect(COMPACT_BUDGET_MS.NEWS).toBe(3800);
     expect(COMPACT_BUDGET_MS.LOTTERY_DRAW).toBe(4200);
@@ -113,6 +118,7 @@ describe('pacing：original（原版 FLIC 原长）', () => {
     expect(flicMs(ORIGINAL_FLICS.ambulance)).toBe(6200);
     expect(flicMs(ORIGINAL_FLICS.policeCar)).toBe(2485);
     expect(flicMs(ORIGINAL_FLICS.christmas)).toBe(7650);
+    // 骰子 FLC 文件头 14 ms（事实值）；播放时 exe 用 flags 覆盖成按游戏速度的帧间隔，见下面「掷骰」
     expect(flicMs(ORIGINAL_FLICS.dice2)).toBe(504);
     expect(Object.keys(GOD_ARRIVAL_FLICS).map(Number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15]);
     expect(PARACHUTE_FLICS.map((f) => f.res)).toEqual([518, 519, 520, 521, 522, 523, 524, 525, 526, 527, 528, 529]);
@@ -177,13 +183,12 @@ describe('pacing：original（原版 FLIC 原长）', () => {
     expect(eventBudgetMs(bomb, 'original')).toBe(2911 + 700 + FLIC_SLACK_MS);
   });
 
-  it('节日：送卡的是圣诞；开局跳伞按最长的角色；骰子、乐透、破产原长本来就在预算内', () => {
+  it('节日：送卡的是圣诞；开局跳伞按最长的角色；乐透、破产原长本来就在预算内', () => {
     expect(eventBudgetMs({ type: 'HOLIDAY', key: 'h15', giveCard: true }, 'original')).toBe(7650 + FLIC_SLACK_MS);
     expect(eventBudgetMs({ type: 'HOLIDAY', key: 'h0', giveCard: false }, 'original')).toBe(2772 + FLIC_SLACK_MS);
     const chute: GameEvent = { type: 'PARACHUTE', seat: 1, node: 5, prev: 4 };
     expect(eventBudgetMs(chute, 'original')).toBe(40 * 42 + 600 + FLIC_SLACK_MS);
     for (const e of [
-      { type: 'DICE_ROLLED', seat: 0, dice: [3, 4, 5], steps: 12, forced: false, diceCount: 3 },
       { type: 'LOTTERY_DRAW', number: 3, winner: 1, prize: 5000 },
       { type: 'BANKRUPT', seat: 2, cause, creditor: null },
     ] as GameEvent[]) {
@@ -213,6 +218,42 @@ describe('pacing：original（原版 FLIC 原长）', () => {
   });
 });
 
+describe('pacing：掷骰（原版时序：持骰动作 → FLC 36 帧 → 落定停留）', () => {
+  const roll = (dice: number[]): GameEvent =>
+    ({
+      type: 'DICE_ROLLED',
+      seat: 0,
+      dice,
+      steps: dice.reduce((a, b) => a + b, 0),
+      forced: false,
+      diceCount: Math.max(1, dice.length),
+    }) as GameEvent;
+
+  it('original 取原版默认速度 1（tick 80 ms、FLC 30 ms/帧、停留 500 ms），compact 取速度 2', () => {
+    expect(DICE_TIMING.original).toEqual({ throwTickMs: 80, flicFrameMs: 30, holdMs: 500 });
+    expect(DICE_TIMING.compact).toEqual({ throwTickMs: 40, flicFrameMs: 20, holdMs: 300 });
+    expect([DICE_FLIC_FRAMES, DICE_KNOCK_FRAME, DICE_THROW_FRAMES_MAX]).toEqual([36, 30, 9]);
+    // 步行 9 帧持骰：720 + 1080 + 500；机车 / 汽车 4 帧：320 + 1080 + 500
+    expect(diceShowMs(DICE_TIMING.original)).toBe(2300);
+    expect(diceShowMs(DICE_TIMING.original, 4)).toBe(1900);
+    expect(diceShowMs(DICE_TIMING.compact)).toBe(1380);
+  });
+
+  it('预算 = 持骰动作（按最多 9 帧）+ FLC + 停留 + 余量；1/2/3 颗相同；停留 / 乌龟（dice 为空）为 0', () => {
+    for (const dice of [[3], [3, 4], [2, 5, 6]]) {
+      expect(eventBudgetMs(roll(dice), 'original'), `${dice}`).toBe(2300 + FLIC_SLACK_MS);
+      expect(eventBudgetMs(roll(dice), 'compact'), `${dice}`).toBe(1380 + 100);
+      const r = flicReserveOf(roll(dice))!;
+      expect(r.flic.res).toBe(3 + dice.length);
+      // 预留按实际播放：36 帧 × 30 ms（exe 覆盖文件头的 14 ms）
+      expect(flicMs(r.flic)).toBe(1080);
+      expect(r.extraMs).toBe(9 * 80 + 500);
+    }
+    expect(flicReserveOf(roll([]))).toBeNull();
+    for (const p of PACING_PROFILES) expect(eventBudgetMs(roll([]), p)).toBe(0);
+  });
+});
+
 describe('estimateAnimMs', () => {
   it('为各事件预算之和，空批为 0；按节奏求和', () => {
     const events: GameEvent[] = [
@@ -221,8 +262,8 @@ describe('estimateAnimMs', () => {
       { type: 'CARD_GAINED', seat: 0, card: 3, source: 'square' },
       { type: 'SYNC', reason: 'flush' },
     ];
-    expect(estimateAnimMs(events, 'compact')).toBe(900 + 3 * 180 + 250 + 700);
-    expect(estimateAnimMs(events, 'original')).toBe(900 + 3 * 180 + 250 + 994 + FLIC_SLACK_MS);
+    expect(estimateAnimMs(events, 'compact')).toBe(1480 + 3 * 180 + 250 + 700);
+    expect(estimateAnimMs(events, 'original')).toBe(2400 + 3 * 180 + 250 + 994 + FLIC_SLACK_MS);
     for (const p of PACING_PROFILES) {
       expect(estimateAnimMs([], p)).toBe(0);
       expect(estimateAnimMs(events, p)).toBe(events.reduce((a, e) => a + eventBudgetMs(e, p), 0));
