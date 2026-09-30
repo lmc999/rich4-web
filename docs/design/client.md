@@ -246,7 +246,7 @@ stage
  └ minigameRoot  小游戏场景（进入小游戏时 world.visible=false）
 ```
 
-`Application.init({ resizeTo: host, autoDensity: true, resolution: min(devicePixelRatio, quality.maxDpr), antialias: quality !== 'low', preference: 'webgl', powerPreference: 'high-performance', background: 0x8fd3f4 })`。WebGPU 放在设置里作实验开关。`ticker.maxFPS` 由画质档决定：高 60、低 30。监听 `webglcontextrestored`，恢复后调用 `textureCache.rebuildAll()`，再 `board.sync(view)`。
+`Application.init({ resizeTo: host, autoDensity: true, resolution: min(devicePixelRatio, quality.maxDpr), antialias: quality !== 'low', preference: 'webgl', powerPreference: 'high-performance', background: 0x8fd3f4 })`。`resizeTo` 只监听 window `resize`、在下一帧读 host 尺寸，而 host 尺寸常由 React 状态决定（经典舞台的棋盘视窗），提交晚于那一帧时画布会停在旧尺寸；因此两个棋盘渲染器另用 ResizeObserver 观察 host 并同步 `app.resize()`（`game/followHost.ts`，销毁时撤销）。WebGPU 放在设置里作实验开关。`ticker.maxFPS` 由画质档决定：高 60、低 30。监听 `webglcontextrestored`，恢复后调用 `textureCache.rebuildAll()`，再 `board.sync(view)`。
 
 ### 3.4 道路与岔路
 
@@ -449,7 +449,7 @@ export function batchBudgetMs(events: GameEvent[]): number;   // 服务器：dea
 | buildingUpgraded / built | 升级动画（3.5） | 飘字 LV | 敲锤声 | 等级 |
 | rentPaid | 金币从付款人飞向收款人（贝塞尔曲线，10 枚粒子） | 双方飘字 | 金币声 | 双方现金 |
 | cardGained / itemGained | 卡片从格子飞入 HUD 背包 | 背包徽标 +1 | 刷卡声 | 背包 |
-| cardUsed | 施放姿势 + 卡片放大翻面 + 光束连到目标 | CardCastPopup（1.2s） | 施法声 | 按效果 |
+| cardUsed | 施放姿势 + 卡片放大翻面 + 光束连到目标（原版皮肤：静止的亮卡，卡图 Data#529+k + 消息框，见 original-skin.md §4.2「亮卡」） | CardCastPopup（compact 1.2s；original 1.5s，shared/view/pacing 的 CARD_SHOW_MS） | 施法声（原版 Effect#62）在亮卡开始时；卡片台词在亮卡结束后（soundMap 标 timed，handler 经 ctx.audio.voices 说出） | 按效果 |
 | itemPlaced | 物件落下并弹跳 | – | 叮 | 路面物件 |
 | hazardTriggered / bombExploded | 爆炸、闪白、震屏、碎片 | – | 爆炸声 | 物件、建筑、状态 |
 | godEncountered / godAttached / godLeft | 光柱降临 → 缩小附身 / 离开时飞走 | GodArrivePopup（台词） | 仙乐或衰音 | 附身神仙 |

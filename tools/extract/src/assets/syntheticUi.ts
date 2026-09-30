@@ -3100,7 +3100,7 @@ async function addSyntheticVenuesAFlics(
 // - venue.monthly.screen（Panel#25，83 帧）：底图、MONEY 卡（名次格 (19+83i,41) 64×88）、名次 1–4、主持人、Q 版小人；
 // - venue.assets.screen（Panel#9，25 帧）：三页 640×480（数值栏、道具 / 卡片格、表格线同原版位置）、EXIT、箭头、蓝钮、神明小像；
 // - ui.autoplay（Panel#77，18 帧）：托管对话框 435×355（红点、滑杆刻度、框钮位置同原版）、页签、红点、箭头、12 个圆头像；
-// - card.1–30（Data#530–559）165×256 四角透明、illustration.news.0–35（Data#400–435）388×251 不透明整图。
+// - card.1–30（Data#530–559）165×256、illustration.news.0–35（Data#400–435）388×251，都是不透明整图（卡片四角涂黑）。
 // 内容全部是自绘色块、线条与点阵，不含原版像素。
 
 /** [宽, 高, 锚点 x, 锚点 y] */
@@ -3781,10 +3781,11 @@ function a11UiFrames(): Record<string, (count: number) => UiFrame[]> {
   };
 }
 
-/** 卡片插画（165×256，四角透明） */
+/** 卡片插画（165×256，不透明：与原版一样四角与外框是黑色，没有透明像素） */
 function a11CardImage(k: number): Canvas {
   const c = new Canvas(165, 256);
   const col = hue(k);
+  c.rect(0, 0, 165, 256, [0, 0, 0, 255]);
   for (let y = 0; y < 256; y++) {
     for (let x = 0; x < 165; x++) {
       if (inRoundRect(x, y, 0, 0, 164, 255, 10)) c.set(x, y, col);

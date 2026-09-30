@@ -114,7 +114,7 @@ export const sleepwalkChain = {
       case 'exempt':
         f.stage = 'scapegoat';
         if (holdsCard(p!, CARD.PARDON)) {
-          consumePassive(ctx, target, CARD.PARDON, 'sleepwalk');
+          consumePassive(ctx, target, CARD.PARDON, 'sleepwalk', null);
           f.stage = 'done';
         }
         return;
@@ -138,7 +138,7 @@ export const sleepwalkChain = {
         if (f.data.scapegoated === true || target !== f.data.orig || !holdsCard(p!, CARD.REVENGE)) return;
         const user = ctx.s.players.find((x) => x.seat === f.seat);
         if (!user?.alive) return;
-        consumePassive(ctx, target, CARD.REVENGE, 'sleepwalk');
+        consumePassive(ctx, target, CARD.REVENGE, 'sleepwalk', f.seat);
         stowVehicle(ctx, f.seat);
         setActorStatus(ctx, { t: 'seat', seat: f.seat }, 'sleepwalk', CMB.REVENGE_DAYS);
         return;

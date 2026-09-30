@@ -25,6 +25,7 @@ import { SceneLayer } from '../../common/Stage4x3';
 import { useEnsureSceneSprites } from '../../common/sceneAssets';
 import { TEXT } from '../../common/textStyles';
 import type { RequiredKeys } from '../../decisions/scene';
+import { CARD_ART_UNDERLAY } from '../../dialogs/parts';
 import { ensureClassicI18n } from '../../i18n';
 import { Sprite, useSpriteFrame } from '../../Sprite';
 import { SHOP, type ShopPage, shopRowRect, VENUE_KEYS } from './layout';
@@ -70,7 +71,7 @@ function CardArt({ card, name, x, y }: { card: CardId; name: string; x: number; 
       width={w}
       height={h}
       className={v.abs}
-      style={{ left: x, top: y, imageRendering: 'auto' }}
+      style={{ left: x, top: y, imageRendering: 'auto', backgroundColor: CARD_ART_UNDERLAY }}
       data-testid="shop-card-art"
     />
   ) : (

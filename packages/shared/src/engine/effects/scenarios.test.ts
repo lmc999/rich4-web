@@ -35,6 +35,7 @@ describe('M6 场景', () => {
     expect(sc.pending(1).options).toMatchObject({ context: 'frame', days: 5, candidates: [0] });
     sc.act(1, { type: 'SCAPEGOAT', target: 0 });
     sc.expectEvents(['PASSIVE', 'CONFINED', 'TURN_ENDED']);
+    expect(sc.event('PASSIVE')).toMatchObject({ seat: 1, card: CARD.SCAPEGOAT, context: 'frame', other: 0 });
     expect(sc.event('CONFINED')).toMatchObject({ actor: { t: 'seat', seat: 0 }, where: 'jail', days: 4, total: 4 });
     expect(sc.player(0)).toMatchObject({ node: 14, st: expect.objectContaining({ jail: 4 }) });
     expect(sc.player(1).st.jail).toBe(0);
@@ -62,7 +63,7 @@ describe('M6 场景', () => {
       [{ t: 'seat', seat: 1 }, 5],
       [{ t: 'seat', seat: 0 }, 5],
     ]);
-    expect(sc.event('PASSIVE')).toMatchObject({ seat: 1, card: CARD.REVENGE, context: 'frame' });
+    expect(sc.event('PASSIVE')).toMatchObject({ seat: 1, card: CARD.REVENGE, context: 'frame', other: 0 });
     expect(sc.state.pools.cards[CARD.REVENGE]).toBe(deck + 1);
     // 被嫁祸改了目标就不触发复仇
     const moved = scenario({ players: ['human', 'human', 'human'] }).untilMenu(0);

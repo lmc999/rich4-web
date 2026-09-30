@@ -553,7 +553,7 @@ export const FATE: FrameHandler<FateFrame> = {
       return;
     }
     if (f.stage === 'free' && d.kind === 'USE_FREE_CARD') {
-      f.stage = resolveFreeCard(ctx, payerOf(f), a, 'fine') ? 'done' : 'scapegoat';
+      f.stage = resolveFreeCard(ctx, payerOf(f), a, 'fine', null) ? 'done' : 'scapegoat';
       return;
     }
     if (f.stage === 'scapegoat' && d.kind === 'SCAPEGOAT') {

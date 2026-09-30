@@ -30,7 +30,8 @@ describe('passive（被动卡）', () => {
     expect(sc.pending(0).options).toMatchObject({ context: 'toll', amount: 12000, payer: 0, lot: 'L4', slot: 0 });
     sc.confirm(0);
     sc.expectEvents(['PASSIVE']);
-    expect(sc.event('PASSIVE')).toMatchObject({ seat: 0, card: CARD.FREE, context: 'toll' });
+    // 对方 = 收过路费的地主（原版由他接一句反应台词，exe 0x419e89）
+    expect(sc.event('PASSIVE')).toMatchObject({ seat: 0, card: CARD.FREE, context: 'toll', other: 1 });
     expect([sc.player(0).cash, sc.player(1).cash]).toEqual([c0, c1]);
     expect(sc.player(0).cards).toEqual([]);
     expect(deck(sc, CARD.FREE)).toBe(d20 + 1);
@@ -51,6 +52,18 @@ describe('passive（被动卡）', () => {
     sc.force('dice', 1).roll(0).expectAsk(0, 'USE_FREE_CARD');
   });
 
+  it('免费卡：设施费（购物中心）同样问；对方 = 设施的地主（exe 0x419654）', () => {
+    const sc = scenario({ players: ['human', 'human'] })
+      .untilMenu(0)
+      .edit((s) => {
+        Object.assign(s.facilities[0]!, { owner: 1, level: 3, type: 'mall' });
+      })
+      .give(0, { cards: [CARD.FREE] });
+    sc.force('wheel', 11).teleport(0, 16, 15).force('dice', 1).roll(0).expectAsk(0, 'USE_FREE_CARD').confirm(0);
+    expect(sc.event('PASSIVE')).toMatchObject({ seat: 0, card: CARD.FREE, context: 'fee', other: 1 });
+    expect(sc.events.some((e) => e.type === 'FEE_PAID')).toBe(false);
+  });
+
   it('嫁祸卡：过路费转给新目标代付（候选不含地主）；DECLINE 自己付', () => {
     const sc = tollSetup([CARD.SCAPEGOAT]);
     const c2 = sc.player(2).cash;
@@ -58,6 +71,8 @@ describe('passive（被动卡）', () => {
     expect(sc.pending(0).options).toMatchObject({ context: 'toll', amount: 12000, candidates: [2] });
     expect(() => sc.act(0, { type: 'SCAPEGOAT', target: 1 })).toThrow(/INVALID_TARGET/);
     sc.act(0, { type: 'SCAPEGOAT', target: 2 });
+    // 对方 = 被改嫁的新目标（exe 0x443645）
+    expect(sc.event('PASSIVE')).toMatchObject({ seat: 0, card: CARD.SCAPEGOAT, context: 'toll', other: 2 });
     expect(sc.event('TOLL_PAID')).toMatchObject({ payer: 2, owner: 1, amount: 12000 });
     expect(sc.player(2).cash).toBe(c2 - 12000);
   });
@@ -91,6 +106,8 @@ describe('passive（被动卡）', () => {
     };
     const free = base().give(1, { cards: [CARD.FREE] });
     free.useCard(0, CARD.TAX_AUDIT, { t: 'seat', seat: 1 }).expectAsk(1, 'USE_FREE_CARD').confirm(1);
+    // 对方 = 查税的出卡者（exe 0x443ede 传当前玩家）
+    expect(free.event('PASSIVE')).toMatchObject({ seat: 1, card: CARD.FREE, context: 'taxAudit', other: 0 });
     expect(free.player(1).cash).toBe(50000);
     expect(free.player(1).hostility[0]).toBe(100);
 
@@ -99,6 +116,7 @@ describe('passive（被动卡）', () => {
     expect(back.pending(1).options).toMatchObject({ context: 'taxAudit', candidates: [0, 2] });
     const dep0 = back.player(0).deposit;
     back.act(1, { type: 'SCAPEGOAT', target: 0 });
+    expect(back.event('PASSIVE')).toMatchObject({ seat: 1, card: CARD.SCAPEGOAT, other: 0 });
     expect([back.player(0).deposit, back.player(1).cash]).toEqual([dep0, 50000]);
 
     const other = base().give(1, { cards: [CARD.SCAPEGOAT] });
@@ -114,7 +132,8 @@ describe('passive（被动卡）', () => {
     sc.give(0, { cards: [CARD.FRAME] }).give(1, { cards: [CARD.PARDON, CARD.SCAPEGOAT, CARD.REVENGE] });
     sc.useCard(0, CARD.FRAME, { t: 'actor', actor: { t: 'seat', seat: 1 } });
     sc.expectEvents(['CARD_USED', 'PASSIVE']).expectAsk(0, 'TURN_MENU');
-    expect(sc.event('PASSIVE')).toMatchObject({ seat: 1, card: CARD.PARDON, context: 'frame' });
+    // 免罪只有持卡人一句台词（exe 0x44381f），没有对方
+    expect(sc.event('PASSIVE')).toMatchObject({ seat: 1, card: CARD.PARDON, context: 'frame', other: null });
     expect(sc.player(1).st.jail).toBe(0);
     expect(sc.player(1).cards).toEqual([CARD.SCAPEGOAT, CARD.REVENGE]);
     // 敌意照记
@@ -128,6 +147,7 @@ describe('passive（被动卡）', () => {
     sc.useCard(0, CARD.SLEEPWALK, { t: 'actor', actor: { t: 'seat', seat: 1 } }).expectAsk(1, 'SCAPEGOAT');
     expect(sc.pending(1).options).toMatchObject({ context: 'sleepwalk', days: 5, candidates: [0, 2] });
     sc.act(1, { type: 'SCAPEGOAT', target: 2 });
+    expect(sc.event('PASSIVE')).toMatchObject({ seat: 1, card: CARD.SCAPEGOAT, context: 'sleepwalk', other: 2 });
     expect(sc.player(2).st.sleepwalk).toBe(5);
     expect(sc.player(1).st.sleepwalk).toBe(0);
     expect(sc.player(0).st.sleepwalk).toBe(0);
@@ -140,7 +160,8 @@ describe('passive（被动卡）', () => {
       [{ t: 'seat', seat: 1 }, 'sleepwalk', 5],
       [{ t: 'seat', seat: 0 }, 'sleepwalk', 5],
     ]);
-    expect(sc.event('PASSIVE')).toMatchObject({ seat: 1, card: CARD.REVENGE, context: 'sleepwalk' });
+    // 对方 = 出卡者（exe 0x443383：当前玩家接一句反应台词）
+    expect(sc.event('PASSIVE')).toMatchObject({ seat: 1, card: CARD.REVENGE, context: 'sleepwalk', other: 0 });
   });
 
   it('满手弃牌（handFull=choose）：先入手，再由 DISCARD_CARD 选一张弃掉；autoCheapest 自动弃最便宜的', () => {

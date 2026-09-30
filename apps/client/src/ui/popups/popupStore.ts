@@ -148,9 +148,21 @@ export interface AuctionBannerState {
   derived?: boolean;
 }
 
+/** 正在以原版画面显示的弹窗（原版皮肤的弹窗宿主判定用原版画面时登记） */
+export interface ClassicShown {
+  popupId: number;
+  kind: PopupKind;
+}
+
 export interface PopupState {
   current: OpenPopup | null;
   auction: AuctionBannerState | null;
+  /**
+   * 当前以原版画面显示的弹窗（ui/classic/popups/ClassicPopupHost 登记，程序化弹窗为 null）：原版亮卡期间网页版的
+   * toast 暂缓显示（hud/Overlays 的 Toasts），免得盖住棋盘视窗上部的亮卡消息框
+   */
+  classicShown: ClassicShown | null;
+  setClassicShown(v: ClassicShown | null): void;
   /** speed：打开时的动画倍速（缺省 1）；minMs 以 1x 计，按倍速换算成真实毫秒 */
   open(spec: PopupSpec, ms: number, minMs?: number, speed?: number): number;
   close(id: number): void;
@@ -164,6 +176,30 @@ export interface PopupState {
 let seq = 0;
 const skipListeners = new Map<number, () => void>();
 
+/** 某个弹窗现在打开会不会用原版画面 */
+export type ClassicPopupProbe = (spec: PopupSpec) => boolean;
+let classicProbe: ClassicPopupProbe | null = null;
+
+/** 原版皮肤的弹窗宿主（ui/classic/popups/ClassicPopupHost，懒加载）挂载时登记判定函数；返回注销函数 */
+export function registerClassicPopupProbe(fn: ClassicPopupProbe): () => void {
+  classicProbe = fn;
+  return () => {
+    if (classicProbe === fn) classicProbe = null;
+  };
+}
+
+/**
+ * 这个弹窗现在打开会不会用原版画面（没有原版宿主、素材未就绪时 false）：handler 据此省掉原版没有的棋盘演出——
+ * 原版亮卡（exe fcn.00440bac）只画消息框与卡图、静止 1.5 秒，棋盘上没有气泡、粒子与光束
+ */
+export function opensClassic(spec: PopupSpec): boolean {
+  try {
+    return classicProbe?.(spec) === true;
+  } catch {
+    return false;
+  }
+}
+
 /** 登记跳过回调（handler 用来提前结束等待）；返回注销函数 */
 export function onPopupSkip(id: number, cb: () => void): () => void {
   skipListeners.set(id, cb);
@@ -175,6 +211,8 @@ export function onPopupSkip(id: number, cb: () => void): () => void {
 export const usePopupStore = create<PopupState>()((set, get) => ({
   current: null,
   auction: null,
+  classicShown: null,
+  setClassicShown: (classicShown) => set({ classicShown }),
   open: (spec, ms, minMs = Math.min(ms, 1200), speed = 1) => {
     const id = ++seq;
     const k = speed > 0 ? speed : 1;
@@ -183,6 +221,7 @@ export const usePopupStore = create<PopupState>()((set, get) => ({
   },
   close: (id) => {
     if (get().current?.popupId === id) set({ current: null });
+    if (get().classicShown?.popupId === id) set({ classicShown: null });
     skipListeners.delete(id);
   },
   skip: (id) => {
@@ -195,6 +234,6 @@ export const usePopupStore = create<PopupState>()((set, get) => ({
   },
   clear: () => {
     skipListeners.clear();
-    set({ current: null, auction: null });
+    set({ current: null, auction: null, classicShown: null });
   },
 }));

@@ -470,6 +470,14 @@ export function PlayerPicker({
 
 export const CARD_ART = { w: 165, h: 256 } as const;
 
+/**
+ * 卡片插画下面垫的底色：原版是整张不透明拷贝（exe 0x440c95 → fcn.00454a55 → fcn.0045419a 逐行 rep movsd，没有色键），
+ * 黑框与陷害、復仇底部的黑色都画出来。旧素材包（catalog 改 opaque 之前提取的，card.<k> 的 transparency 为
+ * corner-rgb0）把四角连通的 0 值像素抠成了透明——被抠掉的全是 RGB555 0x0000，也就是原版画出来的纯黑；垫一层黑底，
+ * 新旧两种素材包画出来都与原版逐像素相同（素材包晚于镜像更新时不再透出棋盘），插画还没下载完时是黑色卡位
+ */
+export const CARD_ART_UNDERLAY = '#000';
+
 /** 卡片插画的逻辑键（卡号 k = Data#529+k） */
 export function cardArtKey(card: CardId): string {
   return `card.${card}`;
@@ -507,6 +515,7 @@ export function CardArt({
         top: y,
         width: CARD_ART.w * scale,
         height: CARD_ART.h * scale,
+        backgroundColor: CARD_ART_UNDERLAY,
         backgroundImage: `url("${img.url}")`,
       }}
       data-testid={testId}

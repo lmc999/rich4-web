@@ -128,15 +128,24 @@ describe('catalog.v206 编号公式', () => {
     );
   });
 
-  it('lotHighlight 标 guess；装饰锚点在图心；卡片 Data#529+k 带圆角透明', () => {
+  it('lotHighlight 标 guess；装饰锚点在图心；卡片 k = Data#529+k 全表：165×256 不透明整图、exe 证据', () => {
     expect(byKey.get('board.lotHighlight')!.confidence).toBe('guess');
     const decor = byKey.get('board.decor')!;
     expect(decor.type === 'sprite' && decor.anchor).toBe('center');
+    const cards = cat.items.filter((it) => it.group === 'card');
+    expect(cards.map((it) => [it.key, it.mkf, it.res])).toEqual(
+      Array.from({ length: 30 }, (_, i) => [`card.${i + 1}`, 'Data', 530 + i]),
+    );
     for (let k = 1; k <= 30; k++) {
       const it = byKey.get(`card.${k}`)!;
       expect(it.res).toBe(529 + k);
-      expect(it.type === 'image' && it.transparency).toBe('corner-rgb0');
+      expect(it.type).toBe('image');
+      if (it.type !== 'image') continue;
+      expect([it.kind, it.w, it.h, it.transparency, it.confidence]).toEqual(['RAW16', 165, 256, 'opaque', 'exe']);
+      expect(it.src.join(' ')).toContain('0x440bea');
     }
+    // 目录里不再有四角泛洪抠图的整图（corner-rgb0 只为旧素材包的契约保留）
+    expect(cat.items.filter((it) => it.type === 'image' && it.transparency === 'corner-rgb0')).toEqual([]);
     expect(byKey.get('illustration.fate.0')!.confidence).toBe('guess');
     expect(byKey.get('illustration.news.4')!.res).toBe(404);
   });

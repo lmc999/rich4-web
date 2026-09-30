@@ -5,6 +5,7 @@ import { type ReactNode, useEffect } from 'react';
 import { useClient } from '../../app/services';
 import { useTx } from '../../i18n/tx';
 import { type Toast, useUiStore } from '../../store/uiStore';
+import { usePopupStore } from '../popups/popupStore';
 import h from './hud.module.css';
 
 const FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'] as const;
@@ -89,9 +90,15 @@ function ToastItem({ toast: x }: { toast: Toast }): ReactNode {
   );
 }
 
+/**
+ * toast 列表。原版皮肤亮卡（ui/classic/popups/CardCast，消息框在棋盘视窗上部 (123,48)–(318,181)）期间暂缓显示：
+ * toast 固定大小、画在页面上部正中，手机横屏下舞台缩小时正好压住消息框里出卡人那一行；原版亮卡时画面静止、
+ * 没有别的提示。暂缓的 toast 仍在队列里，亮卡结束后重新出现并从那时起计时。
+ */
 export function Toasts(): ReactNode {
   const toasts = useUiStore((s) => s.toasts);
-  if (toasts.length === 0) return null;
+  const held = usePopupStore((s) => s.classicShown?.kind === 'cardCast');
+  if (toasts.length === 0 || held) return null;
   return (
     <ul className={h.toasts} aria-live="polite" data-testid="toasts">
       {toasts.map((x) => (

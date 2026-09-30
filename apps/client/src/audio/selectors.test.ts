@@ -331,6 +331,38 @@ describe('voiceFor', () => {
     expect(item.map((v) => v.key)).toEqual([itemKey(CHARS[1]!, 7)]);
   });
 
+  it('卡片台词都标 timed（亮卡之后由 handler 说出）；orElse 落到的那句也随顶层标 timed', () => {
+    const used = (card: number, target: SeatIndex) =>
+      voiceFor({ type: 'CARD_USED', seat: 0, card: card as 1, target: { t: 'seat', seat: target } }, q0, vm, ctx(1));
+    expect(used(2, 3).map((v) => v.timed)).toEqual([true, true]);
+    // 卡 5 没有 self 台词 → orElse 落到 use，仍是 timed
+    expect(used(5, 0).map((v) => [v.key, v.timed])).toEqual([[cardKey(CHARS[0]!, 'use', 5), true]]);
+    // 其他事件的台词照旧在事件开始时说
+    const item = voiceFor({ type: 'ITEM_USED', seat: 1, item: 7, target: { t: 'none' } }, q0, vm, ctx(1));
+    expect(item.map((v) => v.timed)).toEqual([undefined]);
+  });
+
+  it('被动卡：持卡人说卡片台词，对方（事件的 other）接一句反应台词（mode 2 = target）；免罪等没有对方时只有一句', () => {
+    const passive = (card: number, other: SeatIndex | null) =>
+      voiceFor({ type: 'PASSIVE', seat: 1, card: card as 18, context: 'frame', other }, q0, vm, ctx(1)).map((v) => [
+        v.key,
+        v.speaker,
+        v.timed,
+      ]);
+    // 复仇（exe fcn.004432ca：0x44334f 持卡人 → 0x443383 当前玩家）
+    expect(passive(18, 0)).toEqual([
+      [cardKey(CHARS[1]!, 'use', 18), 'seat:1', true],
+      [cardKey(CHARS[0]!, 'target', 18), 'seat:0', true],
+    ]);
+    // 免费卡的地主 / 查税出卡者
+    expect(passive(20, 2).map((x) => x[0])).toEqual([cardKey(CHARS[1]!, 'use', 20), cardKey(CHARS[2]!, 'target', 20)]);
+    // 没有对方（免罪、企业消费、罚款）
+    expect(passive(18, null).map((x) => x[0])).toEqual([cardKey(CHARS[1]!, 'use', 18)]);
+    // 旧服务器发来的事件没有 other 字段：按没有对方处理
+    const legacy = { type: 'PASSIVE', seat: 1, card: 18, context: 'frame' } as unknown as GameEvent;
+    expect(voiceFor(legacy, q0, vm, ctx(1)).map((v) => v.key)).toEqual([cardKey(CHARS[1]!, 'use', 18)]);
+  });
+
   it('踩地雷住院说反应台词，没有时改说住院槽；坐牢说槽 19', () => {
     const conf = (seat: SeatIndex, ref: string | null, where: 'jail' | 'hospital') =>
       voiceFor(

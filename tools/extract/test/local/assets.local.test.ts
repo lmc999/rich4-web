@@ -178,13 +178,20 @@ describe.skipIf(!available)('素材包子集构建（本机原版文件）', () 
     }
   });
 
-  it('RAW16 整图与调研样图一致（卡片四角透明，其余不透明）', () => {
+  it('RAW16 整图与调研样图一致（全部不透明，卡片插画也是：exe 0x440c95 不透明拷贝）', () => {
     for (const key of IMAGE_SAMPLES) {
       const e = m.entries[key]!;
       if (e.type !== 'image') throw new Error(key);
       const png = readPng(file(e.file));
       const ref = sample(e.src[0]!, 0);
       expect([png.w, png.h]).toEqual([ref.w, ref.h]);
+      if (key.startsWith('card.')) {
+        // 卡片插画：不透明整图，黑色卡框与回纹角照原样保留（旧版四角泛洪会抠掉 1948–9749 个像素）
+        expect(e.transparency).toBe('opaque');
+        let clear = 0;
+        for (let i = 0; i < png.w * png.h; i++) if (png.rgba[i * 4 + 3] !== 255) clear++;
+        expect(clear).toBe(0);
+      }
       if (e.transparency === 'corner-rgb0') {
         let clear = 0;
         for (let i = 0; i < png.w * png.h; i++) {

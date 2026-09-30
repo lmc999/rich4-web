@@ -100,13 +100,28 @@ export function fakePackClient(usable: Iterable<string>): PackClient & { asked: 
   return client as unknown as PackClient & { asked: string[] };
 }
 
+/** 假素材包里的整图条目（逻辑路径与尺寸） */
+export interface FakeImage {
+  file: string;
+  w: number;
+  h: number;
+}
+
+/** 与原版包同一逻辑路径的 30 张卡片插画：card.<k> → images/data/<529+k>.png（165×256） */
+export function fakeCardImages(): Record<string, FakeImage> {
+  const out: Record<string, FakeImage> = {};
+  for (let k = 1; k <= 30; k++) out[`card.${k}`] = { file: `images/data/${529 + k}.png`, w: 165, h: 256 };
+  return out;
+}
+
 /**
  * 带图集的假素材包客户端：sheets 里的键是可用的精灵条目（帧横排在各自的一页图集上），loadAtlas / atlasImageUrl 照常可用，
- * 经典外壳与场景的按需加载都走真实代码路径；gate 给出时 loadAtlas 等它（测试「准备中」与超时）。其他键不可用。
+ * 经典外壳与场景的按需加载都走真实代码路径；gate 给出时 loadAtlas 等它（测试「准备中」与超时）；images 里的键是整图条目
+ * （不透明，fileUrl = /pack/<逻辑路径>）。其他键不可用。
  */
 export function atlasPackClient(
   sheets: Readonly<Record<string, readonly FakeFrame[]>>,
-  o: { gate?: Promise<void> } = {},
+  o: { gate?: Promise<void>; images?: Readonly<Record<string, FakeImage>> } = {},
 ): PackClient & { loads: string[] } {
   const loads: string[] = [];
   const atlasOf = (key: string): AtlasV1 => {
@@ -145,6 +160,20 @@ export function atlasPackClient(
   const client = {
     loads,
     usableEntry(key: string): AssetEntry | null {
+      const img = o.images && Object.hasOwn(o.images, key) ? o.images[key] : undefined;
+      if (img) {
+        return {
+          type: 'image',
+          group: key.startsWith('card.') ? 'card' : 'illustration.news',
+          confidence: key.startsWith('card.') ? 'exe' : 'visual',
+          src: ['synthetic'],
+          file: img.file,
+          w: img.w,
+          h: img.h,
+          transparency: 'opaque',
+          anchor: null,
+        } as unknown as AssetEntry;
+      }
       const frames = Object.hasOwn(sheets, key) ? sheets[key] : undefined;
       if (!frames) return null;
       return {

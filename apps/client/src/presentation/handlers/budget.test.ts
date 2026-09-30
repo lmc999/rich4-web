@@ -126,7 +126,7 @@ function m6m7Events(): GameEvent[] {
     { type: 'CARD_USED', seat: 0, card: 17, target: { t: 'seat', seat: 1 } },
     { type: 'CARD_USED', seat: 0, card: 9, target: { t: 'lot', lot: 'L1', facility: null } },
     { type: 'CARD_NO_EFFECT', seat: 0, card: 22 },
-    { type: 'PASSIVE', seat: 1, card: 21, context: 'frame' },
+    { type: 'PASSIVE', seat: 1, card: 21, context: 'frame', other: null },
     { type: 'ITEM_USED', seat: 0, item: 2, target: { t: 'node', node: 5 } },
     { type: 'VEHICLE', seat: 0, vehicle: 'car', dice: 3 },
     { type: 'VEHICLE_DESTROYED', seat: 0, vehicle: 'moto' },

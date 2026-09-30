@@ -137,7 +137,8 @@ export type AssetCategory = z.output<typeof AssetCategorySchema>;
 /**
  * 透明规则（记录派生时采用的规则；PNG 已带 alpha）：
  * index0 = 调色板索引 0 透明（SPR、FLIC）· rgb0 = RGB555 值 0 透明（SMP）· rgb0-backdrop = 同 rgb0，但整屏背景需先铺黑底 ·
- * corner-rgb0 = 只有四角连通的 0 值透明（RAW16 卡片）· opaque = 不透明（GND、RAW16 背景、Panel#16/#20、jump#42）·
+ * corner-rgb0 = 只有四角连通的 0 值透明（旧素材包的卡片插画用过；原版卡片插画是不透明整图，exe 0x440c95，新包不再产出）·
+ * opaque = 不透明（GND、RAW16 背景与卡片插画、Panel#16/#20、jump#42）·
  * alpha = 素材自带 alpha（替换素材）
  */
 export const TransparencySchema = z.enum(['index0', 'rgb0', 'rgb0-backdrop', 'corner-rgb0', 'opaque', 'alpha']);

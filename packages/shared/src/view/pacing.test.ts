@@ -6,6 +6,9 @@ import {
   type PacingProfile as NetPacingProfile,
 } from '../net/timing';
 import {
+  CARD_SHOW_EVENT_TYPES,
+  CARD_SHOW_MS,
+  CARD_SHOW_TAIL_MS,
   COMPACT_BUDGET_MS,
   DEFAULT_PACING,
   DICE_FLIC_FRAMES,
@@ -67,8 +70,8 @@ describe('pacing：两种节奏的预算表', () => {
     expect(Object.keys(EVENT_BUDGET_MS[p]).sort()).toEqual([...GAME_EVENT_TYPES].sort());
   });
 
-  it('穷举：每种事件在两种节奏下都是非负整数，original ≥ compact；没有 FLIC 预留的完全相同', () => {
-    const flicTypes = new Set<string>(FLIC_EVENT_TYPES);
+  it('穷举：每种事件在两种节奏下都是非负整数，original ≥ compact；没有 FLIC 预留、也不亮卡的完全相同', () => {
+    const flicTypes = new Set<string>([...FLIC_EVENT_TYPES, ...CARD_SHOW_EVENT_TYPES]);
     for (const t of GAME_EVENT_TYPES) {
       const e = stub(t);
       const c = eventBudgetMs(e, 'compact');
@@ -215,6 +218,31 @@ describe('pacing：original（原版 FLIC 原长）', () => {
       expect(eventBudgetMs(e, 'original') - r!.extraMs, e.type).toBeGreaterThanOrEqual(flicMs(r!.flic));
     }
     expect(flicReserveOf({ type: 'TOLL_PAID' } as GameEvent)).toBeNull();
+  });
+});
+
+describe('pacing：亮卡（原版 fcn.00440bac：卡图 + 消息框停 1.5 秒）', () => {
+  const used: GameEvent = { type: 'CARD_USED', seat: 0, card: 17, target: { t: 'none' } };
+  const passive: GameEvent = { type: 'PASSIVE', seat: 1, card: 21, context: 'frame', other: null };
+
+  it('original 按原版 1.5 秒（0x440ce4 fcn.00450f9a(1500)），compact 沿用 1.2 / 0.95 秒', () => {
+    expect(CARD_SHOW_MS.original).toEqual({ castMs: 1500, passiveMs: 1500 });
+    expect(CARD_SHOW_MS.compact).toEqual({ castMs: 1200, passiveMs: 950 });
+    expect([...CARD_SHOW_EVENT_TYPES]).toEqual(['CARD_USED', 'PASSIVE']);
+  });
+
+  it('预算 = 亮卡 + 收尾 + 余量（original）；compact 不变且放得下 compact 的亮卡与收尾', () => {
+    expect(eventBudgetMs(used, 'original')).toBe(1500 + CARD_SHOW_TAIL_MS + FLIC_SLACK_MS);
+    expect(eventBudgetMs(passive, 'original')).toBe(1500 + CARD_SHOW_TAIL_MS + FLIC_SLACK_MS);
+    expect(eventBudgetMs(used, 'compact')).toBe(1400);
+    expect(eventBudgetMs(passive, 'compact')).toBe(1200);
+    for (const p of PACING_PROFILES) {
+      expect(eventBudgetMs(used, p)).toBeGreaterThanOrEqual(CARD_SHOW_MS[p].castMs + CARD_SHOW_TAIL_MS);
+      expect(eventBudgetMs(passive, p)).toBeGreaterThanOrEqual(CARD_SHOW_MS[p].passiveMs + CARD_SHOW_TAIL_MS);
+    }
+    // 没有效果（原版没有对应的亮卡）两种节奏相同
+    const fizzle: GameEvent = { type: 'CARD_NO_EFFECT', seat: 0, card: 16 };
+    expect(eventBudgetMs(fizzle, 'original')).toBe(eventBudgetMs(fizzle, 'compact'));
   });
 });
 

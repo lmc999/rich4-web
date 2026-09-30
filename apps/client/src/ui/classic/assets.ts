@@ -97,6 +97,8 @@ export const useClassicAssets = create<ClassicAssetState>()(() => ({ ...EMPTY })
 
 let bound: { packId: string; client: PackClient } | null = null;
 const warned = new Set<string>();
+/** 预取过的位图（素材包 id + 键或 url:<地址> → 加载结果）；持有 <img> 引用，解码结果留在内存缓存里。换包时清空 */
+const preloaded = new Map<string, { el: HTMLImageElement; done: Promise<boolean> }>();
 
 function warnOnce(key: string, e: unknown): void {
   if (warned.has(key)) return;
@@ -166,11 +168,13 @@ function setIfCurrent(packId: string, patch: (s: ClassicAssetState) => Partial<C
 export function bindClassicAssets(client: PackClient | null, packId: string | null): void {
   if (!client || !packId) {
     bound = null;
+    preloaded.clear();
     if (useClassicAssets.getState().packId !== null) useClassicAssets.setState({ ...EMPTY });
     return;
   }
   if (bound && bound.packId === packId && bound.client === client) return;
   bound = { packId, client };
+  preloaded.clear();
   const loadFlic: FlicLoader = async (key, clock) => {
     const e = client.usableEntry(key);
     if (e?.type !== 'flic') return null;
@@ -194,7 +198,7 @@ export function bindClassicAssets(client: PackClient | null, packId: string | nu
   }
 }
 
-/** 整图（节日插画等）：按需取 URL（不预先下载；<img>/背景图自己加载） */
+/** 整图（节日插画等）：按需取 URL（只登记，不下载；<img>/背景图自己加载。要提前下载用 preloadClassicImage） */
 export function ensureClassicImage(key: string): void {
   const s = useClassicAssets.getState();
   if (Object.hasOwn(s.images, key)) return;
@@ -207,6 +211,66 @@ export function ensureClassicImage(key: string): void {
   const url = e?.type === 'image' ? b.client.fileUrl(e.file) : null;
   const img: ImageAsset | null = e?.type === 'image' && url ? { url, w: e.w, h: e.h } : null;
   useClassicAssets.setState({ images: { ...s.images, [key]: img } });
+}
+
+/** 预取的下载优先级（HTMLImageElement.fetchPriority）：卡片插画用 low，不和棋盘、界面素材抢带宽 */
+export type PreloadPriority = 'high' | 'low' | 'auto';
+
+/** 后台下载并解码一个位图 URL；同一 id（素材包内）只下一次，返回是否成功 */
+function preloadUrl(id: string, url: string, label: string, priority: PreloadPriority): Promise<boolean> {
+  const cur = preloaded.get(id);
+  if (cur) return cur.done;
+  const el = new Image();
+  el.decoding = 'async';
+  el.fetchPriority = priority;
+  const loaded = new Promise<boolean>((resolve) => {
+    el.onload = () => resolve(true);
+    el.onerror = () => resolve(false);
+  });
+  const done = loaded.then(async (ok) => {
+    if (!ok) {
+      warnOnce(label, new Error(`位图预取失败：${url}`));
+      return false;
+    }
+    // 解码失败不影响显示（背景图会自己解码）：照样算预取成功
+    await el.decode?.().catch(() => undefined);
+    return true;
+  });
+  preloaded.set(id, { el, done });
+  el.src = url;
+  return done;
+}
+
+/**
+ * 预取整图：登记 URL（同 ensureClassicImage），并在后台下载、解码，返回是否成功（条目不可用、加载失败为 false）。
+ * 背景图用的是同一个带哈希的 URL，之后显示时直接命中缓存。出卡弹窗只停 1.2–1.5 秒，卡片插画若等到弹窗出现才下载，
+ * 慢网络下会空白或只画出一截（弹窗宿主空闲时按手牌优先把 30 张都预取一遍）。同一素材包内重复调用共用一次加载。
+ */
+export function preloadClassicImage(key: string, priority: PreloadPriority = 'low'): Promise<boolean> {
+  ensureClassicImage(key);
+  const s = useClassicAssets.getState();
+  const img = s.images[key];
+  if (!img || s.packId === null || typeof Image === 'undefined') return Promise.resolve(false);
+  return preloadUrl(`${s.packId}\n${key}`, img.url, key, priority);
+}
+
+/**
+ * 预取精灵表所在的图集页位图（精灵表进仓库只代表图集 JSON 已到，页位图要等画出来时才由背景图去下载）：
+ * 亮卡的宝石消息框（ui.common）在弹窗出现前就要能画出来，否则慢网络下首个弹窗的字直接浮在棋盘上
+ */
+export function preloadSpritePages(sheet: SpriteSheet, priority: PreloadPriority = 'auto'): Promise<boolean> {
+  const packId = useClassicAssets.getState().packId;
+  if (packId === null || typeof Image === 'undefined') return Promise.resolve(false);
+  const urls = [...new Set(sheet.frames.flatMap((f) => (f ? [f.url] : [])))];
+  return Promise.all(urls.map((u) => preloadUrl(`${packId}\nurl:${u}`, u, sheet.key, priority))).then((r) =>
+    r.every(Boolean),
+  );
+}
+
+/** 这张整图（或 url: 开头的图集页位图 URL）是否已经开始预取（不论成败，测试与调试用） */
+export function classicImagePreloadStarted(keyOrUrl: string): boolean {
+  const packId = useClassicAssets.getState().packId;
+  return packId !== null && preloaded.has(`${packId}\n${keyOrUrl}`);
 }
 
 /** 命中掩膜：解码 8 位灰度 PNG 取区号（需要 canvas；不可用时 null → 按矩形命中） */
@@ -258,5 +322,6 @@ function decodeMask(img: CanvasImageSource, w: number, h: number): MaskAsset | n
 export function resetClassicAssetsForTest(state: Partial<ClassicAssetState> = {}): void {
   bound = null;
   warned.clear();
+  preloaded.clear();
   useClassicAssets.setState({ ...EMPTY, ...state });
 }

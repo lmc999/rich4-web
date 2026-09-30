@@ -175,7 +175,7 @@ export const CONFINE: FrameHandler<ConfineFrame> = {
         if (!f.passive || p === null || !p.alive) return;
         if (holdsCard(p, CARD.PARDON)) {
           settleHate(ctx, f);
-          consumePassive(ctx, p.seat, CARD.PARDON, contextOf(f));
+          consumePassive(ctx, p.seat, CARD.PARDON, contextOf(f), null);
           f.stage = 'done';
         }
         return;
@@ -210,7 +210,7 @@ export const CONFINE: FrameHandler<ConfineFrame> = {
         if (!f.revenge || f.scapegoated || p === null || !p.alive || by === null || p.seat !== f.orig) return;
         const user = ctx.s.players.find((x) => x.seat === by);
         if (!user?.alive || !holdsCard(p, CARD.REVENGE)) return;
-        consumePassive(ctx, p.seat, CARD.REVENGE, contextOf(f));
+        consumePassive(ctx, p.seat, CARD.REVENGE, contextOf(f), by);
         applyConfinement(ctx, by, f.where, CMB.REVENGE_DAYS, { k: 'card', ref: CARD.REVENGE, by: p.seat });
         return;
       }

@@ -36,6 +36,12 @@ interface VoiceCueBase {
   maxWaitMs?: number;
   /** 本条落空（概率未命中，或素材包里没有候选台词）时改用这一条 */
   orElse?: VoiceCue;
+  /**
+   * 由 handler 在演出的指定时刻经 ctx.audio.voices(事件) 说出，导演层在事件开始时只选好台词、不开口（orElse 随本条）：
+   * 出卡与被动卡的卡片台词在亮卡之后才说（原版亮卡函数 fcn.00440bac 停 1.5 秒返回后才调 fcn.0044d870 说台词）。
+   * 演出被中止、handler 没有调用时作废
+   */
+  timed?: boolean;
 }
 
 /** 按角色点名的 NPC 台词（键 = `${base}.${角色号}`） */

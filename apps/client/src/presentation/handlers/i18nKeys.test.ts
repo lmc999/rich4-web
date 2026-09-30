@@ -57,7 +57,12 @@ describe('M6/M7 文案键', () => {
     for (const c of PASSIVE_CARD_IDS) expect(has(`events:passive.${c}`), `passive ${c}`).toBe(true);
     for (const ctx of ['toll', 'fee', 'taxAudit', 'fine', 'frame', 'sleepwalk', 'confine']) {
       expect(has(`events:passiveCtx.${ctx}`), ctx).toBe(true);
+      // 嫁祸卡是「转嫁」，不能借用免罪 / 免费的「免去」说明
+      expect(has(`events:passiveScapegoat.${ctx}`), `scapegoat ${ctx}`).toBe(true);
     }
+    for (const ctx of ['frame', 'sleepwalk', 'generic']) expect(has(`events:passiveRevenge.${ctx}`), ctx).toBe(true);
+    // 原版皮肤亮卡的句式（「<名>\n\n使用XX卡」「<名>\n\nXX卡生效！」）
+    for (const m of ['use', 'passive', 'fizzle', 'target']) expect(has(`events:popup.cardShow.${m}`), m).toBe(true);
     for (const c of ['reward', 'penalty', 'misfortune']) {
       for (const r of ['high', 'low']) expect(has(`events:blessing.${c}_${r}`), `${c}_${r}`).toBe(true);
     }

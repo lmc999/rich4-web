@@ -192,12 +192,12 @@ export function syntheticManifestDraft(): Omit<PackManifestV1, 'packId'> {
       'card.1': {
         type: 'image',
         group: 'card',
-        confidence: 'visual',
+        confidence: 'exe',
         src: ['Data#530'],
         file: 'images/data/530.png',
         w: 165,
         h: 256,
-        transparency: 'corner-rgb0',
+        transparency: 'opaque',
         anchor: null,
       },
       'data.voice-map': {

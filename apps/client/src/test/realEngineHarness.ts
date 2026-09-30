@@ -11,7 +11,6 @@ import { decisionForSeat, simpleView } from '@rich4/shared/engine-testing';
 import {
   applyPostPatch,
   type DecisionForYou,
-  eventBudgetMs,
   type GameView,
   projectEvent,
   projectState,
@@ -23,6 +22,7 @@ import { COIN_FLIGHT_MS, FLAG_MS, HOP_MS, POP_MS } from '../game/fx/timings';
 import { tx } from '../i18n/tx';
 import { BUDGET_TOLERANCE } from '../presentation/EventPlayer';
 import { RAW_HANDLERS } from '../presentation/handlers';
+import { budgetMs } from '../presentation/handlers/budget';
 import { recordingStage, type StageCall } from '../presentation/handlers/testStage';
 import { formatEvent } from '../presentation/logFormat';
 import { makeNames } from '../presentation/names';
@@ -231,7 +231,8 @@ export async function playAll(
     const line = logLine(s, map);
     if (line !== null) check(`log ${tag}`, line);
     total += r.used;
-    const budget = eventBudgetMs(s.e);
+    // 与 EventPlayer / wrap 同一口径：当前演出节奏下的预算（handler 的节奏相关时长，如亮卡、掷骰，也按它取）
+    const budget = budgetMs(s.e);
     if (r.used > budget * BUDGET_TOLERANCE + 50) over.push(`${tag}: ${r.used}ms > ${budget}ms`);
   }
   return { over, total };

@@ -170,6 +170,12 @@
     "cardUsed": "{{who}} 使用卡片",
     "cardPassive": "被动卡生效",
     "cardFizzle": "卡片没有效果",
+    "cardShow": {
+      "use": "{{who}}\n\n使用{{card}}",
+      "passive": "{{who}}\n\n{{card}}生效！",
+      "fizzle": "{{who}}\n\n{{card}}没有效果",
+      "target": "→ {{target}}"
+    },
     "target": "目标：{{target}}",
     "underfoot": "脚下的地产",
     "diceValue": "{{n}} 点",
@@ -232,6 +238,20 @@
     "frame": "识破陷害，免去牢狱之灾。",
     "sleepwalk": "从梦游中清醒过来。",
     "confine": "免去这次关押。"
+  },
+  "passiveScapegoat": {
+    "toll": "把这次的过路费转嫁给别人。",
+    "fee": "把这次的设施费用转嫁给别人。",
+    "taxAudit": "把查税转嫁给别人。",
+    "fine": "把这笔罚款转嫁给别人。",
+    "frame": "把陷害转嫁给别人。",
+    "sleepwalk": "把梦游转嫁给别人。",
+    "confine": "把这次关押转嫁给别人。"
+  },
+  "passiveRevenge": {
+    "frame": "出卡者也一起入狱。",
+    "sleepwalk": "出卡者也一起梦游。",
+    "generic": "出卡者自食其果。"
   },
   "bubble": {
     "fizzle": "无效",

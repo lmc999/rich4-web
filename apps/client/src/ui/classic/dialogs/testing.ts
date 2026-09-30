@@ -120,12 +120,12 @@ export function a11PackClient(usable?: Iterable<string>): PackClient & { asked: 
       return {
         type: 'image',
         group: card ? 'card' : 'illustration.news',
-        confidence: 'visual',
+        confidence: card ? 'exe' : 'visual',
         src: [],
         file: `images/${key}.png`,
         w: card ? 165 : 388,
         h: card ? 256 : 251,
-        transparency: card ? 'corner-rgb0' : 'opaque',
+        transparency: 'opaque',
         anchor: null,
       } as unknown as AssetEntry;
     }

@@ -265,7 +265,13 @@ export const SFX_CUES: readonly SfxCueDef[] = [
     confidence: 'guess',
     evidence: ['0x4122d5', '0x412d0b'],
   },
-  { key: 'card.use', ids: [62], desc: '使用卡片（卡片处理函数入口附近）', confidence: 'guess', evidence: ['0x440cd7'] },
+  {
+    key: 'card.use',
+    ids: [62],
+    desc: '亮卡（出卡、被动卡生效、得卡时的大卡插画）：亮卡函数 fcn.00440bac 在 0x440cd2 push 0x47f6e2 = 棋盘音效集末项 {62}',
+    confidence: 'exe',
+    evidence: ['0x440cd2', '0x440cd7'],
+  },
   // 场所
   {
     key: 'stock.trade',

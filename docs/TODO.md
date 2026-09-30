@@ -1,5 +1,13 @@
 # 待办
 
+## 原版皮肤：得卡时的亮卡（2026-09-30 修出卡插画时发现，未做）
+
+原版在卡片格得卡（exe 0x41ab8d 先播 FLIC Data#495，再 0x41abfa 调亮卡函数 fcn.00440bac 写「得到%s！」、停 1.5 秒，
+之后 0x41ac13 按卡价说事件槽台词）与聖誕節送卡（0x450e29「聖誕節\n\n%s得到%s！」）时也亮大卡；网页版 CARD_GAINED
+只有 toast 与问号 FLIC。要做的话：CARD_GAINED{source:'square'|'holiday'} 在 original 节奏下加 1.5 秒亮卡（pacing 的
+FLIC 预留 extraMs 加上 CARD_SHOW_MS），私密模式下别人的得卡事件 card 为 null（脱敏），只能对本人亮卡、别人看卡背或不亮。
+细节见 docs/research/original-assets/ui.md §2.2「亮卡」、docs/design/original-skin.md §4.2。
+
 ## 资料片「超时空之旅」4 张地图（2026-09-30 用户决定暂缓，列为待办）
 
 先完成原版另外 3 张图（大陆、日本、美国），再排这一项。

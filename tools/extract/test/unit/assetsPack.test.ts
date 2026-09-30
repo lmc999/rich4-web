@@ -167,7 +167,8 @@ function testCatalog(over: Partial<Record<string, Partial<CatalogItem>>> = {}): 
       desc: '合成卡片',
       w: 165,
       h: 256,
-      transparency: 'corner-rgb0',
+      // 卡片插画不透明（与 catalog.v206 一致：exe 0x440c95 不透明拷贝）
+      transparency: 'opaque',
     },
     {
       type: 'flic',

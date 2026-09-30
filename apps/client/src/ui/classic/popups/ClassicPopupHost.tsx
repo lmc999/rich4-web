@@ -4,25 +4,31 @@
 //    出卡 → 卡片插画 + 消息框；乐透开奖交给场所组的 ClassicLotteryDraw（venues/a）；魔法屋沿用程序化弹窗（原版魔法屋
 //    属于场所组）。每个弹窗按素材判定一次：
 //    所需逻辑键全部就绪（sceneKeysStatus = ready）才用原版画面，否则整个弹窗用程序化版本（legacy），不半原版半程序化；
+//    挂载时把这个判定登记给 handler（popupStore.opensClassic：原版亮卡不叠网页版的气泡、粒子与光束），正以原版画面显示的
+//    弹窗记在 popupStore.classicShown（原版亮卡期间 toast 暂缓）；亮卡照原版任意鼠标键 / 按键放开就结束（anyInputSkips）；
 // 2) 事件后演出：轮盘、月结颁奖（./eventPopups，监听显示态日志）；
 // 3) 工具列打开的原版界面：资产表（工具列「查询」→ uiStore 打开 info 面板时改开原版资产表）、托管设置
 //    （openTrusteeSettings → 改开原版托管对话框）、存读档（工具列 LOAD / SAVE 经 ./screenRequests 请求 → 原版风格的 Data#479 窗）。
 //    素材不可用时不接管，照旧打开程序化面板 / 对话框；精灵还在加载时等它就绪（有上限）再开原版界面。
 //    开原版界面时收起系统菜单（closeSystemMenu）：菜单是挂在 body 上的模态框，盖在经典舞台之上，托管设置又是从菜单里
 //    打开的——不收起的话原版托管画面被菜单挡住、点不到（程序化对话框同样挂在 body 上，照旧叠在菜单之上）。
-// 挂载时（空闲时）预取这些弹窗与界面的精灵，演出出现时通常已就绪。
+// 挂载时（空闲时）预取这些弹窗与界面的精灵，演出出现时通常已就绪；亮卡要用的消息框图集页（ui.common）直接下载位图，
+// 再低优先级逐张预取 30 张卡片插画（手牌里看得到的在前）：亮卡只停 1.2–1.5 秒，插画或消息框要是等弹窗出现才下载，
+// 慢网络下整段都是空框、字浮在棋盘上（出卡人、别的玩家、观战者都一样）。
 import type { MapIndex } from '@rich4/shared/data';
-import type { SeatIndex } from '@rich4/shared/engine';
-import { type ReactNode, useEffect, useState } from 'react';
+import { CARD_IDS, type CardId, type SeatIndex } from '@rich4/shared/engine';
+import type { GameView } from '@rich4/shared/view';
+import { type ReactNode, useEffect, useLayoutEffect, useState } from 'react';
 import { currentSeat, useGameStore } from '../../../store/gameStore';
 import { mySeat, useRoomStore } from '../../../store/roomStore';
 import { useUiStore } from '../../../store/uiStore';
 import { LotteryDrawPopup } from '../../popups/LotteryDrawPopup';
-import { type OpenPopup, usePopupStore } from '../../popups/popupStore';
+import { type OpenPopup, type PopupSpec, registerClassicPopupProbe, usePopupStore } from '../../popups/popupStore';
 import { closeSystemMenu } from '../../system/SystemMenu';
 import { useTrusteeDialog } from '../../system/TrusteeSettings';
-import { useClassicAssets } from '../assets';
+import { preloadClassicImage, preloadSpritePages, useClassicAssets } from '../assets';
 import { ensureSceneSprite, prepareSceneKeys, sceneKeysStatus, scenePackClient } from '../common/sceneAssets';
+import { cardArtKey } from '../dialogs/parts';
 import { ClassicLotteryDraw } from '../venues/a/LotteryDraw';
 import { ASSETS_KEYS, AssetSheet } from './AssetSheet';
 import { CardCast } from './CardCast';
@@ -61,8 +67,30 @@ export const CLASSIC_POPUP_SPRITES = [
   SAVELOAD_SHEET,
 ] as const;
 
+/** 卡片插画的预取顺序：显示态里看得到的手牌在前（去重，按持有顺序），其余按卡号 */
+export function cardArtPrefetchOrder(view: GameView | null): CardId[] {
+  const seen = new Set<CardId>();
+  for (const p of view?.players ?? []) for (const c of p.cards ?? []) seen.add(c);
+  return [...seen, ...CARD_IDS.filter((c) => !seen.has(c))];
+}
+
+/** 同时在下载的卡片插画张数（后台预取，不和棋盘素材抢带宽） */
+export const CARD_ART_PREFETCH_CONCURRENCY = 2;
+
+/** 按顺序预取卡片插画（alive 为 false 时停下）；素材包里没有的键跳过 */
+export async function prefetchCardArt(cards: readonly CardId[], alive: () => boolean): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (alive() && next < cards.length) {
+      const card = cards[next++]!;
+      await preloadClassicImage(cardArtKey(card));
+    }
+  };
+  await Promise.all(Array.from({ length: CARD_ART_PREFETCH_CONCURRENCY }, worker));
+}
+
 /** 演出弹窗所需的逻辑键；没有原版画面的种类返回 null（用程序化弹窗） */
-export function popupKeys(p: OpenPopup): string[] | null {
+export function popupKeys(p: PopupSpec): string[] | null {
   switch (p.kind) {
     case 'news':
       return [NEWS_SHEET, newsArtKey(p.id)];
@@ -75,14 +103,14 @@ export function popupKeys(p: OpenPopup): string[] | null {
     case 'gameOver':
       return [MONTHLY_SHEET];
     case 'cardCast':
-      return [COMMON_SHEET, `card.${p.card}`];
+      return [COMMON_SHEET, cardArtKey(p.card)];
     default:
       return null;
   }
 }
 
-/** 这个弹窗能否用原版画面（按当前素材同步判定） */
-export function classicPopupReady(p: OpenPopup): boolean {
+/** 这个弹窗能否用原版画面（按当前素材同步判定；也登记给 handler 用，见 popupStore 的 opensClassic） */
+export function classicPopupReady(p: PopupSpec): boolean {
   const keys = popupKeys(p);
   if (!keys) return false;
   return sceneKeysStatus(keys, scenePackClient()) === 'ready';
@@ -127,6 +155,15 @@ function PopupSwitch({ p, legacy }: { p: OpenPopup; legacy: LegacyPopup }): Reac
     // 这次来不及（素材还在加载）：先准备好，下一个同类弹窗就用原版画面
     if (keys) void prepareSceneKeys(keys, scenePackClient());
   }, [classic, p]);
+  // 登记「正以原版画面显示」（原版亮卡期间 toast 暂缓，见 popupStore.classicShown）；布局阶段登记，toast 不会与亮卡同框一帧
+  const { popupId, kind } = p;
+  useLayoutEffect(() => {
+    if (!classic || kind === 'lottery') return;
+    usePopupStore.getState().setClassicShown({ popupId, kind });
+    return () => {
+      if (usePopupStore.getState().classicShown?.popupId === popupId) usePopupStore.getState().setClassicShown(null);
+    };
+  }, [classic, popupId, kind]);
   // 乐透开奖：原版画面属于场所组（venues/a 的 ClassicLotteryDraw 自己判定素材，不可用时画程序化弹窗）
   if (p.kind === 'lottery') {
     return (
@@ -161,6 +198,7 @@ function PopupSwitch({ p, legacy }: { p: OpenPopup; legacy: LegacyPopup }): Reac
       label={title}
       minMs={p.minMs}
       onSkip={() => usePopupStore.getState().skip(p.popupId)}
+      anyInputSkips={p.kind === 'cardCast'}
       backdrop={p.kind === 'gameOver' ? 'opaque' : 'none'}
     >
       <ClassicPopupBody p={p} />
@@ -297,8 +335,10 @@ export interface ClassicPopupHostProps {
 export default function ClassicPopupHost({ current, map, legacy }: ClassicPopupHostProps): ReactNode {
   const packId = useClassicAssets((s) => s.packId);
   useEventPopupWatcher(map);
+  // handler 打开弹窗之前据此判断会不会用原版画面（原版亮卡时不叠网页版的气泡、粒子与光束）
+  useEffect(() => registerClassicPopupProbe(classicPopupReady), []);
 
-  // 空闲时预取弹窗与界面的精灵（素材包里没有的键跳过）
+  // 空闲时预取弹窗与界面的精灵（素材包里没有的键跳过），再逐张预取卡片插画
   useEffect(() => {
     if (packId === null) return;
     let live = true;
@@ -307,6 +347,13 @@ export default function ClassicPopupHost({ current, map, legacy }: ClassicPopupH
       const client = scenePackClient();
       if (!client) return;
       for (const key of CLASSIC_POPUP_SPRITES) if (client.usableEntry(key)) void ensureSceneSprite(key, client);
+      // 亮卡的宝石消息框（ui.common 图集页）先下，再低优先级逐张下卡片插画
+      if (client.usableEntry(COMMON_SHEET)) {
+        void ensureSceneSprite(COMMON_SHEET, client).then((sheet) => {
+          if (live && sheet) void preloadSpritePages(sheet);
+        });
+      }
+      void prefetchCardArt(cardArtPrefetchOrder(useGameStore.getState().view), () => live);
     };
     const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
     if (w.requestIdleCallback) w.requestIdleCallback(run);

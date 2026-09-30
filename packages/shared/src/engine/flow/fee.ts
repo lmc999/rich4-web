@@ -299,8 +299,9 @@ export const FEE: FrameHandler<FeeFrame> = {
   resume(ctx, f, a, d) {
     const q = quoteOf(f);
     if (f.stage === 'free' && d.kind === 'USE_FREE_CARD') {
-      // 免费卡：本次免付，住宿、出国、投保也一并取消
-      if (resolveFreeCard(ctx, q.payer, a, 'fee')) f.stage = f.feeKind === 'company' ? 'subscribe' : 'done';
+      // 免费卡：本次免付，住宿、出国、投保也一并取消。对方：设施的地主；企业消费没有（钱进公司盈余，exe 0x41a796 传 -1）
+      const other = f.feeKind === 'company' ? null : q.owner;
+      if (resolveFreeCard(ctx, q.payer, a, 'fee', other)) f.stage = f.feeKind === 'company' ? 'subscribe' : 'done';
       else f.stage = 'scapegoat';
       return;
     }

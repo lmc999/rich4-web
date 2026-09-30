@@ -9,7 +9,7 @@ import type { FrameHandler } from '../core/frameHandler';
 import { EngineInvariantError } from '../errors';
 import type { PassiveContext, ScapegoatOptions } from '../types/decision';
 import type { FrameOf } from '../types/frames';
-import type { CauseKind, MoneyReason } from '../types/ids';
+import type { CauseKind, MoneyReason, SeatIndex } from '../types/ids';
 import {
   askFreeCard,
   askScapegoat,
@@ -35,6 +35,11 @@ const REASON_CAUSE: Partial<Record<MoneyReason, CauseKind>> = {
 
 function contextOf(f: PayFrame): PassiveContext {
   return f.reason === 'toll' ? 'toll' : f.reason === 'fee' ? 'fee' : f.reason === 'taxAudit' ? 'taxAudit' : 'fine';
+}
+
+/** 免费卡的对方（PASSIVE.other）：过路费、设施费、查税付给的那名玩家；罚款没有对方 */
+function payeeOf(f: PayFrame): SeatIndex | null {
+  return contextOf(f) !== 'fine' && f.to.t === 'seat' ? f.to.seat : null;
 }
 
 export const PAYX: FrameHandler<PayFrame> = {
@@ -72,7 +77,7 @@ export const PAYX: FrameHandler<PayFrame> = {
   },
   resume(ctx, f, a, d) {
     if (f.stage === 'free' && d.kind === 'USE_FREE_CARD') {
-      f.stage = resolveFreeCard(ctx, f.payer, a, contextOf(f)) ? 'done' : 'scapegoat';
+      f.stage = resolveFreeCard(ctx, f.payer, a, contextOf(f), payeeOf(f)) ? 'done' : 'scapegoat';
       return;
     }
     if (f.stage === 'scapegoat' && d.kind === 'SCAPEGOAT') {

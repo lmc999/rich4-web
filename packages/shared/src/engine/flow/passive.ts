@@ -26,14 +26,22 @@ export function holdsCard(p: Pick<PlayerState, 'cards'>, card: CardId): boolean 
   return p.cards.includes(card);
 }
 
-/** 消耗手里第一张 card（回牌堆）→ PASSIVE */
-export function consumePassive(ctx: Ctx, seat: SeatIndex, card: CardId, context: PassiveContext): void {
+/**
+ * 消耗手里第一张 card（回牌堆）→ PASSIVE。other：对方（原版接一句反应台词的人，见事件 PASSIVE 的说明）；没有为 null
+ */
+export function consumePassive(
+  ctx: Ctx,
+  seat: SeatIndex,
+  card: CardId,
+  context: PassiveContext,
+  other: SeatIndex | null,
+): void {
   const p = ctx.player(seat);
   const i = p.cards.indexOf(card);
   if (i < 0) return;
   p.cards.splice(i, 1);
   returnCardToDeck(ctx.s, card);
-  ctx.emit('PASSIVE', { seat, card, context });
+  ctx.emit('PASSIVE', { seat, card, context, other: other === seat ? null : other });
 }
 
 /** 免费卡 / 嫁祸卡的询问门槛：金额 ≥ 2000×PI，或金额 > 现金 + 存款（@0x419e34、@0x41a60e） */
@@ -95,11 +103,20 @@ export function askScapegoat(
   return true;
 }
 
-/** USE_FREE_CARD 的回答：CONFIRM 消耗免费卡并返回 true */
-export function resolveFreeCard(ctx: Ctx, seat: SeatIndex, a: PlayerAction, context: PassiveContext): boolean {
+/**
+ * USE_FREE_CARD 的回答：CONFIRM 消耗免费卡并返回 true。
+ * other：收款的对方（过路费 / 设施费的地主、查税卡的出卡者）；企业消费、罚款为 null（exe 0x41a796 传 -1）
+ */
+export function resolveFreeCard(
+  ctx: Ctx,
+  seat: SeatIndex,
+  a: PlayerAction,
+  context: PassiveContext,
+  other: SeatIndex | null,
+): boolean {
   if (a.type !== 'CONFIRM') return false;
   if (!holdsCard(ctx.player(seat), CARD.FREE)) throw new EngineRuleError('NOT_ALLOWED', 'no free card in hand');
-  consumePassive(ctx, seat, CARD.FREE, context);
+  consumePassive(ctx, seat, CARD.FREE, context, other);
   return true;
 }
 
@@ -121,7 +138,8 @@ export function resolveScapegoat(
   if (!holdsCard(ctx.player(seat), CARD.SCAPEGOAT)) throw new EngineRuleError('NOT_ALLOWED', 'no scapegoat card');
   const t = ctx.s.players.find((p) => p.seat === a.target);
   if (!t?.alive) throw new EngineRuleError('INVALID_TARGET', `seat ${a.target} is out`);
-  consumePassive(ctx, seat, CARD.SCAPEGOAT, context);
+  // 对方是被改嫁的新目标（原版由他接一句反应台词，exe 0x443645）
+  consumePassive(ctx, seat, CARD.SCAPEGOAT, context, a.target);
   return a.target;
 }
 

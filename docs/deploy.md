@@ -238,6 +238,7 @@ bash deploy/scan-image.sh rich4:local
 - 仓库没有远程地址时（§2），`git pull` 换成在本机重跑 `git archive --format=tar HEAD | ssh … 'tar -x -C /srv/rich4'`，其余命令不变。
 - 只想重启：`docker compose restart app`。
 - 数据包或素材包更新：按 §3 重新 rsync，再 `docker compose restart app`（服务器只在启动时读 manifest）。
+- **提取规则有改动的版本**（`tools/extract/src/assets/` 的 catalog、图像处理变了，例如 2026-09-30 把卡片插画 `card.<k>` 从 `corner-rgb0` 改为 `opaque`）：只升级镜像不够——素材包不在镜像里。先在本机 `npm run extract -- assets build` 重建、`npm run extract -- assets verify`，按 §3 带 `--delete` rsync `rich4-assets/`，`docker compose restart app`；再核对 app 日志 `asset pack enabled` 的 packId 与本机 `rich4-assets/manifest.json` 的 `packId` 相同（通过门禁后也可以看 `/pack/manifest.json`，例如 `entries["card.1"].transparency` 应为 `opaque`）。
 
 ### 9.5 备份与恢复
 

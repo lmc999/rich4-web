@@ -5,8 +5,8 @@
  * 演出节奏 profile（房间设置 RoomSettings.pacing，默认 original）：
  * - compact：紧凑预算（M2 起的初版，按原版节奏粗估、M3/M10 实测调整）；原版皮肤的 FLIC 在里面加速或截取（playFit）。
  * - original：以原版 FLIC 原长为准——有 FLIC 的事件预算 = max(compact, FLIC 原长 + handler 里 FLIC 之外的等待 + 余量)，
- *   保证原版皮肤能按原速完整播完（playFit 的可用时长 = 预算 − 其他等待 ≥ FLIC 原长）；
- *   没有 FLIC 对应的事件与 compact 完全相同。original 的每一项都 ≥ compact。
+ *   保证原版皮肤能按原速完整播完（playFit 的可用时长 = 预算 − 其他等待 ≥ FLIC 原长）；亮卡的事件（出卡、被动卡生效）
+ *   按原版亮卡的 1.5 秒（CARD_SHOW_MS）放宽；其余事件与 compact 完全相同。original 的每一项都 ≥ compact。
  *
  * 调整预算只影响倒计时公平性与演出节奏，不影响规则。
  */
@@ -69,6 +69,30 @@ export function diceShowMs(t: DiceTiming, throwFrames: number = DICE_THROW_FRAME
 
 /** 掷骰事件的余量（首帧对齐与载入，约一帧） */
 const DICE_SLACK_MS = 100;
+
+// ───────────────────────── 亮卡（原版时序） ─────────────────────────
+
+/**
+ * 亮卡的展示时长：出卡（CARD_USED）与被动卡生效（PASSIVE）时，卡片插画（Data#529+k）配消息框停留多久。
+ * 原版亮卡函数 fcn.00440bac 画完卡图与消息框后播 Effect#62（0x440cd2），调 fcn.00450f9a(1500)（0x440ce4）停 1.5 秒
+ * （鼠标左 / 右键放开或按键放开提前结束），再恢复棋盘；出卡、被动卡（復仇 0x443311、嫁禍 0x443425、免費 0x443713、
+ * 免罪 0x4437e1）都走这个函数，时长相同。original 节奏按原版 1.5 秒；compact 沿用初版的 1.2 秒 / 0.95 秒。
+ * @source docs/research/original-assets/ui.md §2.2（亮卡）
+ */
+export interface CardShowTiming {
+  /** 出卡（CARD_USED） */
+  readonly castMs: number;
+  /** 被动卡生效（PASSIVE） */
+  readonly passiveMs: number;
+}
+
+export const CARD_SHOW_MS: Readonly<Record<PacingProfile, CardShowTiming>> = Object.freeze({
+  original: Object.freeze({ castMs: 1500, passiveMs: 1500 }),
+  compact: Object.freeze({ castMs: 1200, passiveMs: 950 }),
+});
+
+/** 亮卡之后 handler 的收尾等待（同步显示态、金额飘字） */
+export const CARD_SHOW_TAIL_MS = 100;
 
 /** 一种节奏的完整预算表：以 GameEvent['type'] 为键穷举 */
 export type EventBudgetTable = { readonly [T in GameEventType]: EventBudget<T> };
@@ -413,10 +437,19 @@ function originalOverrides(): { readonly [T in FlicEventType]: (e: GameEventOf<T
   return out as unknown as { readonly [T in FlicEventType]: (e: GameEventOf<T>) => number };
 }
 
-/** original 节奏：有 FLIC 预留的事件按原长放宽，其余沿用 compact */
+/** 亮卡事件的 original 预算 = max(compact, 原版 1.5 秒 + 收尾 + 余量) */
+const cardShowBudget = (type: 'CARD_USED' | 'PASSIVE', showMs: number): number =>
+  Math.max(COMPACT_BUDGET_MS[type], showMs + CARD_SHOW_TAIL_MS + FLIC_SLACK_MS);
+
+/** original 节奏里按原版亮卡时长放宽的事件类型 */
+export const CARD_SHOW_EVENT_TYPES = Object.freeze(['CARD_USED', 'PASSIVE'] as const);
+
+/** original 节奏：有 FLIC 预留的事件按原长放宽，亮卡的事件按原版 1.5 秒放宽，其余沿用 compact */
 export const ORIGINAL_BUDGET_MS: EventBudgetTable = Object.freeze({
   ...COMPACT_BUDGET_MS,
   ...originalOverrides(),
+  CARD_USED: cardShowBudget('CARD_USED', CARD_SHOW_MS.original.castMs),
+  PASSIVE: cardShowBudget('PASSIVE', CARD_SHOW_MS.original.passiveMs),
 } satisfies EventBudgetTable);
 
 /** 按节奏取预算表：EVENT_BUDGET_MS[profile][type] */

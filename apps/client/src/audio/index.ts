@@ -108,7 +108,8 @@ export class AudioSystem {
 
   /**
    * PresentationContext.audio 的实现：handler 里 ctx.audio.play(id) 可播逻辑键（`sfx.049`、`zzfx.coin`）
-   * 或裸 ZzFX 预设名（`coin`）；ctx.audio.cue(提示) 按 soundMap 同一套规则解析（原版音效集或 ZzFX 回退）
+   * 或裸 ZzFX 预设名（`coin`）；ctx.audio.cue(提示) 按 soundMap 同一套规则解析（原版音效集或 ZzFX 回退）；
+   * ctx.audio.voices(事件) 说出该事件标 timed 的台词（亮卡之后的卡片台词）
    */
   port(): AudioPort {
     return {
@@ -118,6 +119,9 @@ export class AudioSystem {
       },
       cue: (c) => {
         this.director.playCue(c);
+      },
+      voices: (e) => {
+        this.director.speakTimed(e);
       },
     };
   }

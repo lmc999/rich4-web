@@ -242,6 +242,8 @@ export interface ResolvedVoice {
   confidence: Confidence;
   /** 解析出这句话的提示（试听页与日志） */
   cue: VoiceCue;
+  /** 顶层提示标了 timed：由 handler 按演出时刻说出（导演层 speakTimed），事件开始时不说 */
+  timed?: boolean;
 }
 
 export function voiceCuesFor(e: GameEvent, q: SoundQuery): readonly VoiceCue[] {
@@ -320,7 +322,7 @@ export function resolveVoiceCues(
 ): ResolvedVoice[] {
   if (!vm) return [];
   const out: ResolvedVoice[] = [];
-  const one = (c: VoiceCue, i: number, depth: number): void => {
+  const one = (c: VoiceCue, i: number, depth: number, timed: boolean): void => {
     let ok = true;
     if (c.k === 'slot' && c.chance !== undefined && c.chance > 1) {
       ok = pickIndex(seed, Math.trunc(c.chance), SALT_CHANCE, i, depth) === 0;
@@ -328,7 +330,7 @@ export function resolveVoiceCues(
     let lines = ok ? voiceCandidates(c, vm, q, seed, i) : [];
     if (o.allowGuess === false) lines = lines.filter((l) => l.confidence !== 'guess');
     if (lines.length === 0) {
-      if (c.orElse && depth < 4) one(c.orElse, i, depth + 1);
+      if (c.orElse && depth < 4) one(c.orElse, i, depth + 1, timed);
       return;
     }
     const line = lines[pickIndex(seed, lines.length, SALT_PICK, i, depth)]!;
@@ -340,10 +342,11 @@ export function resolveVoiceCues(
       cue: c,
     };
     if (c.maxWaitMs !== undefined) r.maxWaitMs = c.maxWaitMs;
+    if (timed) r.timed = true;
     out.push(r);
   };
   cues.forEach((c, i) => {
-    one(c, i, 0);
+    one(c, i, 0, c.timed === true);
   });
   return out;
 }

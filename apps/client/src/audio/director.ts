@@ -1,7 +1,8 @@
 // 音频导演层：把 UI 状态与事件演出接到 AudioEngine（design-draft §3.7）。
 // - setUi(uiState)：场景曲层（节日在下、场所在上）与棋盘轮播开关；进入场景时按原版音效集预载；
 // - onEvent(e, ctx)：按 soundMap 播放音效与语音、压入事件期间的场景曲；返回的 end() 在该事件演出结束时调用；
-//   wrapHandlers(handlers) 用它包住 presentation/handlers，整合时一行接入；
+//   wrapHandlers(handlers) 用它包住 presentation/handlers，整合时一行接入；标 timed 的语音（亮卡之后的卡片台词）
+//   在事件开始时只选好台词，等 handler 按演出时刻调 speakTimed(e)（ctx.audio.voices）才说，end() 时没说的作废；
 // - observe(e)：事件没有播放演出（instant / 后台标签页 / skipAll 追帧）时调用：不放声音，只收起以它为终点的场景曲
 //   （拍卖曲到 AUCTION_ENDED 为止——标签页在拍卖期间切到后台，回来后不能一直压在棋盘曲上）；
 // - setMaps(maps)：素材包的 voice-map / sfx-sets / music-map（没有素材包时全为 null：音效走 ZzFX，语音与音乐静默）。
@@ -63,6 +64,7 @@ export interface AudioEventCtx extends EventSeedCtx {
 
 export interface EventAudio {
   sfx: ResolvedSfx | null;
+  /** 本事件选出的全部台词（含 timed 的） */
   voices: ResolvedVoice[];
   scene: string | null;
   /** 该事件演出结束（handler 返回或被中止）时调用 */
@@ -124,6 +126,8 @@ export class AudioDirector {
   private venue: UiLayer | null = null;
   private held: HeldScene[] = [];
   private readonly preloaded = new Set<string>();
+  /** 事件开始时选好、等 handler 按演出时刻说出的台词（键为事件对象；end() 时作废） */
+  private readonly timedVoices = new Map<GameEvent, ResolvedVoice[]>();
   private opts: Required<AudioDirectorOptions>;
 
   constructor(
@@ -271,11 +275,10 @@ export class AudioDirector {
           : null;
       if (sfx) this.engine.playSfx(sfx.key, { bus: sfx.bus });
       voices = voiceFor(e, q, this.maps.voiceMap, seedCtx, { allowGuess: this.opts.allowGuessVoice });
-      for (const v of voices) {
-        const r: VoiceRequest = { key: v.key, speaker: v.speaker, policy: v.policy };
-        if (v.maxWaitMs !== undefined) r.maxWaitMs = v.maxWaitMs;
-        void this.engine.speak(r);
-      }
+      // timed：handler 在演出的指定时刻经 ctx.audio.voices 说（speakTimed），事件开始时只记下
+      const later = voices.filter((v) => v.timed === true);
+      if (later.length > 0) this.timedVoices.set(e, later);
+      for (const v of voices) if (v.timed !== true) this.speakOne(v);
       const sc = sceneCueFor(e, q);
       sceneKey = sc ? musicKeyFor(sc.scene, this.maps.musicMap) : null;
       if (sc && sceneKey !== null) {
@@ -295,14 +298,45 @@ export class AudioDirector {
       end: () => {
         if (ended) return;
         ended = true;
+        this.timedVoices.delete(e);
         if (token !== null) this.engine.popScene(token);
       },
     };
   }
 
-  /** 演出被重置（reset / skipAll / 离开对局）：收起事件场景曲、停掉语音 */
+  private speakOne(v: ResolvedVoice): void {
+    const r: VoiceRequest = { key: v.key, speaker: v.speaker, policy: v.policy };
+    if (v.maxWaitMs !== undefined) r.maxWaitMs = v.maxWaitMs;
+    void this.engine.speak(r);
+  }
+
+  /**
+   * 说出事件 e 在开始时选好的 timed 台词（ctx.audio.voices 的实现；每个事件只说一次）：出卡、被动卡的卡片台词由
+   * handler 在亮卡结束后调用（原版 fcn.00440bac 停完 1.5 秒才说台词）。返回说出的台词；没有（未登记、已说过、
+   * 事件已结束）时为空
+   */
+  speakTimed(e: GameEvent): ResolvedVoice[] {
+    const list = this.timedVoices.get(e);
+    if (!list) return [];
+    this.timedVoices.delete(e);
+    try {
+      for (const v of list) this.speakOne(v);
+    } catch (err) {
+      // 声音永远不能打断演出
+      if (typeof console !== 'undefined') console.warn('[audio] timed voice', e.type, err);
+    }
+    return list;
+  }
+
+  /** 等待按演出时刻说出的台词所属的事件数（测试与调试用） */
+  get pendingTimedVoices(): number {
+    return this.timedVoices.size;
+  }
+
+  /** 演出被重置（reset / skipAll / 离开对局）：收起事件场景曲、停掉语音（包括还没到时刻的 timed 台词） */
   reset(): void {
     for (const h of this.held.splice(0)) this.engine.popScene(h.token);
+    this.timedVoices.clear();
     this.engine.stopVoice();
   }
 

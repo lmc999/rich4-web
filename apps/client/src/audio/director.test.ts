@@ -11,7 +11,7 @@ import { AudioEngine } from './AudioEngine';
 import { AudioDirector, type DirectorEngine } from './director';
 import type { ScenePushOptions } from './music';
 import { FakeAudioWorld, flushMicrotasks } from './testing/fakeAudio';
-import { slotKey, testAudioMaps } from './testing/fixtures';
+import { cardKey, slotKey, testAudioMaps } from './testing/fixtures';
 import type { AudioSource } from './types';
 import type { VoiceRequest } from './voice';
 
@@ -250,6 +250,36 @@ describe('事件', () => {
     const d2 = new AudioDirector(bare);
     expect(d2.playCue(DICE_KNOCK)?.key).toBe('zzfx.dice');
     expect(bare.ops).toEqual(['sfx zzfx.dice sfx']);
+  });
+
+  it('卡片台词（timed）：事件开始时 Effect#62 照放、台词只选好不说；speakTimed(事件) 在亮卡结束时按序说出、只说一次；end / reset 后作废', () => {
+    const { e, d } = spy();
+    const used: GameEvent = { type: 'CARD_USED', seat: 0, card: 2, target: { t: 'seat', seat: 3 } };
+    const a = d.onEvent(used, actx());
+    // 亮卡开始：只有音效（原版 fcn.00440bac 0x440cd2 播 Effect#62），没有台词
+    expect(e.ops.some((o) => o.startsWith('sfx'))).toBe(true);
+    expect(e.ops.filter((o) => o.startsWith('voice'))).toEqual([]);
+    const want = [cardKey(CHARS[0]!, 'use', 2), cardKey(CHARS[3]!, 'target', 2)];
+    expect(a.voices.map((v) => v.key)).toEqual(want);
+    expect(d.pendingTimedVoices).toBe(1);
+    // 亮卡结束（handler 经 ctx.audio.voices）
+    expect(d.speakTimed(used).map((v) => v.key)).toEqual(want);
+    expect(e.ops.filter((o) => o.startsWith('voice'))).toEqual(want.map((k) => `voice ${k} original`));
+    expect(d.speakTimed(used)).toEqual([]);
+    a.end();
+    expect(d.pendingTimedVoices).toBe(0);
+
+    // 演出中止（handler 没来得及说）：end() 时作废，之后再调也不说
+    const passive: GameEvent = { type: 'PASSIVE', seat: 1, card: 18, context: 'frame', other: 0 };
+    const b = d.onEvent(passive, actx(2));
+    expect(b.voices.map((v) => v.key)).toEqual([cardKey(CHARS[1]!, 'use', 18), cardKey(CHARS[0]!, 'target', 18)]);
+    b.end();
+    expect(d.speakTimed(passive)).toEqual([]);
+    // reset（skipAll、离开房间）同样作废
+    d.onEvent(passive, actx(3));
+    d.reset();
+    expect(d.speakTimed(passive)).toEqual([]);
+    expect(e.ops.filter((o) => o.startsWith('voice'))).toHaveLength(2);
   });
 
   it('界面音：guess 默认 ZzFX，走 ui 总线', () => {

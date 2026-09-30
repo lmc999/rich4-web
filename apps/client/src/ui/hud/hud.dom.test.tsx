@@ -12,6 +12,7 @@ import { useUiStore } from '../../store/uiStore';
 import { makeTestClient } from '../../test/fakeTransport';
 import { ai, human, roomView } from '../../test/roomFixtures';
 import { selfPlay } from '../../test/selfPlay';
+import { usePopupStore } from '../popups/popupStore';
 import GameScreen from '../screens/GameScreen';
 import { ReconnectOverlay } from '../system/ReconnectOverlay';
 import { useTrusteeDialog } from '../system/TrusteeSettings';
@@ -470,6 +471,40 @@ describe('Toasts', () => {
       });
       expect(screen.queryAllByTestId('toast')).toEqual([]);
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('原版亮卡（经典弹窗登记 classicShown = cardCast）期间暂缓显示，结束后重新出现并从那时起计时；其他原版弹窗不影响', () => {
+    vi.useFakeTimers();
+    try {
+      render(<Toasts />);
+      act(() => {
+        useUiStore.getState().toast('忍太郎：夢遊 5 回合', 'info', 3200);
+      });
+      expect(screen.getAllByTestId('toast')).toHaveLength(1);
+      act(() => {
+        usePopupStore.getState().setClassicShown({ popupId: 7, kind: 'cardCast' });
+      });
+      expect(screen.queryAllByTestId('toast')).toEqual([]);
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      act(() => {
+        usePopupStore.getState().setClassicShown(null);
+      });
+      expect(screen.getAllByTestId('toast').map((x) => x.textContent)).toEqual(['忍太郎：夢遊 5 回合×']);
+      act(() => {
+        vi.advanceTimersByTime(3100);
+      });
+      expect(screen.getAllByTestId('toast')).toHaveLength(1);
+      // 新闻板之类的原版弹窗不暂缓
+      act(() => {
+        usePopupStore.getState().setClassicShown({ popupId: 8, kind: 'news' });
+      });
+      expect(screen.getAllByTestId('toast')).toHaveLength(1);
+    } finally {
+      act(() => usePopupStore.getState().clear());
       vi.useRealTimers();
     }
   });

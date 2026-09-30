@@ -111,7 +111,7 @@ describe('合成包：原版通用对话框与弹窗的条目', () => {
     }
   });
 
-  it('卡片插画 30 张（165×256，四角透明）、新闻插图 36 张（388×251 不透明）', () => {
+  it('卡片插画 30 张（165×256）、新闻插图 36 张（388×251），都是不透明整图；卡片 k 的文件是按 card.k 画的那一张', () => {
     expect(SYNTH_A11.images).toHaveLength(66);
     for (const k of SYNTH_A11.images) {
       const e = m.entries[k]!;
@@ -119,15 +119,26 @@ describe('合成包：原版通用对话框与弹窗的条目', () => {
       if (e.type !== 'image') continue;
       const card = k.startsWith('card.');
       expect([e.w, e.h], k).toEqual(card ? [165, 256] : [388, 251]);
-      expect(e.confidence, k).toBe('visual');
+      expect(e.transparency, k).toBe('opaque');
+      // 置信度跟资源目录：卡片插画有 exe 证据（0x440bea），新闻插图目视
+      expect(e.confidence, k).toBe(card ? 'exe' : 'visual');
     }
+    const files = new Set<string>();
+    for (let k = 1; k <= 30; k++) {
+      const e = m.entries[`card.${k}`]!;
+      if (e.type !== 'image') throw new Error(`card.${k}`);
+      expect(e.file).toBe(`images/synthetic-ui/card.${k}.png`);
+      files.add(m.files[e.file]!.sha256);
+    }
+    // 30 张各不相同（按卡号画的色块与点数）
+    expect(files.size).toBe(30);
     const e = m.entries['card.7']!;
     if (e.type !== 'image') throw new Error('card.7');
     const png = readPng(readFileSync(path.join(dir, m.files[e.file]!.path)));
     expect([png.w, png.h]).toEqual([165, 256]);
-    // 左上角透明（四角圆角）、中央不透明
-    expect(png.rgba[3]).toBe(0);
-    expect(png.rgba[(128 * 165 + 82) * 4 + 3]).toBe(255);
+    // 不透明：四角是黑色（与原版卡片一样），没有 alpha < 255 的像素
+    expect([...png.rgba.subarray(0, 4)]).toEqual([0, 0, 0, 255]);
+    for (let i = 3; i < png.rgba.length; i += 4) if (png.rgba[i] !== 255) throw new Error(`card.7 像素 ${i >> 2} 透明`);
     // 命运插图的对应未核实：合成包不给
     expect(m.entries['illustration.fate.0']).toBeUndefined();
   });

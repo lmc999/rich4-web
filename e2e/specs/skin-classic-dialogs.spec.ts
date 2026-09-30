@@ -71,6 +71,13 @@ test.beforeAll(() => {
   servable = new Map(Object.values(manifest.files).map((f) => [f.path, f.contentType]));
 });
 
+/** 整图条目在素材包里的 URL（manifest 的带哈希文件名） */
+function imageUrlOf(key: string): string {
+  const e = manifest.entries[key];
+  if (e?.type !== 'image') throw new Error(`${key} 不是整图条目`);
+  return `/pack/${manifest.files[e.file]!.path}`;
+}
+
 async function servePack(page: Page): Promise<void> {
   await page.route('**/pack/**', async (route: Route) => {
     const path = new URL(route.request().url()).pathname;
@@ -210,6 +217,10 @@ test('原版对话框与弹窗：买地、升级、设施、轮盘、新闻板�
     const cast = W.locator('[data-scene="classic"] [data-testid="card-cast-popup"]');
     await expect(cast).toBeVisible({ timeout: 30_000 });
     await expect(cast).toHaveAttribute('data-card', '26');
+    // 插画是素材包里 card.26 那一张（卡号 k → card.<k> → Data#529+k；合成包按键画的假图）
+    const castArt = cast.getByTestId('card-cast-art');
+    await expect(castArt).toHaveAttribute('data-asset-key', 'card.26');
+    await expect(castArt).toHaveAttribute('data-src', imageUrlOf('card.26'));
     await waitIdle(A);
     await syncPages([A, B]);
     expect(Number((await hudSnapshot(A)).players['1']!.cash)).toBeLessThan(cashB);

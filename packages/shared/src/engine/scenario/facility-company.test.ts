@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildFixtureMaps } from '../../data/maps/fixtures/testMap';
 import { createRegistry, type DataRegistry } from '../../data/maps/registry';
 import type { IndustryKey } from '../../data/maps/types';
+import { CARD } from '../../data/tables/ids';
 import { TABLES } from '../../data/tables/index';
 import { nextDate } from '../rules/calendar';
 import { scenario } from '../testing/scenario';
@@ -155,6 +156,16 @@ describe('company：企业格收费（各行业）', () => {
     expect(ch.event('LOT_LEVEL')).toMatchObject({ lot: 'L2', from: 0, to: 2 });
     expect(ch.events.some((e) => e.type === 'COMPANY_FEE')).toBe(false);
     expect(ch.player(0).cash).toBe(100000);
+  });
+
+  it('company：付不起时可用免费卡；原版企业消费不接对方的反应台词（exe 0x41a796 传 -1），PASSIVE.other 为 null', () => {
+    const sc = companyScenario(1, 'airline')
+      .setCash(0, 500, 0)
+      .give(0, { cards: [CARD.FREE] });
+    sc.force('wheel', 6);
+    landOnC3(sc).expectAsk(0, 'USE_FREE_CARD').confirm(0);
+    expect(sc.event('PASSIVE')).toMatchObject({ seat: 0, card: CARD.FREE, context: 'fee', other: null });
+    expect(sc.events.some((e) => e.type === 'COMPANY_FEE')).toBe(false);
   });
 
   it('company：没有董事长不收费、只问认购；付不起即破产', () => {

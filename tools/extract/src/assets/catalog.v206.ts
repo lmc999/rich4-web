@@ -81,6 +81,10 @@ export interface ImageItem extends ItemBase {
   kind: 'RAW16';
   w: number;
   h: number;
+  /**
+   * v2.06 的 RAW16 整图全部不透明（卡片插画按 exe 0x440c95 的不透明拷贝核实，见 CARD_ART_EVIDENCE）；
+   * corner-rgb0（四角泛洪抠 0 值）只为旧素材包的契约保留，目录里不再使用
+   */
   transparency: 'opaque' | 'corner-rgb0';
 }
 
@@ -645,22 +649,38 @@ function dataItems(): CatalogItem[] {
       desc: '机器娃娃 / 工人：8 方向 × 5 帧（推断为行走；只凭目视）',
     }),
   );
+  // 卡片插画：卡号 k = Data#529+k，不透明整图（黑色双线卡框与回纹角照原样画出，不抠圆角）。
+  // 旧版按 corner-rgb0 从四角泛洪抠 0 值，黑框连成一片被整圈抠掉（惡魔 / 拆除 / 停留 / 嫁禍 / 黑卡 / 漲價），陷害、復仇
+  // 连插画底部的黑色也被掏空，出卡时透出棋盘与资料栏。
   for (const res of range(530, 559)) {
-    out.push(
-      image(
+    out.push({
+      ...image(
         'Data',
         res,
         `card.${res - 529}`,
         'card',
         [165, 256],
-        'corner-rgb0',
-        `卡片 ${res - 529} 插画（卡号 k = Data#529+k，30 张逐张目视对上卡表顺序）`,
+        'opaque',
+        `卡片 ${res - 529} 插画（卡号 k = Data#529+k；30 张逐张目视对上卡表顺序；原版不透明整张贴图）`,
+        'ui',
+        'exe',
       ),
-    );
+      src: CARD_ART_EVIDENCE,
+    });
   }
   out.push(image('Data', 560, 'title.loading', 'title', [640, 480], 'opaque', 'Loading 画面'));
   return out;
 }
+
+/**
+ * 卡片插画的 exe 证据（v2.06 亮卡函数 fcn.00440bac；v3.11 对应 0x441fb1 `add eax,0x23a`，即 #571–#600）。
+ * @source docs/research/original-assets/ui.md §2.2（卡片插画与亮卡）
+ */
+const CARD_ART_EVIDENCE: readonly string[] = [
+  'VA 0x440bea（add eax,0x211 → fcn.0044ec68 载入 Data#(529+k)）',
+  'VA 0x43fe70（图结构模板 {w=165,h=256,锚点 0,0}）',
+  'VA 0x440c95（fcn.00454a55 → fcn.0045419a 逐行 rep movsd 不透明拷贝，无色键；画点 (138,200)）',
+];
 
 /** Panel#27..62：12 角色 × 3 段 Q 版小人的帧数（实测） */
 const CHIBI_FRAMES: readonly number[] = [

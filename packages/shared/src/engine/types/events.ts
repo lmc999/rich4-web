@@ -231,7 +231,13 @@ export interface GameEventPayloads {
   CARD_LOST: { seat: SeatIndex; card: CardId | null; cause: CardLossCause };
   CARD_USED: { seat: SeatIndex; card: CardId; target: UseTarget };
   CARD_NO_EFFECT: { seat: SeatIndex; card: CardId };
-  PASSIVE: { seat: SeatIndex; card: CardId; context: PassiveContext };
+  /**
+   * 被动卡生效（免罪 21 / 嫁祸 19 / 复仇 18 / 免费 20）。other = 对方：原版持卡人亮卡、说完卡片台词之后，接一句反应台词
+   * （卡片台词表 mode 2，0x47e51a + 4×(60 + 卡号 − 1)）的人——复仇是出卡者（exe 0x443383，当前玩家），嫁祸是被改嫁的
+   * 新目标（0x443645），免费是过路费 / 设施费的地主（0x419e89、0x419654）或查税卡的出卡者（0x443ede）；免罪（0x44381f 只有
+   * 一句）、企业消费（0x41a796 传 -1）与罚款没有对方，为 null
+   */
+  PASSIVE: { seat: SeatIndex; card: CardId; context: PassiveContext; other: SeatIndex | null };
   SHOP_OPENED: { seat: SeatIndex; shelf: CardId[]; fullDeck: boolean };
   SHOP_TRADE: {
     seat: SeatIndex;

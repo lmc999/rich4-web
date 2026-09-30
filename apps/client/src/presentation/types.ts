@@ -104,11 +104,17 @@ export interface AudioPort {
    * 由 handler 在演出的指定时刻调用（掷骰的两声「咚」）；没有音频时不实现
    */
   cue?(c: SfxCue): void;
+  /**
+   * 说出事件 e 在 soundMap 里标 timed 的台词（导演层在事件开始时已选好）：由 handler 在演出的指定时刻调用，
+   * 出卡 / 被动卡在亮卡结束之后（原版亮卡函数 fcn.00440bac 停 1.5 秒返回后才说卡片台词）；没有音频时不实现
+   */
+  voices?(e: GameEvent): void;
 }
 
 /**
  * 事件的声音钩子（原版皮肤 A9）：GameClient 在每个事件 handler 外层调用（audio/ 的 AudioDirector 经 app/audio.ts 接入，
- * ?audio=off 或音频模块尚未加载时为 null）。音效与语音在事件开始时触发，事件期间的场景曲在 handler 结束（含中止）时收起。
+ * ?audio=off 或音频模块尚未加载时为 null）。音效与语音在事件开始时触发（soundMap 标 timed 的由 handler 按演出时刻经
+ * AudioPort.cue / voices 放出），事件期间的场景曲在 handler 结束（含中止）时收起。
  */
 export interface EventAudioHook {
   /** 事件 handler 开始前调用；返回的函数在该事件演出结束（自然结束、封顶或中止）时调用 */

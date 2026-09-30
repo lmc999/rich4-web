@@ -208,7 +208,7 @@ export const taxChain = {
   resume(ctx: Ctx, f: CardFrame, a: PlayerAction, kind: string, options: unknown): void {
     const target = targetOf(f);
     if (f.stage === 'free' && kind === 'USE_FREE_CARD') {
-      f.stage = resolveFreeCard(ctx, target, a, 'taxAudit') ? 'done' : 'scapegoat';
+      f.stage = resolveFreeCard(ctx, target, a, 'taxAudit', f.seat) ? 'done' : 'scapegoat';
       return;
     }
     if (f.stage === 'scapegoat' && kind === 'SCAPEGOAT') {

@@ -1,6 +1,8 @@
 // M6 / M7 事件演出（design/client.md §3.6、§4.5）：用记录调用的假舞台 / 假棋盘检查 handler 的演出调用、
 // 弹窗内容与包装器的舞台同步。
 import {
+  CARD_IDS,
+  CARD_KEYS,
   CHARACTER_KEYS,
   type GameEvent,
   type GameEventOf,
@@ -14,11 +16,12 @@ import { initI18n } from '../../i18n';
 import { tx } from '../../i18n/tx';
 import { useUiStore } from '../../store/uiStore';
 import { selfPlay } from '../../test/selfPlay';
-import { type OpenPopup, usePopupStore } from '../../ui/popups/popupStore';
+import { type OpenPopup, registerClassicPopupProbe, usePopupStore } from '../../ui/popups/popupStore';
 import { makeNames } from '../names';
-import type { BoardPort, PresentationContext } from '../types';
+import type { AudioPort, BoardPort, PresentationContext } from '../types';
 import { createUiPresenter } from '../UiPresenter';
 import { HANDLERS, RAW_HANDLERS } from '.';
+import { setPacingOverride } from './budget';
 import { removalOf } from './items';
 import { recordingStage, type StageCall } from './testStage';
 import { touchesStage } from './wrap';
@@ -72,7 +75,14 @@ interface Run {
 
 async function run<T extends GameEventType>(
   e: GameEventOf<T>,
-  o: { v?: GameView; me?: SeatIndex | null; raw?: boolean; speed?: number } = {},
+  o: {
+    v?: GameView;
+    me?: SeatIndex | null;
+    raw?: boolean;
+    speed?: number;
+    audio?: AudioPort;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<Run> {
   const calls: Call[] = [];
   const stage: StageCall[] = [];
@@ -85,11 +95,11 @@ async function run<T extends GameEventType>(
   const v = o.v ?? view;
   const me = o.me === undefined ? 0 : o.me;
   const ctx: PresentationContext = {
-    signal: new AbortController().signal,
+    signal: o.signal ?? new AbortController().signal,
     wait: (ms) => clock.wait(ms),
     board: fakeBoard(calls, stage),
     ui: createUiPresenter({ wait: (ms, s) => clock.wait(ms, s) }),
-    audio: { play: () => {} },
+    audio: o.audio ?? { play: () => {} },
     me,
     role: me === null ? 'spectator' : 'player',
     view: () => v,
@@ -123,9 +133,113 @@ describe('M6 卡片与道具', () => {
   });
 
   it('PASSIVE：被动卡弹窗 + 气泡台词', async () => {
-    const r = await run({ type: 'PASSIVE', seat: 1, card: 21, context: 'frame' });
+    const r = await run({ type: 'PASSIVE', seat: 1, card: 21, context: 'frame', other: null });
     expect(r.popups[0]).toMatchObject({ kind: 'cardCast', variant: 'passive', card: 21 });
     expect(r.stage.find((c) => c[0] === 'bubble')?.[2]).toBe('免罪卡发动：逃过一劫！');
+  });
+
+  it('卡片台词在亮卡结束之后才说：弹窗关闭后调 ctx.audio.voices(同一个事件)；演出已中止时不说', async () => {
+    const log: string[] = [];
+    const off = usePopupStore.subscribe((st, prev) => {
+      if (st.current && !prev.current) log.push(`open ${st.current.kind}`);
+      if (!st.current && prev.current) log.push('close');
+    });
+    const got: GameEvent[] = [];
+    const audio: AudioPort = {
+      play: () => {},
+      voices: (x) => {
+        got.push(x);
+        log.push(`voices ${x.type}`);
+      },
+    };
+    try {
+      const used: GameEventOf<'CARD_USED'> = { type: 'CARD_USED', seat: 0, card: 17, target: { t: 'seat', seat: 1 } };
+      const passive: GameEventOf<'PASSIVE'> = { type: 'PASSIVE', seat: 1, card: 18, context: 'frame', other: 0 };
+      // raw：不经包装的时长封顶（测试时钟是 instant，封顶会与演出同时到点、把信号中止）
+      await run(used, { audio, raw: true });
+      await run(passive, { audio, raw: true });
+      expect(log).toEqual(['open cardCast', 'close', 'voices CARD_USED', 'open cardCast', 'close', 'voices PASSIVE']);
+      // 导演层按事件对象找选好的台词：必须是同一个对象
+      expect(got[0]).toBe(used);
+      expect(got[1]).toBe(passive);
+      const ac = new AbortController();
+      ac.abort();
+      log.length = 0;
+      await run(used, { audio, signal: ac.signal, raw: true });
+      await run(passive, { audio, signal: ac.signal, raw: true });
+      expect(log.filter((x) => x.startsWith('voices'))).toEqual([]);
+    } finally {
+      off();
+    }
+  });
+
+  it('原版亮卡（弹窗会用原版画面）：棋盘静止，不叠气泡、粒子、光束与飘字；弹窗照开', async () => {
+    const offProbe = registerClassicPopupProbe((spec) => spec.kind === 'cardCast');
+    try {
+      const a = await run({ type: 'CARD_USED', seat: 0, card: 17, target: { t: 'seat', seat: 1 } });
+      expect(a.popups[0]).toMatchObject({ kind: 'cardCast', card: 17 });
+      expect(names(a.stage).filter((n) => n === 'burst' || n === 'beam')).toEqual([]);
+      const b = await run({ type: 'PASSIVE', seat: 1, card: 18, context: 'frame', other: 0 });
+      expect(b.popups[0]).toMatchObject({ kind: 'cardCast', variant: 'passive', card: 18 });
+      expect(names(b.stage).filter((n) => n === 'burst' || n === 'bubble')).toEqual([]);
+      const c = await run({ type: 'CARD_NO_EFFECT', seat: 0, card: 16 });
+      expect(c.popups[0]).toMatchObject({ kind: 'cardCast', variant: 'fizzle' });
+      expect(names(c.calls)).not.toContain('floatText');
+    } finally {
+      offProbe();
+    }
+    // 没有原版宿主（程序化皮肤）：照旧有光束、气泡与飘字
+    const a = await run({ type: 'CARD_USED', seat: 0, card: 17, target: { t: 'seat', seat: 1 } });
+    expect(names(a.stage)).toContain('beam');
+    const b = await run({ type: 'PASSIVE', seat: 1, card: 18, context: 'frame', other: 0 });
+    expect(names(b.stage)).toContain('bubble');
+    const c = await run({ type: 'CARD_NO_EFFECT', seat: 0, card: 16 });
+    expect(names(c.calls)).toContain('floatText');
+  });
+
+  it('出卡弹窗的卡号 = 事件的卡号，30 张逐张；本人、别的玩家、观战者看到的是同一张', async () => {
+    for (const card of CARD_IDS) {
+      for (const me of [0, 1, null] as const) {
+        const r = await run({ type: 'CARD_USED', seat: 2, card, target: { t: 'none' } }, { me });
+        const p = r.popups[0];
+        expect(p?.kind, `card ${card} me ${me}`).toBe('cardCast');
+        if (p?.kind === 'cardCast') {
+          expect(p.card, `card ${card} me ${me}`).toBe(card);
+          expect(p.player.seat).toBe(2);
+          expect(p.cardName).toBe(tx(`cards:${CARD_KEYS[card]}.name`));
+        }
+      }
+    }
+  });
+
+  it('亮卡时长跟演出节奏：original 按原版 1.5 秒（出卡与被动卡），compact 1.2 / 0.95 秒', async () => {
+    try {
+      setPacingOverride('original');
+      const a = await run({ type: 'CARD_USED', seat: 0, card: 6, target: { t: 'none' } });
+      const b = await run({ type: 'PASSIVE', seat: 1, card: 18, context: 'frame', other: 0 });
+      expect([a.popups[0]?.ms, b.popups[0]?.ms]).toEqual([1500, 1500]);
+      setPacingOverride('compact');
+      const c = await run({ type: 'CARD_USED', seat: 0, card: 6, target: { t: 'none' } });
+      const d = await run({ type: 'PASSIVE', seat: 1, card: 18, context: 'frame', other: 0 });
+      expect([c.popups[0]?.ms, d.popups[0]?.ms]).toEqual([1200, 950]);
+    } finally {
+      setPacingOverride(null);
+    }
+  });
+
+  it('被动卡说明按卡：免罪 / 免费是「免去」，嫁祸是「转嫁」，复仇是「出卡者也中招」', async () => {
+    const desc = async (card: 18 | 19 | 20 | 21, context: 'frame' | 'toll' | 'sleepwalk') => {
+      const r = await run({ type: 'PASSIVE', seat: 1, card, context, other: null });
+      const p = r.popups[0];
+      return p?.kind === 'cardCast' ? p.desc : null;
+    };
+    expect(await desc(21, 'frame')).toBe(tx('events:passiveCtx.frame'));
+    expect(await desc(20, 'toll')).toBe(tx('events:passiveCtx.toll'));
+    expect(await desc(19, 'frame')).toBe(tx('events:passiveScapegoat.frame'));
+    expect(await desc(19, 'toll')).toBe(tx('events:passiveScapegoat.toll'));
+    expect(await desc(18, 'frame')).toBe(tx('events:passiveRevenge.frame'));
+    expect(await desc(18, 'sleepwalk')).toBe(tx('events:passiveRevenge.sleepwalk'));
+    expect(await desc(19, 'frame')).not.toBe(await desc(21, 'frame'));
   });
 
   it('OBJECT_PLACED / OBJECT_REMOVED：物件落下；按起因弹飞或爆炸', async () => {

@@ -167,6 +167,9 @@ export const SOUND_MAP = {
   // ── card
   CARD_GAINED: { sfx: flic('card') },
   CARD_LOST: {},
+  // 出卡：Effect#62（card.use）在亮卡开始时响（fcn.00440bac 0x440cd2）；卡片台词等亮卡结束之后才说——原版 0x44090a
+  // 亮卡停 1.5 秒返回 → 0x440914 进卡片处理函数，例如均富 0x440d1d 扣卡 → 0x440d51 fcn.0044d870 说台词。标 timed，
+  // 由 CARD_USED 的 handler 在亮卡结束时经 ctx.audio.voices 说出
   CARD_USED: {
     sfx: z('magic', 'card.use'),
     voice: (e) => {
@@ -174,16 +177,26 @@ export const SOUND_MAP = {
       const target =
         t.t === 'seat' || t.t === 'rob' ? t.seat : t.t === 'actor' && t.actor.t === 'seat' ? t.actor.seat : null;
       const use: VoiceCue = { k: 'card', seat: e.seat, card: e.card, mode: 'use' };
-      if (target === e.seat) return [{ k: 'card', seat: e.seat, card: e.card, mode: 'self', orElse: use }];
-      const out: VoiceCue[] = [use];
-      if (target !== null) out.push({ k: 'card', seat: target, card: e.card, mode: 'target' });
+      if (target === e.seat) return [{ k: 'card', seat: e.seat, card: e.card, mode: 'self', orElse: use, timed: true }];
+      const out: VoiceCue[] = [{ ...use, timed: true }];
+      if (target !== null) out.push({ k: 'card', seat: target, card: e.card, mode: 'target', timed: true });
       return out;
     },
   },
   CARD_NO_EFFECT: {},
+  // 被动卡：同样先亮卡（Effect#62）再说台词——持卡人说卡片台词（mode 0），对方接一句反应台词（mode 2，卡片台词的
+  // target）：复仇 fcn.004432ca 0x44334f → 0x443383（当前玩家）、嫁祸 0x443617 → 0x443645（新目标）、免费
+  // fcn.00443657 0x44374c → 0x443783（地主 / 查税出卡者）；免罪只有持卡人一句（0x44381f）。对方取自事件的 other
   PASSIVE: {
     sfx: z('magic', 'card.use'),
-    voice: (e) => [{ k: 'card', seat: e.seat, card: e.card, mode: 'use' }],
+    voice: (e) => {
+      const out: VoiceCue[] = [{ k: 'card', seat: e.seat, card: e.card, mode: 'use', timed: true }];
+      const other = e.other ?? null;
+      if (other !== null && other !== e.seat) {
+        out.push({ k: 'card', seat: other, card: e.card, mode: 'target', timed: true });
+      }
+      return out;
+    },
   },
   SHOP_OPENED: { voice: () => [{ k: 'npc', key: 'itemShop.welcome' }] },
   SHOP_TRADE: {

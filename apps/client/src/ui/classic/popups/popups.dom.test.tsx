@@ -5,7 +5,8 @@
 // - 工具列打开的原版界面：info 面板 → 原版资产表（翻页、切换玩家、EXIT）；托管设置 → 原版托管对话框（提交 game:autopilot）；
 //   素材不可用时不接管；
 // - PopupLayer 在经典布局（placement = board）里懒加载宿主。
-import type { GameEvent } from '@rich4/shared/engine';
+import { CARD_IDS, type CardId, type GameEvent } from '@rich4/shared/engine';
+import { CARD_SHOW_MS } from '@rich4/shared/view';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MotionGlobalConfig } from 'motion/react';
@@ -27,15 +28,25 @@ import {
   type GodPopupSpec,
   type NewsPopupSpec,
   type OpenPopup,
+  onPopupSkip,
+  opensClassic,
   type PopupSpec,
   usePopupStore,
 } from '../../popups/popupStore';
 import { openTrusteeSettings, useTrusteeDialog } from '../../system/TrusteeSettings';
-import { resetClassicAssetsForTest } from '../assets';
-import { atlasPackClient, installSceneAssets } from '../common/testing';
+import { bindClassicAssets, classicImagePreloadStarted, resetClassicAssetsForTest, useClassicAssets } from '../assets';
+import { atlasPackClient, type FakeFrame, fakeCardImages, installSceneAssets } from '../common/testing';
+import { CardArt } from '../dialogs/parts';
 import { a11FakeSheets, a11PackClient } from '../dialogs/testing';
 import { ASSETS_KEYS } from './AssetSheet';
-import ClassicPopupHost, { classicPopupReady, popupKeys } from './ClassicPopupHost';
+import { CARD_SHOW_LAYOUT, cardShowMode } from './CardCast';
+import ClassicPopupHost, {
+  CARD_ART_PREFETCH_CONCURRENCY,
+  cardArtPrefetchOrder,
+  classicPopupReady,
+  popupKeys,
+  prefetchCardArt,
+} from './ClassicPopupHost';
 import { eventPopupOf, monthlyRows, useEventPopups, wheelOf } from './eventPopups';
 import { companyWheel, reelFrame, slotDigits, WHEELS, wheelFrameFor } from './layout';
 import { requestClassicScreen } from './screenRequests';
@@ -256,7 +267,12 @@ describe('演出弹窗：原版 / 程序化逐个判定', () => {
     const pop = screen.getByTestId('card-cast-popup');
     expect(pop.closest('[data-scene="classic"]')).not.toBeNull();
     expect(pop).toHaveAttribute('data-variant', 'fizzle');
+    expect(pop).toHaveAttribute('data-mode', 'fizzle');
     expect(within(pop).getByTestId('card-cast-box')).toHaveTextContent('阿土伯');
+    expect(within(pop).getByTestId('card-cast-line')).toHaveTextContent('孙小美');
+    expect(within(pop).getByTestId('card-cast-line')).toHaveTextContent('陷害卡');
+    // 卡片说明不上框（原版亮卡只有一句）
+    expect(pop).not.toHaveTextContent('让对手立刻入狱');
   });
 
   it('魔法屋：程序化弹窗；乐透开奖交给场所组的开关（不在经典舞台里 → 程序化）', () => {
@@ -289,6 +305,272 @@ const fx = fixture();
 function line(event: GameEvent, text = '日志'): LogLine {
   return { id: 0, seq: 1, type: event.type, text, date: 0, src: { event, view: fx.view } };
 }
+
+// ───────────────────────── 亮卡：卡片插画逐张 ─────────────────────────
+
+/** a11 的假精灵表 → atlasPackClient 的帧表（经典外壳与弹窗的精灵走真实的图集加载路径） */
+function a11Frames(): Record<string, FakeFrame[]> {
+  const out: Record<string, FakeFrame[]> = {};
+  for (const [k, sheet] of Object.entries(a11FakeSheets()))
+    out[k] = sheet.frames.map((f) => [f!.w, f!.h, f!.ax, f!.ay]);
+  return out;
+}
+
+/** 绑定一个带 30 张卡片插画（images/data/<529+k>.png）的假素材包，等弹窗要的 ui.common 加载完 */
+async function bindCardPack(): Promise<ReturnType<typeof atlasPackClient>> {
+  const client = atlasPackClient(a11Frames(), { images: fakeCardImages() });
+  resetClassicAssetsForTest();
+  act(() => bindClassicAssets(client, 'card-pack'));
+  resetSkinStoreForTest({ client });
+  await waitFor(() => expect(useClassicAssets.getState().sprites['ui.common']).toBeTruthy());
+  return client;
+}
+
+function castSpec(card: CardId, variant: 'cast' | 'passive' | 'fizzle', targetText: string | null = null): PopupSpec {
+  return {
+    kind: 'cardCast',
+    player,
+    card,
+    cardName: `卡${card}`,
+    desc: '说明',
+    title: '使用卡片',
+    targetText,
+    variant,
+  };
+}
+
+describe('亮卡：卡片 id → 素材键 card.<k> → Data#(529+k) 的插画，30 张逐张（exe fcn.00440bac）', () => {
+  it('素材键全表：出卡弹窗要 ui.common（消息框）与 card.<k>', () => {
+    for (const k of CARD_IDS) expect(popupKeys(open(castSpec(k, 'cast')))).toEqual(['ui.common', `card.${k}`]);
+  });
+
+  it.each(CARD_IDS)(
+    '卡 %i：原版画面，插画是 images/data/(529+k).png，不透明贴在 (138,200) 165×256，没有翻面动画',
+    async (k) => {
+      await bindCardPack();
+      render(<Host current={open(castSpec(k, 'cast', '阿土伯'))} />);
+      const pop = screen.getByTestId('card-cast-popup');
+      expect(pop.closest('[data-classic="true"]')).not.toBeNull();
+      expect(pop).toHaveAttribute('data-card', String(k));
+      const art = within(pop).getByTestId('card-cast-art');
+      expect(art).toHaveAttribute('data-asset-key', `card.${k}`);
+      expect(art).toHaveAttribute('data-src', `/pack/images/data/${529 + k}.png`);
+      expect(art.style.backgroundImage).toBe(`url("/pack/images/data/${529 + k}.png")`);
+      expect([art.style.left, art.style.top, art.style.width, art.style.height]).toEqual([
+        '138px',
+        '200px',
+        '165px',
+        '256px',
+      ]);
+      expect(art.style.transform).toBe('');
+      expect(art.style.filter).toBe('');
+    },
+  );
+
+  it('版式：消息框 Data#476 图5 画在 (220,129)（左上 123,48，195×133），字以 (220,129) 为中心；插画在框下方', async () => {
+    expect(CARD_SHOW_LAYOUT).toEqual({ box: { x: 220, y: 129 }, text: { x: 220, y: 129 }, card: { x: 138, y: 200 } });
+    await bindCardPack();
+    render(<Host current={open(castSpec(1, 'cast'))} />);
+    const pop = screen.getByTestId('card-cast-popup');
+    const frame = within(pop).getByTestId('card-cast-frame');
+    expect(frame).toHaveAttribute('data-frame', 'ui.common/5');
+    expect(frame).toHaveAttribute('data-slice', 'parts');
+    expect([frame.style.left, frame.style.top, frame.style.width, frame.style.height]).toEqual([
+      '123px',
+      '48px',
+      '195px',
+      '133px',
+    ]);
+    const box = within(pop).getByTestId('card-cast-box');
+    expect(box.style.top).toBe('129px');
+    expect(box.style.transform).toBe('translateY(-50%)');
+    // 框在插画上方（原版消息在上、卡在棋盘视窗下半部）：框底 181 < 卡顶 200
+    expect(48 + 133).toBeLessThan(CARD_SHOW_LAYOUT.card.y);
+    expect(within(pop).queryByTestId('card-cast-target')).toBeNull();
+  });
+
+  it('句式：出卡「使用XX」、免費卡「使用免費卡」、復仇 / 嫁禍 / 免罪「XX生效！」、没有效果置灰', async () => {
+    expect(cardShowMode('cast', 6)).toBe('use');
+    expect(cardShowMode('passive', 20)).toBe('use');
+    for (const c of [18, 19, 21] as CardId[]) expect(cardShowMode('passive', c)).toBe('passive');
+    expect(cardShowMode('fizzle', 16)).toBe('fizzle');
+    await bindCardPack();
+    const { rerender } = render(<Host current={open(castSpec(21, 'passive'))} />);
+    let pop = screen.getByTestId('card-cast-popup');
+    expect(pop).toHaveAttribute('data-mode', 'passive');
+    expect(within(pop).getByTestId('card-cast-line').textContent).toBe(
+      tx('events:popup.cardShow.passive', { who: player.name, card: '卡21' }),
+    );
+    rerender(<Host current={open(castSpec(20, 'passive'))} />);
+    pop = screen.getByTestId('card-cast-popup');
+    expect(within(pop).getByTestId('card-cast-line').textContent).toBe(
+      tx('events:popup.cardShow.use', { who: player.name, card: '卡20' }),
+    );
+    rerender(<Host current={open(castSpec(16, 'fizzle'))} />);
+    pop = screen.getByTestId('card-cast-popup');
+    expect(within(pop).getByTestId('card-cast-art').style.filter).toContain('grayscale');
+    expect(within(pop).getByTestId('card-cast-art')).toHaveAttribute('data-asset-key', 'card.16');
+  });
+
+  it('卡图下垫黑底：旧素材包（corner-rgb0）抠掉的 0 值像素显示成原版的纯黑，插画没下载完时是黑色卡位', async () => {
+    await bindCardPack();
+    render(<Host current={open(castSpec(10, 'cast'))} />);
+    const art = within(screen.getByTestId('card-cast-popup')).getByTestId('card-cast-art');
+    expect(art.style.backgroundColor).toBe('rgb(0, 0, 0)');
+    await waitFor(() => expect(art.style.backgroundImage).toBe('url("/pack/images/data/539.png")'));
+    expect(art.style.backgroundColor).toBe('rgb(0, 0, 0)');
+    // 卡片欄悬停、免费卡、嫁祸卡、弃牌对话框里的插画（dialogs/parts 的 CardArt）同样垫黑
+    cleanup();
+    render(<CardArt card={20} x={0} y={0} testId="free-card-art" />);
+    const small = await screen.findByTestId('free-card-art');
+    expect(small.style.backgroundColor).toBe('rgb(0, 0, 0)');
+    expect(small.style.backgroundImage).toBe('url("/pack/images/data/549.png")');
+  });
+
+  it('跳过照原版：不画「点一下跳过」钮、没有最短时间，任意鼠标左 / 右键放开或按键放开就结束；在输入框里打字、亮卡之前按下的不算', async () => {
+    await bindCardPack();
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    try {
+      const p = open(castSpec(6, 'cast'), 1500);
+      const onSkip = vi.fn();
+      const off = onPopupSkip(p.popupId, onSkip);
+      render(<Host current={p} />);
+      const scene = screen.getByTestId('card-cast-popup').closest('[data-scene="classic"]')!;
+      expect(scene).toHaveAttribute('data-skippable', 'true');
+      expect(screen.queryByTestId('popup-skip')).toBeNull();
+      // 亮卡出现之前就按下的（出卡确认那一下）：放开不算
+      fireEvent.keyUp(document.body, { key: 'Enter', code: 'Enter' });
+      fireEvent.pointerUp(document.body, { button: 0, pointerId: 1 });
+      // 聊天框里打字：不跳过
+      fireEvent.keyDown(input, { key: 'a', code: 'KeyA' });
+      fireEvent.keyUp(input, { key: 'a', code: 'KeyA' });
+      // 中键不算
+      fireEvent.pointerDown(document.body, { button: 1, pointerId: 2 });
+      fireEvent.pointerUp(document.body, { button: 1, pointerId: 2 });
+      expect(onSkip).not.toHaveBeenCalled();
+      // 页面上任意位置按下再放开左键 / 右键、任意按键
+      fireEvent.pointerDown(document.body, { button: 0, pointerId: 3 });
+      fireEvent.pointerUp(document.body, { button: 0, pointerId: 3 });
+      fireEvent.pointerDown(document.body, { button: 2, pointerId: 4 });
+      fireEvent.pointerUp(document.body, { button: 2, pointerId: 4 });
+      fireEvent.keyDown(document.body, { key: ' ', code: 'Space' });
+      fireEvent.keyUp(document.body, { key: ' ', code: 'Space' });
+      expect(onSkip).toHaveBeenCalledTimes(3);
+      off();
+    } finally {
+      input.remove();
+    }
+  });
+
+  it('其他原版演出弹窗照旧：最短时间之后出现跳过钮，页面上的点击不跳过', async () => {
+    const p = open(news, 1000);
+    const onSkip = vi.fn();
+    const off = onPopupSkip(p.popupId, onSkip);
+    vi.useFakeTimers();
+    try {
+      render(<Host current={p} />);
+      fireEvent.pointerDown(document.body, { button: 0, pointerId: 5 });
+      fireEvent.pointerUp(document.body, { button: 0, pointerId: 5 });
+      expect(onSkip).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('popup-skip')).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(p.minMs + 1);
+      });
+      expect(screen.getByTestId('popup-skip')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+      off();
+    }
+  });
+
+  it('宿主登记判定（handler 的 opensClassic）与「正以原版画面显示」（toast 暂缓）', async () => {
+    expect(opensClassic(castSpec(6, 'cast'))).toBe(false);
+    await bindCardPack();
+    const p = open(castSpec(6, 'cast'));
+    const { unmount } = render(<Host current={p} />);
+    // 素材就绪：会用原版画面；没有原版画面的种类（魔法屋）不会
+    expect(opensClassic(castSpec(6, 'cast'))).toBe(true);
+    expect(opensClassic({ kind: 'magic', caster: player, title: '魔法', line: 'x', targets: [] })).toBe(false);
+    expect(usePopupStore.getState().classicShown).toEqual({ popupId: p.popupId, kind: 'cardCast' });
+    act(() => usePopupStore.getState().close(p.popupId));
+    expect(usePopupStore.getState().classicShown).toBeNull();
+    unmount();
+    // 宿主卸载后注销
+    expect(opensClassic(castSpec(6, 'cast'))).toBe(false);
+  });
+
+  it('亮卡时长：original 节奏按原版 1.5 秒，compact 1.2 秒', () => {
+    expect(CARD_SHOW_MS.original.castMs).toBe(1500);
+    expect(CARD_SHOW_MS.compact.castMs).toBe(1200);
+  });
+});
+
+describe('卡片插画预取（亮卡只停 1.2–1.5 秒，不能等弹窗出现才下载）', () => {
+  it('顺序：显示态里看得到的手牌在前（去重），其余按卡号；30 张一张不漏', () => {
+    const view = {
+      players: [
+        { seat: 0, cards: [17, 3, 17] },
+        { seat: 1, cards: null },
+        { seat: 2, cards: [30] },
+      ],
+    } as unknown as Parameters<typeof cardArtPrefetchOrder>[0];
+    const order = cardArtPrefetchOrder(view);
+    expect(order.slice(0, 3)).toEqual([17, 3, 30]);
+    expect([...order].sort((a, b) => a - b)).toEqual([...CARD_IDS]);
+    expect(cardArtPrefetchOrder(null)).toEqual([...CARD_IDS]);
+  });
+
+  it('逐张下载素材包里 card.<k> 的文件（同一张只下一次），同时最多 2 张', async () => {
+    const srcs: string[] = [];
+    let inflight = 0;
+    let peak = 0;
+    const priorities: string[] = [];
+    class FakeImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      decoding = 'auto';
+      set fetchPriority(v: string) {
+        priorities.push(v);
+      }
+      set src(v: string) {
+        srcs.push(v);
+        inflight++;
+        peak = Math.max(peak, inflight);
+        setTimeout(() => {
+          inflight--;
+          this.onload?.();
+        }, 1);
+      }
+      decode(): Promise<void> {
+        return Promise.resolve();
+      }
+    }
+    vi.stubGlobal('Image', FakeImage);
+    try {
+      await bindCardPack();
+      const order = cardArtPrefetchOrder(null);
+      await prefetchCardArt(order, () => true);
+      expect(srcs).toEqual(order.map((k) => `/pack/images/data/${529 + k}.png`));
+      expect(peak).toBeLessThanOrEqual(CARD_ART_PREFETCH_CONCURRENCY);
+      // 低优先级：不和棋盘、界面素材抢带宽
+      expect(new Set(priorities)).toEqual(new Set(['low']));
+      for (const k of CARD_IDS) expect(classicImagePreloadStarted(`card.${k}`)).toBe(true);
+      await prefetchCardArt(order, () => true);
+      expect(srcs).toHaveLength(30);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('宿主挂载后空闲时开始预取亮卡的消息框图集页与卡片插画（不等出卡）', async () => {
+    await bindCardPack();
+    render(<Host current={null} />);
+    await waitFor(() => expect(classicImagePreloadStarted('card.1')).toBe(true), { timeout: 3000 });
+    // ui.common 图集页（atlasPackClient 的页位图 = /pack/<键>.png）
+    await waitFor(() => expect(classicImagePreloadStarted('url:/pack/ui.common.png')).toBe(true));
+  });
+});
 
 describe('轮盘与月结（事件后演出）', () => {
   it('转盘种类：旅馆 / 购物中心看收费种类，航空 / 保险看行业；盘面停格与原版一致', () => {

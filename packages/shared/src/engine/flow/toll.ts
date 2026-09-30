@@ -116,7 +116,7 @@ export const TOLL: FrameHandler<TollFrame> = {
   resume(ctx, f, a, d) {
     const q = quoteOf(f);
     if (f.stage === 'free' && d.kind === 'USE_FREE_CARD') {
-      f.stage = resolveFreeCard(ctx, q.payer, a, 'toll') ? 'done' : 'scapegoat';
+      f.stage = resolveFreeCard(ctx, q.payer, a, 'toll', q.owner) ? 'done' : 'scapegoat';
       return;
     }
     if (f.stage === 'scapegoat' && d.kind === 'SCAPEGOAT') {

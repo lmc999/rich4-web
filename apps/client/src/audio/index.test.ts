@@ -20,6 +20,12 @@ describe('AudioSystem', () => {
     sys.port().cue?.({ cue: 'dice.roll', zzfx: 'dice', timed: true });
     expect(played).toHaveBeenCalledWith('zzfx.dice', { bus: 'sfx' });
     played.mockRestore();
+    // ctx.audio.voices：说出事件在开始时选好的 timed 台词（亮卡之后的卡片台词）
+    const timed = vi.spyOn(sys.director, 'speakTimed');
+    const used = { type: 'CARD_USED', seat: 0, card: 2, target: { t: 'none' } } as const;
+    sys.port().voices?.(used);
+    expect(timed).toHaveBeenCalledWith(used);
+    timed.mockRestore();
     await flushMicrotasks();
     expect(hooks.log.some((e) => e.op === 'missing' && e.key === 'zzfx.nope')).toBe(true);
     expect(hooks.music()?.mode).toBe('idle');
