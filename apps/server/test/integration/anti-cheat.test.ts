@@ -1,5 +1,5 @@
 import type { GameEvent, SeatIndex } from '@rich4/shared/engine';
-import type { GameView } from '@rich4/shared/view';
+import { findHandLeaks, type GameView } from '@rich4/shared/view';
 import { afterEach, describe, expect, it } from 'vitest';
 import { type BotClient, connectBot } from '../helpers/botClient';
 import { closeAll, FORBIDDEN_KEYS, findKeys, setupRoom, startGame } from '../helpers/scenario';
@@ -34,16 +34,25 @@ function assertHandsHidden(b: BotClient, own: SeatIndex | null): void {
   }
   expect(views.length).toBeGreaterThan(0);
   for (const v of views) {
+    expect(v.pools).toBeNull();
     for (const pl of v.players) {
-      if (pl.seat !== own) expect(pl.cards).toBeNull();
+      if (pl.seat !== own) {
+        expect(pl.cards).toBeNull();
+        expect(pl.items).toBeNull();
+      }
       expect(typeof pl.cardCount).toBe('number');
+      expect(typeof pl.itemCount).toBe('number');
     }
   }
   for (const e of events) {
-    for (const pp of e.post?.players ?? [])
+    for (const pp of e.post?.players ?? []) {
       if (pp.seat !== own && pp.set.cards !== undefined) expect(pp.set.cards).toBeNull();
+      if (pp.seat !== own && pp.set.items !== undefined) expect(pp.set.items).toBeNull();
+    }
     if ((e.type === 'CARD_GAINED' || e.type === 'CARD_LOST') && e.seat !== own) expect(e.card).toBeNull();
   }
+  // 深度扫描全部 S2C 消息：别人的卡号、道具号、牌堆张数不出现在任何未脱敏的位置
+  expect(b.received.flatMap((m) => findHandLeaks(m.payload, own).map((l) => `${m.event} ${l}`))).toEqual([]);
 }
 
 describe('integration/anti-cheat', () => {
@@ -155,7 +164,7 @@ describe('integration/anti-cheat', () => {
     if (srv.engineKind === 'stub') expect(tickets).toBeGreaterThan(0);
   }, 90_000);
 
-  it('私密模式：他人手牌、卡片事件与 post.cards 一律脱敏，本人可见', async () => {
+  it('私密模式：他人手牌与背包、卡片 / 道具事件与 post.cards / items、牌堆一律脱敏，本人可见', async () => {
     srv = await startTestServer({ rateLimitScale: 0 });
     const s = await setupRoom(srv.url, {
       humans: 3,

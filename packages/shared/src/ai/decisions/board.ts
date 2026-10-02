@@ -47,7 +47,8 @@ export function boardList(v: AiView, o: TurnMenuOptions, ctx: AiContext): Player
     return { type: 'BOARD_LIST', asset: { t: 'card', card }, price: cardDef(card).price * PRICE_X * v.pi };
   }
   const items: ItemId[] = [];
-  me.items.forEach((n, i) => {
+  // 自己的背包总是可见（私密手牌模式只隐藏别人的）；null 只是类型上的兜底
+  (me.items ?? []).forEach((n, i) => {
     if (i === 0 || n <= 0) return;
     const item = i as ItemId;
     const free = n - listed((a) => (a.t === 'item' && a.item === item ? a.qty : 0));

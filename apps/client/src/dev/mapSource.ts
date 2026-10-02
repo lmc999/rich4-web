@@ -1,9 +1,14 @@
-// 开发页的地图来源：fixture 直接从 shared 构造；台湾图走 GET /api/maps/taiwan（服务端 DataRegistry），
-// 开发服务器下失败时再试 /__dev/maps/taiwan（vite 中间件直读本机 rich4-data，见 vite.config.ts）。
+// 开发页的地图来源：fixture 直接从 shared 构造；原版四张图（台湾、大陆、日本、美国）走 GET /api/maps/<id>
+// （服务端 DataRegistry），开发服务器下失败时再试 /__dev/maps/<id>（vite 中间件直读本机 rich4-data，见 vite.config.ts）。
 import { buildTestMap, buildTestMapAllKinds, type MapDef, parseMapDef, validateMap } from '@rich4/shared/data';
 
-export const MAP_CHOICES = ['test', 'test-allkinds', 'taiwan'] as const;
+export const MAP_CHOICES = ['test', 'test-allkinds', 'taiwan', 'china', 'japan', 'usa'] as const;
 export type MapChoice = (typeof MAP_CHOICES)[number];
+
+/** 不需要本机数据包的 fixture 地图 */
+export function isFixtureChoice(id: MapChoice): boolean {
+  return id === 'test' || id === 'test-allkinds';
+}
 
 export interface LoadedMap {
   def: MapDef;

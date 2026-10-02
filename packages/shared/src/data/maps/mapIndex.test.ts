@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DataError } from '../errors';
-import { buildTestMap, buildTestMapAllKinds } from './fixtures/testMap';
+import { buildTestMap, buildTestMapAllKinds, buildTestMapIndustries } from './fixtures/testMap';
 import { buildMapIndex } from './mapIndex';
 import type { MapDef } from './types';
 
@@ -171,6 +171,33 @@ describe('MapIndex 其余查询', () => {
       expect(ix.jailHold).toBe(14);
       expect(ix.hospitalHold).toBe(15);
     }
+  });
+
+  it('关押结构（原版另外 3 张图）：环路式关押格 = 保释格；台湾式关押格在封死支线尽头', () => {
+    const ix = buildMapIndex(buildTestMapIndustries());
+    // 环路式医院：同大陆 63、日本 55、美国 85（美国监狱 118 也是）
+    expect(ix.hospitalGate).toBe(20);
+    expect(ix.hospitalHold).toBe(20);
+    expect(ix.forwardCandidates(20, 19)).toEqual([21]);
+    expect(ix.forwardCandidates(20, 21)).toEqual([19]);
+    // 台湾式监狱：同台湾 12/1、大陆 28/144、日本 78/84；保释格进支线的方向被封，从支线出来可以回到保释格
+    expect(ix.jailGate).toBe(16);
+    expect(ix.jailHold).toBe(26);
+    expect(ix.jailGate).not.toBe(ix.jailHold);
+    for (const prev of [0, 15, 17]) expect(ix.forwardCandidates(16, prev)).not.toContain(25);
+    expect(ix.forwardCandidates(25, 26)).toEqual([16]);
+    expect(ix.forwardCandidates(26, 25)).toEqual([]);
+  });
+
+  it('placeableTiles 对两种关押结构（⚑V-M7 待核实：原版可能只看 bit31，锁定现状）', () => {
+    const p = buildMapIndex(buildTestMapIndustries()).placeableTiles();
+    // 关押格（holdFor）一律排除：环路上的医院 20 因此不能放物件、不作跳伞落点；支线尽头 26 另有 noItems
+    expect(p).not.toContain(20);
+    expect(p).not.toContain(26);
+    // 保释格 16 与支线 25 没有 holdFor / noItems，照常可放（台湾同样如此）
+    expect(p).toContain(16);
+    expect(p).toContain(25);
+    expect(p).toEqual(Array.from({ length: 26 }, (_, i) => i + 1).filter((t) => t !== 20 && t !== 26));
   });
 
   it('placeableTiles 排除 noItems 与关押格', () => {

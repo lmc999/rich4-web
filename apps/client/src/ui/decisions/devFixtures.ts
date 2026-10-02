@@ -99,6 +99,7 @@ function demoPlayer(seat: SeatIndex, stockCount: number): PlayerView {
     cards,
     cardCount: cards.length,
     items,
+    itemCount: items.reduce((a, b) => a + b, 0),
     holdings: Array.from({ length: stockCount }, (_, i) => {
       const shares = (i + seat) % 3 === 0 ? Math.trunc(rnd() * 20 + 1) * 100 : 0;
       return { shares, costCents: shares * Math.trunc(4000 + rnd() * 6000) };
@@ -440,13 +441,14 @@ export function demoOptions(view: GameView, seat: SeatIndex = 0): { [K in Decisi
         { idx: 6, card: CARD.HIBERNATE, price: 100, buyable: false },
       ],
       fullDeck: false,
+      // 一次买 1 个（maxQty 0 / 1）；地雷进店时就卖完了（不上架）；路障本次已买过（置灰）
       items: [
-        { item: ITEM.ROBOT_DOLL, price: 15, pool: 8, own: 0, maxQty: 9 },
-        { item: ITEM.ROADBLOCK, price: 30, pool: 6, own: 2, maxQty: 6 },
-        { item: ITEM.MINE, price: 25, pool: 0, own: 0, maxQty: 0 },
-        { item: ITEM.MOTORCYCLE, price: 80, pool: 10, own: 0, maxQty: 4 },
-        { item: ITEM.CAR, price: 150, pool: 9, own: 0, maxQty: 2 },
-        { item: ITEM.MISSILE, price: 100, pool: 10, own: 0, maxQty: 3 },
+        { item: ITEM.ROBOT_DOLL, price: 15, pool: 8, own: 0, maxQty: 1, listed: true, bought: false },
+        { item: ITEM.ROADBLOCK, price: 30, pool: 6, own: 2, maxQty: 0, listed: true, bought: true },
+        { item: ITEM.MINE, price: 25, pool: 0, own: 0, maxQty: 0, listed: false, bought: false },
+        { item: ITEM.MOTORCYCLE, price: 80, pool: 10, own: 0, maxQty: 1, listed: true, bought: false },
+        { item: ITEM.CAR, price: 150, pool: 9, own: 0, maxQty: p.points >= 150 ? 1 : 0, listed: true, bought: false },
+        { item: ITEM.MISSILE, price: 100, pool: 10, own: 0, maxQty: 1, listed: true, bought: false },
       ],
       sell: {
         cards: (p.cards ?? []).map((card, slot) => ({ slot, card, value: Math.trunc((cardDef(card).price * 9) / 10) })),
@@ -455,7 +457,11 @@ export function demoOptions(view: GameView, seat: SeatIndex = 0): { [K in Decisi
           { item: ITEM.REMOTE_DICE, count: 1, unitValue: 27 },
         ],
       },
-      visit: { entryPoints: p.points, trades: [], remaining: 60 },
+      visit: {
+        entryPoints: p.points + 30,
+        trades: [{ op: 'buyItem', card: null, item: ITEM.ROADBLOCK, qty: 1, points: 30 }],
+        remaining: 59,
+      },
     },
     LOTTERY: { cash: p.cash, price: 1000, sold: view.lottery.owners.slice(), pool: view.econ.pool },
     BAIL: {

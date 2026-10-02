@@ -1,5 +1,6 @@
 // 右下日历区（Panel#2，贴 (440,280) 200×200）：太阳钮 = 日历（四季风景 + 大字日期）、月亮钮 = 月历（淡化风景 +
-// S M T W T F S + 整月日期，今天加框）；节日当天换成节日插画（台湾图 Data#4–27），节日过去回到原来的模式；
+// S M T W T F S + 整月日期，今天加框）；节日当天换成节日插画（按原版地图号取，台湾 Data#4–27、大陆 #28–46、日本 #47–65、
+// 美国 #67–86，见 assets.holidayArtKey），节日过去回到原来的模式；
 // 右上角切换到缩小地图（地块主人色、玩家点、视口框；点选平移镜头；下方两颗旋转钮 Data#476 图18–21）。
 // 日期、星期、节日名都用 DOM 文字（原版为 GDI 文字）；坐标按月历页图目视取值。
 import type { MapIndex } from '@rich4/shared/data';
@@ -155,7 +156,7 @@ export function CalendarPanel({
   const mapId = view.dataRef.mapId;
   const holiday = clock.holiday;
   const holidayText = holiday ? holidayName(t, mapId, holiday) : null;
-  const artKey = holidayArtKey(mapId, holiday);
+  const artKey = holidayArtKey(map?.def.globalMapId ?? null, holiday);
   const holidayImg = useClassicAssets((s) => (artKey ? (s.images[artKey] ?? null) : null));
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: 换了素材包（packId）要重新取插画 URL

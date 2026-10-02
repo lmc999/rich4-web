@@ -8,7 +8,8 @@
  *   逻辑键、分组、帧数结构与原版包相同，客户端代码无需区分；
  * - 每张 fixture 地图：住宅 5 级、景观、企业精灵与 MapSkinV1（投影用我们自己的参数化，绑定 fixture 身份 resourceSha256=null）；
  * - 经典外壳 UI（./syntheticUi）：工具列、资料栏、日历、GO 钮与命中掩膜、骰子面、共享 UI、头像、滚骰 FLC，
- *   E2E 用它走原版 UI 精灵路径（帧号、锚点、掩膜区号语义与原版包一致）。
+ *   E2E 用它走原版 UI 精灵路径（帧号、锚点、掩膜区号语义与原版包一致）；另有四张原版地图的开局设置背景
+ *  （title.setup.bg[.<china|japan|usa>]，选关切换背景用）与各图首末 slot 的节日插画占位。不含 video.fly*。
  *
  * 合成包的 JSON 带素材包 schema，会被 check-no-original 按 schema 拦截，所以**不入库**：
  * 由 `rich4-extract assets synth [--out .cache/synthetic-pack]` 在 CI / 测试时现场生成（输出目录同样必须已被忽略或在仓库外）。

@@ -6,7 +6,7 @@
 // | 素材包加载中 / 404 / 非 JSON / 校验失败 / 网络 | procedural  | procedural（pack-*）        |
 // | manifest 401                                 | procedural  | procedural（access-required，另弹门禁页） |
 // | 素材包正常，不在对局中                       | original    | —                           |
-// | 素材包正常，地图缺失 / 绑定不匹配 / 分组缺失 | auto：procedural；original：original | procedural（map-* / group-missing） |
+// | 素材包正常，地图缺失 / 绑定不匹配 / 分组缺失（地图组或共用棋盘组） | auto：procedural；original：original | procedural（map-* / group-missing） |
 // | 素材包不含棋盘（features.board=false）       | 同上        | procedural（no-board）      |
 // | 全部匹配，但原版棋盘渲染器未注册 / 创建失败  | original    | procedural（renderer-*）    |
 // | 全部匹配                                     | original    | original                    |
@@ -14,6 +14,22 @@
 // 条目级回退（usableEntry）：条目不存在、所属组缺失或加载失败、置信度 guess → null（调用方走程序化）。
 import type { AssetEntry, PackManifestV1 } from '@rich4/shared/assets';
 import type { MapCheck, PackState, SkinPref, SkinReason, SkinResolution } from './types';
+
+/**
+ * 多张地图共用的棋盘组：企业 / 景观精灵里不止一张图引用的那几个（素材目录 SHARED_LANDMARKS：75、80、82、84、87、132、144）
+ * 放在 board.landmarks，地图组 map.<id> 只放该图独有的。对局时与当前地图组一起预取（不预取其他地图的组）；
+ * 素材包里有这个组而它加载失败，与地图组失败同样回退程序化棋盘。旧素材包没有这个组（共用精灵还在 map.taiwan）时不理会
+ */
+export const SHARED_BOARD_GROUPS: readonly string[] = ['board.landmarks'];
+
+/** 当前地图要预取的组：地图自己的组 + 素材包里有的共用棋盘组 */
+export function mapWarmGroups(manifest: Pick<PackManifestV1, 'groups'> | null, mapGroup: string): string[] {
+  const out = [mapGroup];
+  for (const g of SHARED_BOARD_GROUPS) {
+    if (manifest && Object.hasOwn(manifest.groups, g) && !out.includes(g)) out.push(g);
+  }
+  return out;
+}
 
 export interface ResolveInput {
   pref: SkinPref;
@@ -73,7 +89,7 @@ export function resolveSkin(i: ResolveInput): SkinResolution {
   let mapReason: SkinReason | null = i.map.status === 'ok' ? null : MAP_REASON[i.map.status];
   if (mapReason === null && i.map.group !== null && i.failedGroups) {
     for (const g of i.failedGroups) {
-      if (g === i.map.group) mapReason = 'group-missing';
+      if (g === i.map.group || SHARED_BOARD_GROUPS.includes(g)) mapReason = 'group-missing';
     }
   }
   if (mapReason) {

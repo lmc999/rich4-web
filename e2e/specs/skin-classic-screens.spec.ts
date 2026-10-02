@@ -5,7 +5,9 @@
 // 1) 桌面 1920×1080、4 个真人：标题（悬停换放大帧；没有片头条目时不播片头）→ START 开局设置（竖栏 6 个下拉 + 联机设置）
 //    → 建房 → 选人大厅（头像格、走动预览、邀请链接、座位牌）→ 3 人加入并选角 → 准备 → 房主 OK 开局 → 经典对局页；
 // 2) 片头：manifest 带 video.start 时首次进入播放、可跳过、看过不再自动播放、设置里可重播（视频请求挂起，只测跳过）；
-// 3) 手机横屏 844×390：标题、开局设置、选人大厅的交互控件热区 ≥44×44 CSS 像素；对局页工具列收成「更多」、每个钮与
+// 2b) 选关：拦截 GET /api/maps 返回四张原版图（E2E 服务器没有原版数据包），manifest 补上 jump#1–3 的背景条目（借用合成包
+//    jump#0 的图）：关卡行按目录可点 / 变暗、缺省选中 defaultMap、竖栏与打勾位置按 exe、点选改地图与背景 jump#gm（不以新图建房）；
+// 3) 手机横屏 844×390：标题、开局设置、选人大厅的交互控件热区 ≥44×44 CSS 像素（关卡行不到 44、只读，用地图下拉）；对局页工具列收成「更多」、每个钮与
 //    菜单项 ≥44×44，太阳 / 月亮钮 ≥44×44；页面不横向滚动。
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -272,6 +274,88 @@ test('片头：首次进入播放、可跳过；看过不再自动播放；设�
   }
 });
 
+test('选关：关卡行按地图目录可点 / 变暗；点选改地图、打勾（exe 0x46ab2c）、背景换 jump#gm', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const bg = manifest.entries['title.setup.bg']!;
+  const { packId: _omit, ...rest } = manifest;
+  const withBgs = withPackId({
+    ...rest,
+    entries: {
+      ...rest.entries,
+      'title.setup.bg.china': { ...bg },
+      'title.setup.bg.japan': { ...bg },
+      'title.setup.bg.usa': { ...bg },
+    },
+  } as Omit<PackManifestV1, 'packId'>);
+  const p = await classicPlayer(browser, '选关', { width: 1280, height: 800 }, { body: () => withBgs });
+  try {
+    const page = p.page;
+    // 服务器地图目录：四张原版图，美国不可开局；缺省大陆
+    await page.route('**/api/maps', (route) =>
+      route.request().method() === 'GET'
+        ? route.fulfill({
+            json: {
+              defaultMap: 'china',
+              maps: [
+                { id: 'taiwan', mapHash: 'a'.repeat(64), playable: true },
+                { id: 'china', mapHash: 'b'.repeat(64), playable: true },
+                { id: 'japan', mapHash: 'c'.repeat(64), playable: true },
+                { id: 'usa', mapHash: 'd'.repeat(64), playable: false },
+                { id: 'test', mapHash: 'e'.repeat(64), playable: true, fixture: true },
+              ],
+            },
+          })
+        : route.fallback(),
+    );
+    await expectTitle(page);
+    await page.getByTestId('home-create').click();
+    const stage = (k: number) => page.getByTestId(`setup-stage-${k}`);
+    await expect(page.getByTestId('set-map')).toHaveValue('china');
+    await expect(stage(1)).toHaveAttribute('data-selected', 'true');
+    await expect(page.getByTestId('setup-bg')).toHaveAttribute('data-image', 'title.setup.bg.china');
+    for (const k of [0, 1, 2]) await expect(stage(k)).toBeEnabled();
+    await expect(stage(3)).toHaveAttribute('data-available', 'false');
+    await expect(stage(3)).toBeDisabled();
+
+    // 打勾（jump#4 图8）画在竖栏内 (150, 20+32k)；竖栏按 exe 贴在 (445,10)（0x404f71），即舞台 (595, 30+32k)
+    const checkAt = async (k: number): Promise<{ x: number; y: number }> => {
+      const st = (await page.getByTestId('classic-stage-inner').boundingBox())!;
+      const scale = st.width / 640;
+      const cb = (await stage(k).locator('[data-sprite="title.setup.ui/8"]').boundingBox())!;
+      return { x: Math.round((cb.x - st.x) / scale), y: Math.round((cb.y - st.y) / scale) };
+    };
+    expect(await checkAt(1)).toEqual({ x: 595, y: 62 });
+    // 关卡行的点击区与竖栏图对齐：舞台 (457, 31+32k)–(625, 62+32k)（exe 0x46aac4 第 9–12 项）
+    const st0 = (await page.getByTestId('classic-stage-inner').boundingBox())!;
+    const col = (await page.getByTestId('setup-column').boundingBox())!;
+    const row = (await stage(1).boundingBox())!;
+    const sc = st0.width / 640;
+    expect(Math.round((col.x - st0.x) / sc)).toBe(445);
+    expect(Math.round((row.x - st0.x) / sc)).toBe(457);
+    expect(Math.round((row.y - st0.y) / sc)).toBe(63);
+
+    // 点关卡三（日本）：地图下拉、打勾、背景一起变
+    await stage(2).click();
+    await expect(page.getByTestId('set-map')).toHaveValue('japan');
+    await expect(stage(2)).toHaveAttribute('data-selected', 'true');
+    await expect(stage(1)).toHaveAttribute('data-selected', 'false');
+    await expect(page.getByTestId('setup-bg')).toHaveAttribute('data-image', 'title.setup.bg.japan');
+    expect(await checkAt(2)).toEqual({ x: 595, y: 94 });
+    // 关卡一（台湾）：jump#0
+    await stage(0).click();
+    await expect(page.getByTestId('set-map')).toHaveValue('taiwan');
+    await expect(page.getByTestId('setup-bg')).toHaveAttribute('data-image', 'title.setup.bg');
+    // 不可开局的美国点不动
+    await stage(3).click({ force: true });
+    await expect(page.getByTestId('set-map')).toHaveValue('taiwan');
+    // 原版这一屏没有关卡横幅
+    await expect(page.getByTestId('setup-banner')).toHaveCount(0);
+    expect(p.errors.filter((e) => !e.includes('favicon'))).toEqual([]);
+  } finally {
+    await p.context.close();
+  }
+});
+
 test('手机横屏 844×390：标题、开局设置、选人大厅与对局工具列的触控热区 ≥44px', async ({ browser }) => {
   test.setTimeout(180_000);
   const p = await classicPlayer(browser, '手机', { width: 844, height: 390 });
@@ -296,12 +380,20 @@ test('手机横屏 844×390：标题、开局设置、选人大厅与对局工�
       'set-ai-count',
       'set-spectators',
     ]);
+    // 关卡行 32 高、四行紧挨（手机横屏约 25 CSS 像素）：只读，不是按钮；选图走两列面板里的地图下拉（set-map）
+    for (const k of [0, 1, 2, 3]) {
+      expect(await page.getByTestId(`setup-stage-${k}`).evaluate((e) => e.tagName), `setup-stage-${k}`).toBe('DIV');
+    }
     await page.getByTestId('create-cancel').click();
     await expectTitle(page);
 
     await createRoom(page, { map: 'test', timer: 'off', aiCount: 1 });
     await expect(page.getByTestId('screen-room')).toHaveAttribute('data-screen', 'select');
     await expectHit(page, ['char-0', 'char-11', 'char-prev', 'char-next', 'char-select', 'room-start', 'room-leave']);
+    // 房主的关卡行同样只读（改地图走左抽屉「房间设置」的地图下拉）
+    for (const k of [0, 1, 2, 3]) {
+      expect(await page.getByTestId(`setup-stage-${k}`).evaluate((e) => e.tagName), `setup-stage-${k}`).toBe('DIV');
+    }
     // 左抽屉：座位与房间设置（抽屉里的控件同样 ≥44）
     await page.getByTestId('classic-drawer-left-btn').click();
     const left = page.getByTestId('classic-rail-left');

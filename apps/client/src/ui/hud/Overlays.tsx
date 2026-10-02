@@ -1,12 +1,13 @@
 // HUD 叠层：回合横幅、骰子、toast、暂停条（design/client.md §4.5、§5.1）
 import type { RoomView } from '@rich4/shared/net';
 import clsx from 'clsx';
-import { type ReactNode, useEffect } from 'react';
+import { type CSSProperties, type ReactNode, useEffect } from 'react';
 import { useClient } from '../../app/services';
 import { useTx } from '../../i18n/tx';
 import { type Toast, useUiStore } from '../../store/uiStore';
 import { usePopupStore } from '../popups/popupStore';
 import h from './hud.module.css';
+import { type ToastSlot, useToastSlot } from './toastSlot';
 
 const FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'] as const;
 
@@ -90,17 +91,33 @@ function ToastItem({ toast: x }: { toast: Toast }): ReactNode {
   );
 }
 
+/** 排在登记的空位里：top 排法列表只有内容那么高（最高 h），bottom 排法列表占满空位、内容贴底 */
+function slotStyle(slot: ToastSlot): CSSProperties {
+  const base = { left: slot.x, top: slot.y, width: slot.w };
+  return slot.align === 'top' ? { ...base, maxHeight: slot.h } : { ...base, height: slot.h };
+}
+
 /**
- * toast 列表。原版皮肤亮卡（ui/classic/popups/CardCast，消息框在棋盘视窗上部 (123,48)–(318,181)）期间暂缓显示：
- * toast 固定大小、画在页面上部正中，手机横屏下舞台缩小时正好压住消息框里出卡人那一行；原版亮卡时画面静止、
- * 没有别的提示。暂缓的 toast 仍在队列里，亮卡结束后重新出现并从那时起计时。
+ * toast 列表。缺省画在页面上部正中（固定 CSS 像素大小）；原版皮肤的对局画面在舞台缩小（手机横屏）时由经典舞台登记
+ * 棋盘视窗以外的空位（./toastSlot、ui/classic/layout 的 classicToastSlot），改排在那里——缺省位置在手机上正好叠在
+ * 棋盘视窗上部，压住原版亮卡、神明弹窗的消息框。
+ * 在缺省位置时，原版亮卡（ui/classic/popups/CardCast，消息框在棋盘视窗上部 (123,48)–(318,181)）期间暂缓显示：
+ * 两条以上的 toast 会压到消息框，原版亮卡时画面静止、也没有别的提示。暂缓的 toast 仍在队列里，亮卡结束后重新出现并
+ * 从那时起计时。排在空位里时不暂缓（碰不到消息框，暂缓只会让已经出现的 toast 闪没再出现）。
  */
 export function Toasts(): ReactNode {
   const toasts = useUiStore((s) => s.toasts);
-  const held = usePopupStore((s) => s.classicShown?.kind === 'cardCast');
-  if (toasts.length === 0 || held) return null;
+  const slot = useToastSlot((s) => s.slot);
+  const casting = usePopupStore((s) => s.classicShown?.kind === 'cardCast');
+  if (toasts.length === 0 || (casting && !slot)) return null;
   return (
-    <ul className={h.toasts} aria-live="polite" data-testid="toasts">
+    <ul
+      className={clsx(h.toasts, slot && h.toastsSlot)}
+      style={slot ? slotStyle(slot) : undefined}
+      aria-live="polite"
+      data-testid="toasts"
+      data-place={slot?.place ?? 'page'}
+    >
       {toasts.map((x) => (
         <ToastItem key={x.id} toast={x} />
       ))}

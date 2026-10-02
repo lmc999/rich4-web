@@ -17,6 +17,11 @@
     "unmute": "打开声音",
     "replay": "重播片头"
   },
+  "fly": {
+    "label": "飞行动画",
+    "skip": "跳过动画",
+    "skipTurn": "轮到你了：跳过动画"
+  },
   "options": {
     "title": "设置",
     "system": "系统设置",
@@ -30,7 +35,7 @@
     "exit": "返回标题画面",
     "aiCount": "电脑人数",
     "stage": "关卡：{{name}}",
-    "stageNone": "（本服务器没有这张地图）",
+    "stageNone": "关卡：{{name}}（本服务器没有这张地图）",
     "values": "对局设置"
   },
   "lobby": {

@@ -14,6 +14,7 @@
     "handFull": "手牌已满",
     "itemFull": "这个道具已经拿满了",
     "poolEmpty": "已经卖完了",
+    "boughtThisVisit": "这次进店已经买过了",
     "noAnchor": "还没有可以回去的时间点",
     "humanOnly": "只有真人玩家能用",
     "alreadyEquipped": "已经装备了",
@@ -36,6 +37,12 @@
     "moto": "机车",
     "car": "汽车",
     "engineer": "工程车"
+  },
+  "stow": {
+    "label": "收起{{name}}",
+    "button": "收起{{name}}，改为步行",
+    "desc": "改回步行，只掷 1 颗骰子。{{name}}放回道具栏，之后可以再用道具装上。",
+    "log": "{{who}} 收起{{name}}，改为步行"
   },
   "object": {
     "roadblock": "路障",

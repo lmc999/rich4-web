@@ -83,7 +83,8 @@ rich4/
 ├─ rich4-data/                        # gitignore：部署用数据包（extract pack 生成，compose 只读挂载）
 ├─ docs/research/
 │  ├─ version-diff.md                 # 入库：v2.06 与 v3.11 的差异报告（事实与哈希，不贴整段反汇编）
-│  └─ provenance-summary.md           # 入库：样本校验、表核对结论、输入指纹（不含整图数据）
+│  ├─ provenance-summary.md           # 入库：台湾的样本校验、表核对结论、输入指纹（不含整图数据）
+│  └─ provenance-{china,japan,usa}.md # 入库：另外三张图的同款摘要（map build 按图生成）
 ├─ scripts/check-no-original.ts       # CI 守卫：禁止原版文件和派生原始数据入库
 ├─ tools/extract/                     # workspace 包 @rich4/extract（private，任何 app 不得依赖）
 │  ├─ package.json                    # bin: rich4-extract；deps: @rich4/shared(workspace)；dev: opencc-js@1.4.2、fast-check@4
@@ -96,7 +97,7 @@ rich4/
 │  │  └─ constants.json               # 规则常量锚点：规则 id → v3.11 指令位置 → 期望值
 │  ├─ maps/
 │  │  ├─ overrides.schema.json        # 由 zod schema 导出
-│  │  └─ taiwan.overrides.json        # 入库：只含我们的几何决定和引用编号，不含原版数值
+│  │  └─ {taiwan,china,japan,usa}.overrides.json   # 入库：只含我们的几何决定和引用编号，不含原版数值
 │  ├─ src/
 │  │  ├─ cli.ts                       # 子命令分发（node:util parseArgs）
 │  │  ├─ context.ts                   # 路径解析、只读守卫（拒绝写入 --src 之下）、日志、退出码
@@ -148,16 +149,21 @@ rich4/
 npm run extract -- fingerprint [--src original/] [--allow-unknown]
 npm run extract -- mkf ls --file original/Game/map.mkf [--json]
 npm run extract -- mkf selftest [--src original/] [--file …/Data.mkf]     # 全量解码，只校验不落盘
-npm run extract -- map raw   --map 0 [--sources auto|all] [--dump-bin]     # → .cache/extract/raw/
-npm run extract -- map diff  --map 0                                       # → .cache/extract/diff/map0.json
+npm run extract -- map raw   --map <gm> [--sources auto|all] [--dump-bin]  # gm 0..3 → .cache/extract/raw/<source>/map<gm>.raw.json
+npm run extract -- map diff  --map <gm>                                    # → .cache/extract/diff/map<gm>.json
 npm run extract -- exe tables [--edition v206|v311|all]                    # → .cache/extract/tables.<ed>.json
 npm run extract -- exe diff  [--r2] [--r2-timeout 120]                     # → docs/research/version-diff.md
-npm run extract -- map build --map taiwan [--overrides tools/extract/maps/taiwan.overrides.json] [--strict4] [--preview]
-npm run extract -- verify                                                  # 手录规则表与提取值、样本 → provenance
-npm run extract -- pack --out rich4-data/                                  # 部署数据包（只含 MapDef 与 manifest）
+npm run extract -- map build --map taiwan|china|japan|usa|all [--overrides tools/extract/maps/<key>.overrides.json] [--strict4] [--preview]
+                                                                           # --map 也接受 gm 0..3；all 时逐图构建（不能同时给 --overrides）
+npm run extract -- verify [--samples --map 0..3]                           # 手录规则表与提取值、按图样本 → provenance
+npm run extract -- pack --out rich4-data/ [--map <key>|all] [--replace]    # 部署数据包（只含 MapDef 与 manifest；与已有 manifest 合并）
 npm run extract -- fixture                                                 # 重新生成 fixtures/*.json（不需要原版文件）
-npm run extract -- all                                                     # 以上全部，任何一步失败即停
+npm run extract -- all        # map raw（gm 0–3，--sources all）→ map diff 0–3 → exe tables → map build --map all --strict4 --preview
 ```
+`all` 任何一步失败即停，退出码取各步最大值；它**不自动 pack**，数据包由用户确认后再运行 `pack`。map diff 的 exit 4（规则相关差异）只放行已知清单 `ACCEPTED_RULE_DIFFS`（`tools/extract/src/map/rawDiff.ts`）：某图的规则差异键（`<表>#<记录号>.<字段>`）的集合**正好等于**清单，且该图 overrides 的 `source.id` 是清单的基线时才视为已处理。清单只有大陆 `companies#4.name` 与日本 `lands#17.rent` 两项，基线都是 `v206-mapdat`（见 §10.1）；台湾、美国或清单之外冒出的任何规则差异都按 exit 4 停下，要用户重新裁决。
+
+`pack` 与 `<out>/manifest.json` 已有的条目**合并**：只替换或新增本次打包的图，其余图的条目与地图文件原样保留（保留前核对 `<out>` 里的地图文件仍在、sha256 与条目相符，否则 `E_PACK_MERGE`）；`--replace` 才整份按本次的图重写 manifest（被去掉的图的地图文件留在原处，不删）。所以只重建了一张图时，`pack --map china` 不会把台湾、日本、美国从 manifest 里去掉。不带 `--map` 时只打 `MAP_KEYS`（taiwan 0、china 1、japan 2、usa 3）里、并且最近一次 `map build` 报告（`.cache/extract/maps/<key>.build.json` 的 `exit`）为 0 的图，其余打警告后跳过，免得半成品图进 `rich4-data/`；但**要跳过的图已在 `<out>/manifest.json` 里时报错**（`E_PACK_DROP`，exit 1，什么都不写），否则已部署的房间与存档会 `MAP_UNAVAILABLE`：先修好那张图重新 `map build`，或只用 `--map <key>` 更新其他图，确实要去掉再加 `--replace`。显式 `--map` 时这些条件不满足就报错。所有核对都在写任何文件之前做完，失败时 `<out>` 不变。
+
 通用参数：`--src`（默认 `original/`）、`--out`（默认 `packages/shared/src/data/extracted`）、`--cache`（默认 `.cache/extract`）、`--json`（机器可读输出）、`--dry-run`、`--verbose`。
 
 退出码：0 成功；1 校验失败；2 缺少输入；3 指纹未知；4 发现版本差异但没有 `--accept-diff`；5 需要 override（几何无解）。
@@ -167,12 +173,12 @@ npm run extract -- all                                                     # 以
 | fingerprint | original/ | `.cache/extract/manifest.json`、`fingerprints.lock.json` | 必需文件齐全；sha256 已知（或已允许未知）；PE 头合法；没有 `.bind` 这类壳节（有则告警 SteamStub） |
 | mkf ls/selftest | *.mkf | 资源清单（下标、偏移、两个大小、签名 SPR/SMP/GND/无） | §4.2 的容器不变量；每个压缩资源解码后长度 = 头部原始大小；终止条件干净；Data.mkf 的 sha1 匹配时比对 mytbk golden |
 | map raw | MapDat/map.mkf | `raw/<source>/map0.raw.json`（加 `--dump-bin` 另存 .bin） | §5.4 的结构不变量全部成立 |
-| map diff | 多个 raw | `diff/map0.json` | 规则相关字段不同时 exit 4 |
+| map diff | 多个 raw | `diff/map<gm>.json` | 规则相关字段不同时 exit 4 |
 | exe tables | 两个 exe | `tables.v206.json`、`tables.v311.json` | 每张表唯一定位且结构校验通过 |
 | exe diff | 两个 exe 和 tables | `version-diff.md` 及同名 `.json` | 种子配对率不低于 95%；未配对的列出 |
-| map build | raw、semantic、overrides | `extracted/maps/taiwan.map.json`、`extracted/manifest.json`、`provenance/taiwan.provenance.json`，外加 `.cache/extract/preview/taiwan.svg` | `validateMap` 无 error；样本全过；重复生成字节一致 |
-| verify | rules/*.ts 和 tables | `docs/research/provenance-summary.md` | 手录值与**选定基线版本**的提取值一致 |
-| pack | extracted/ | `rich4-data/{manifest.json,maps/*.json}` | dataHash 复算一致 |
+| map build | raw、semantic、overrides、exe 表 | `.cache/extract/maps/<key>.{map,semantic,build}.json`、provenance（台湾 `docs/research/provenance-summary.md`，其他图 `provenance-<key>.md`），`--preview` 另写 `.cache/extract/preview/<key>.svg` | `validateMap` 无 error；基线来源的样本全过；企业↔股票核对没有 BAD（KNOWN 为已登记的原版名称不一致）；重复生成字节一致 |
+| verify | rules/*.ts 和 tables；`--samples --map <gm>` 三个来源的 raw | `.cache/extract/verify/samples.map<gm>.json` | 手录值与**选定基线版本**的提取值一致；该图样本在所有来源上都通过（已知的来源差异按来源给期望） |
+| pack | `.cache/extract/maps/` | `rich4-data/{manifest.json,maps/*.json}` | 最近一次 build 为 exit 0；dataHash 复算一致 |
 
 输出规范：JSON 键名排序、2 空格缩进、LF、文件末尾有换行；**数据文件里没有时间戳**（`generatedAt` 只写进报告），所以相同输入产出的字节必定相同。
 
@@ -499,7 +505,10 @@ cell(p) = round((p - o) / T)，再经 transform（identity/rot90/rot180/rot270/f
    cost(i,c) = 10·manhattan(c, want_i) + facingPenalty(i,c) + ε·order(c)
    facingPenalty：先在「want_i 本身就与前沿格相邻」的样本上统计 facing→方向 的映射，
                   若映射一致性 ≥ 90% 则启用（方向不符罚 3）；否则为 0，并在报告里给出统计
-   用匈牙利算法求最小总代价（地块数 ≤ 73，秒级以内）；有地块的候选为空时报 E_LOT_NO_CELL
+   用匈牙利算法求最小总代价（地块数 ≤ 73，秒级以内）
+   放宽只针对拥挤的地块：严格候选为空的地块直接放宽为全部空闲 N4；严格指派不可行时（I_LANDS_RELAXED）
+   逐轮只放宽没分到格的地块，它们已放宽仍无解时再放宽与之争格的地块，最后才全部放宽；仍无解报 E_LOT_NO_CELL。
+   I_LAND_FAR 只列最终落点距期望格超过 2 的地块（台湾不走放宽分支）
    ```
 7. **风景地标**（阿里山、佛光山等）：默认 2×2，从世界坐标出发螺旋搜索空闲矩形，找不到就降为 1×1。`kind` 按名称关键词加 override 决定，风景统一为 `scenery`。
 8. **可选紧凑**（`compact.ts`，由 override 的 `compact` 开启）：删除没有任何元素、也没有任何边或矩形跨越的整行、整列，保持所有相邻关系不变。
@@ -599,7 +608,12 @@ export interface MapCounts { nodes: number; lands: number; facilities: number; c
 
 ## 10. 校验样本与 provenance
 
-### 10.1 台湾样本（`verify/samples.ts`；出处见 @source）
+### 10.1 按图样本（`verify/samples.ts` 的 `MAP_SAMPLES`；出处见 @source）
+
+样本由规格驱动：`runMapSamples(raw, spec)`，台湾的 `runTaiwanSamples` 是它的包装（`samples.map0.json` 与泛化前逐字节相同）。`map build` 对基线来源的样本失败即 exit 1；`verify --samples --map <gm>` 要求三个来源都通过。
+
+**台湾（gm 0）**
+
 | 样本 | 期望 | 出处 |
 |---|---|---|
 | 计数 | nodes 103 / lands 50 / facilities 4 / companies 3 / landscapes 21 | rich4-spec map-format §6.2；nurockplayer fidelity.md（两个版本目录都是这个数） |
@@ -614,9 +628,32 @@ export interface MapCounts { nodes: number; lands: number; facilities: number; c
 | 角色表 | 现金比例 50,40,70,60,40,70,50,40,60,50,55,80 | nurockplayer calendar-and-setup.md；mytbk |
 | 卡片 / 道具 | 与 `rules/cards.ts`、`rules/tools.ts` 的手录值一致，初始张数之和为 100 | mytbk card/tool table；r_references |
 
+**大陆 / 日本 / 美国（gm 1–3）的基线**：三张图都取 `v206-mapdat`（MapDat.MKF[gm]）。v2.06 exe 先读 MapDat.MKF[gm]、失败才回退 map.mkf[gm*2+1]（§5.1），并且这两张图的规则差异里 MapDat 都与 v3.11 一致：
+
+| 图 | map diff 的规则相关差异 | 取值 | 备注 |
+|---|---|---|---|
+| 大陆 | companies#4 名称：MapDat 与 v3.11「王井府百貨」，v2.06 map.mkf「玉井府百貨」 | 王井府百貨 | 股票表 0x47ce92+432 下标 2 为「王府井百貨」；企业↔股票核对登记为 KNOWN（`exe/mapData.ts` 的 `KNOWN_NAME_MISMATCHES`），不改原版数据（§7） |
+| 日本 | lands#17（名古屋）rent[1]：MapDat 与 v3.11 为 750，v2.06 map.mkf 为 7500 | 750 | 同街 L16、L18 也是 750；VERIFY V-M1 |
+| 美国 | 无（MapDat 与 v2.06 map.mkf 逐字节相同，与 v3.11 只有表现差异） | — | — |
+
+三张图没有公开的街道价格出处，样本只能依赖公开计数、股票表、三来源一致的结构与 exe 两版比对；街道样本留了位置（输出一条 ⚠️「街道价格样本（待原版核对）」），等用户在原版 v2.06 地产信息里抽查或提供 SAVE*.DAT 后填入。
+
+| 样本 | 大陆（gm 1） | 日本（gm 2） | 美国（gm 3） | 出处 |
+|---|---|---|---|---|
+| 计数 节点/住宅/设施/企业/景观 | 144/73/8/4/26 | 110/49/5/6/16 | 118/55/8/6/16 | r_rules_map §11.1；g_map.md |
+| 关押格（type 8001/8002 节点，引用景观 1「醫院」、2「監獄」） | 63 / 144 | 55 / 84 | 85 / 118 | 三来源一致的结构 |
+| 静态封路的边（bit 30−k） | 28→136 | 78→79 | 无 | 同上 |
+| bit31 禁放物件节点 | 无 | 23–29（快艇段） | 无 | 同上 |
+| 企业 industry / stockIndex / assetValue（按企业号） | C1 中國石油 6/3/120000；C2 中國人壽 4/1/288000；C3 上海銀行 7/0/560000；C4 王井府百貨 10/2/160000 | C1 三越百貨 10/2/176000；C2 豐田汽車 5/5/270000；C3 日產建設 11/3/244000；C4 三井生命 4/1/790000；C5 ＳＥＧＡ 3/4/2400000；C6 富士銀行 7/0/1000000 | C1 福特汽車 5/4/120000；C2 聯合航空 1/3/244000；C3 喬治亞人壽 4/1/440000；C4 ＩＢＭ 3/5/4000000；C5 環球百貨 10/2/160000；C6 花旗銀行 7/0/1000000 | r_stocks_time §4.2（mytbk rich4_all_stocks.c）；exe 股票模板表 0x47ce92 |
+| 已知瑕疵与基线差异（按来源给期望） | C4 名称：MapDat/v3.11「王井府百貨」，v2.06 map.mkf「玉井府百貨」 | 仙台 L6 地价 500（同街 800，三来源一致）；名古屋 L17 rent[1]：MapDat/v3.11 750，v2.06 map.mkf 7500 | — | `.cache/extract/diff/map<gm>.json` |
+| 街道价格 | 待原版核对 | 待原版核对 | 待原版核对 | — |
+| Big5、rent[0] = 地价×20%（启发式，只告警） | 同台湾 | 同台湾 | 同台湾 | 同台湾 |
+
+原版文案瑕疵照原样保留：「王井府百貨」（股票名「王府井百貨」，股市与地块显示不同的名字）、「張恒市」、股票「摩扥羅拉」；地图名是我们自己的标签（`map/i18n.ts` 的 `MAP_NAMES`）：台灣、中國大陸、日本、美國（zh-CN 由 opencc 生成）。
+
 ### 10.2 provenance 输出
 - `extracted/provenance/taiwan.provenance.json`（gitignore）：MapDef 的每个数值字段都记录 `{ source: RawSourceId, file, sha256, resource, recordId, byteOffset, rawHex }`。
-- `docs/research/provenance-summary.md`（入库）：记录输入指纹、样本逐条结果（✅/❌）、每张规则表的「手录值 / v2.06 / v3.11 / 结论」矩阵、几何统计（格点模式、对角边数、连接格数、override 条数），以及未决项。**不包含整图数据**。
+- `docs/research/provenance-summary.md`（入库，台湾）与 `docs/research/provenance-<key>.md`（入库，china/japan/usa，由 `map build --map <key>` 生成）：记录输入指纹、样本逐条结果（✅/❌/⚠️）、企业↔股票核对（✅ OK、⚠️ KNOWN、❌ BAD）、每张规则表的「手录值 / v2.06 / v3.11 / 结论」矩阵、几何统计（格点模式、对角边数、连接格数、override 条数），以及未决项。**不包含整图数据**。台湾那份在泛化后逐字节不变。
 - 手录规则 TS 的 JSDoc 同时写两类出处：`@source mytbk asm/rich4_card_table.c; oama data/cards.ts; 说明书 p.x` 和 `@verify extract:cards[19].price v206=… v311=…`。verify 步骤会检查 `@verify` 引用的条目确实存在。
 
 ---
@@ -789,4 +826,4 @@ y\x  0   1   2   3   4   5   6   7   8   9  10  11
 - 等角视图中台湾岛的朝向（transform：identity、rot90 等）与地形风格（程序生成的海岸线还是手工涂改）由谁确认？是否需要对照原版截图人工审阅预览 SVG？
 - 地名、股票名默认显示繁体原文还是简体（opencc 转换）？真实公司名（台積電、統一超商等）是否默认改为虚构名称？
 - 服务器是否就按「运行时从 RICH4_DATA_DIR 加载并经 HTTP 下发 MapDef」这一方案执行？引擎是否接受 state.static 引用加 dataRef 的序列化约定？
-- 是否需要把中国、日本、美国三张原版图一并纳入管线的持续校验（首发只做台湾，但表定位与比较可以顺带覆盖）？
+- 是否需要把中国、日本、美国三张原版图一并纳入管线的持续校验（首发只做台湾，但表定位与比较可以顺带覆盖）？（已决定：四张图都纳入，见 §3 与 §10.1；`tools/extract/test/local/maps.local.test.ts` 锁定三张新图的构建结果与 dataHash，并回归台湾逐字节不变。）

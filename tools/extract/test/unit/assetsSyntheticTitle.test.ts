@@ -1,6 +1,7 @@
 /**
  * 合成素材包里原版皮肤 A14 画面用到的条目：标题（title.screen = Data#1）、开局设置部件（title.setup.ui = jump#4）、
- * 36 段侧视走动（title.sidewalk.<c>.<v> = jump#5+3c+v）、开局背景（title.setup.bg = jump#0）、Loading（title.loading = Data#560）。
+ * 36 段侧视走动（title.sidewalk.<c>.<v> = jump#5+3c+v）、开局背景（title.setup.bg = jump#0；其他三张图
+ * title.setup.bg.<china|japan|usa> = jump#1–3）、Loading（title.loading = Data#560）。
  * 与原版包同键同组同帧数；客户端布局依赖的帧尺寸与锚点同原版；输出到临时目录（不入库）。
  */
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -12,6 +13,7 @@ import { catalogV206 } from '../../src/assets/catalog.v206';
 import { readPng } from '../../src/assets/pngRead';
 import { buildSyntheticPack } from '../../src/assets/synthetic';
 import {
+  SYNTH_SETUP_BGS,
   SYNTH_SETUP_BOXES,
   SYNTH_SETUP_FRAME_SPECS,
   SYNTH_TITLE_FRAME_SPECS,
@@ -103,5 +105,31 @@ describe('合成包：A14 标题 / 开局 / 选人 / Loading 条目', () => {
       const png = readPng(readFileSync(path.join(dir, m.files[e.file]!.path)));
       expect([png.w, png.h], k).toEqual([640, 480]);
     }
+  });
+});
+
+describe('合成包：四张图的开局设置背景（选关切换背景的 E2E 用）', () => {
+  it('title.setup.bg 与 title.setup.bg.china/japan/usa 都在、同组同尺寸，内容各不相同（按图换天色、左上角 gm 个白块）', () => {
+    expect(SYNTH_SETUP_BGS).toEqual([
+      'title.setup.bg',
+      'title.setup.bg.china',
+      'title.setup.bg.japan',
+      'title.setup.bg.usa',
+    ]);
+    const shas = new Set<string>();
+    SYNTH_SETUP_BGS.forEach((k, gm) => {
+      const e = m.entries[k]!;
+      if (e.type !== 'image') throw new Error(k);
+      expect([e.group, e.w, e.h, e.transparency, e.confidence], k).toEqual(['title', 640, 480, 'opaque', 'exe']);
+      shas.add(m.files[e.file]!.sha256);
+      const png = readPng(readFileSync(path.join(dir, m.files[e.file]!.path)));
+      // 左上角白块：gm>0 时 (24,24) 为白；台湾没有
+      const px = [...png.rgba.subarray((30 * 640 + 30) * 4, (30 * 640 + 30) * 4 + 3)];
+      expect(
+        px.every((v) => v > 240),
+        k,
+      ).toBe(gm > 0);
+    });
+    expect(shas.size).toBe(4);
   });
 });

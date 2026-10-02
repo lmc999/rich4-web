@@ -44,6 +44,8 @@
     "timer": "決策計時",
     "timerHint": "只有一名真人時不計時",
     "timerHintActive": "現在只有一名真人：開局後不計時",
+    "handHint": "兩名以上真人時，他人無法檢視自己手牌及道具",
+    "handHintActive": "他人無法檢視自己手牌及道具",
     "pacing": "演出節奏",
     "visibility": "房間",
     "spectators": "允許觀戰",
@@ -53,6 +55,9 @@
   },
   "maps": {
     "taiwan": "台灣",
+    "china": "中國大陸",
+    "japan": "日本",
+    "usa": "美國",
     "test": "測試小圖",
     "test-allkinds": "測試圖（全部落點）"
   },

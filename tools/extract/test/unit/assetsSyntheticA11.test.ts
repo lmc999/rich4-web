@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { catalogV206 } from '../../src/assets/catalog.v206';
 import { readPng } from '../../src/assets/pngRead';
 import { buildSyntheticPack } from '../../src/assets/synthetic';
-import { SYNTH_A11, SYNTH_UI_SPRITES } from '../../src/assets/syntheticUi';
+import { SYNTH_A11, SYNTH_HOLIDAY_ART, SYNTH_UI_SPRITES } from '../../src/assets/syntheticUi';
 import { ExtractContext, realpathLoose } from '../../src/context';
 
 let root: string;
@@ -141,5 +141,28 @@ describe('合成包：原版通用对话框与弹窗的条目', () => {
     for (let i = 3; i < png.rgba.length; i += 4) if (png.rgba[i] !== 255) throw new Error(`card.7 像素 ${i >> 2} 透明`);
     // 命运插图的对应未核实：合成包不给
     expect(m.entries['illustration.fate.0']).toBeUndefined();
+  });
+});
+
+describe('合成包：节日插画占位（四张图各自的首末 slot）', () => {
+  it('键 = illustration.holiday.<[0,24,43,63][gm] + slot>，与原版包同组同尺寸；8 张内容各不相同', () => {
+    const cat = new Map(catalogV206().items.map((it) => [it.key, it]));
+    expect(SYNTH_HOLIDAY_ART.map((h) => h.key)).toEqual(
+      [0, 23, 24, 42, 43, 61, 63, 82].map((n) => `illustration.holiday.${n}`),
+    );
+    const shas = new Set<string>();
+    for (const { key } of SYNTH_HOLIDAY_ART) {
+      const e = m.entries[key]!;
+      expect(e.type, key).toBe('image');
+      if (e.type !== 'image') continue;
+      expect([e.w, e.h, e.transparency, e.group], key).toEqual([200, 200, 'opaque', cat.get(key)!.group]);
+      expect(e.confidence, key).toBe('exe');
+      shas.add(m.files[e.file]!.sha256);
+      const png = readPng(readFileSync(path.join(dir, m.files[e.file]!.path)));
+      expect([png.w, png.h], key).toEqual([200, 200]);
+    }
+    expect(shas.size).toBe(8);
+    // 其余 slot 只在原版包里有
+    expect(m.entries['illustration.holiday.1']).toBeUndefined();
   });
 });

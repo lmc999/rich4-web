@@ -2,8 +2,10 @@
  * 原版皮肤 A2（本机，需要用户正版文件；缺文件时整组 skip）：
  * 1. 在真实文件上构建一个子集素材包（棋盘 + 抽样条目，输出到 <仓库>/.cache/test-tmp/ 下的临时目录），核对地图皮肤的计数与投影拟合、
  *    按条目回读 PNG/FLC 与调研样图（.cache/assets-research/samples）的 RGBA 哈希；
- * 2. 已构建的完整素材包（rich4-assets/manifest.json 存在时）：条目计数、逐文件 sha256 复算；
- * 3. 仓库守卫：把素材包文件改名拷进一个临时 git 仓库（同样建在 .cache/test-tmp/ 下），check-no-original 必须拦下
+ * 2. 四张原版地图（rich4-data/maps 下有 china/japan/usa 的 MapDef 时）：每张图的皮肤绑定计数、景观与快艇节点、
+ *    共用精灵分组；台湾 MapDef 仍是基线（sha256 14ef91e8…）时，台湾皮肤 JSON 必须与多图改造前逐字节相同；
+ * 3. 已构建的完整素材包（rich4-assets/manifest.json 存在时）：条目计数、逐文件 sha256 复算、manifest.maps 与数据包一致；
+ * 4. 仓库守卫：把素材包文件改名拷进一个临时 git 仓库（同样建在 .cache/test-tmp/ 下），check-no-original 必须拦下
  *    （派生标记 + manifest 哈希禁单）。
  * 只读原版文件与调研产物；派生物只写 .cache/test-tmp/（已被 git 忽略），不写系统临时目录。
  */
@@ -13,17 +15,26 @@ import path from 'node:path';
 import { type MapSkinV1, type PackManifestV1, parseAtlas, parseMapSkin, spriteFrameName } from '@rich4/shared/assets';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildPack, parseParts } from '../../src/assets/build';
-import { catalogV206 } from '../../src/assets/catalog.v206';
+import {
+  catalogV206,
+  FATE_ART_TABLE,
+  HOLIDAY_ART_BASE,
+  ORIGINAL_MAPS,
+  SHARED_LANDMARKS,
+} from '../../src/assets/catalog.v206';
 import { normalizeTransparent, readPng } from '../../src/assets/pngRead';
 import { verifyPack } from '../../src/assets/verify';
 import { decodeFlcFrames, flcFrameToRgba, parseFlc } from '../../src/gfx/flc';
 import { hashHex } from '../../src/io/hash';
-import { originalAvailable, originalCtx, researchPath } from '../helpers/originalMkf';
+import { parsePe, vaToOffset } from '../../src/pe/pe';
+import { originalAvailable, originalCtx, originalPath, researchPath } from '../helpers/originalMkf';
 import { makeRepoTmpDir, REPO_TEST_TMP, repoIgnores } from '../helpers/repoTmp';
 
 const quiet = { out: () => {}, err: () => {} };
 const REPO = originalCtx.root;
-const MAP_DATA = path.join(REPO, 'rich4-data', 'maps', 'taiwan.map.json');
+/** 数据包目录：默认 <仓库>/rich4-data，可用 RICH4_DATA_DIR 指向别处（与服务器同名变量） */
+const MAP_DIR = path.join(path.resolve(REPO, process.env.RICH4_DATA_DIR ?? 'rich4-data'), 'maps');
+const MAP_DATA = path.join(MAP_DIR, 'taiwan.map.json');
 const available =
   originalAvailable([
     'Game/Data.mkf',
@@ -55,7 +66,7 @@ const FLIC_SAMPLES: [key: string, frames: number[]][] = [
   ['fx.god.smallWealth', [0, 10, 20]],
   ['ui.dice.roll1', [0, 16, 35]],
 ];
-const SKIN_GROUPS = ['map.taiwan', 'board.common', 'board.buildings'];
+const SKIN_GROUPS = ['map.taiwan', 'board.landmarks', 'board.common', 'board.buildings'];
 
 const rgbaSha = (rgba: Uint8Array) => hashHex(normalizeTransparent(rgba), 'sha256');
 
@@ -82,7 +93,7 @@ describe.skipIf(!available)('素材包子集构建（本机原版文件）', () 
       outDir: dir,
       only: parseParts('board,ui,fx'),
       catalog,
-      mapData: MAP_DATA,
+      mapDataDir: MAP_DIR,
       reportDir: path.join(dir, '.report'),
       log: quiet,
     });
@@ -258,6 +269,106 @@ describe.skipIf(!available)('素材包子集构建（本机原版文件）', () 
   }, 60_000);
 });
 
+// ───────────────────────── 四张原版地图 ─────────────────────────
+
+describe.skipIf(!originalAvailable(['Game/rich4.exe']))('资源目录里按地图的常量与 v2.06 exe 表一致', () => {
+  it('节日插画基址 0x473098 = (4,28,47,67)；命运插图表 0x473dd8 u16[49]；FLY 指针表 0x472f78', () => {
+    const bytes = new Uint8Array(readFileSync(originalPath('Game/rich4.exe')));
+    const pe = parsePe(bytes, 'rich4.exe');
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const off = (va: number) => vaToOffset(pe, va)!;
+    const u16s = (va: number, n: number) => Array.from({ length: n }, (_, i) => dv.getUint16(off(va) + 2 * i, true));
+    expect(u16s(0x473098, 4)).toEqual([...HOLIDAY_ART_BASE]);
+    expect(u16s(0x473dd8, 49)).toEqual([...FATE_ART_TABLE]);
+    const names = Array.from({ length: 4 }, (_, i) => {
+      const o = off(dv.getUint32(off(0x472f78) + 4 * i, true));
+      let e = o;
+      while (bytes[e] !== 0) e++;
+      return Buffer.from(bytes.subarray(o, e)).toString('latin1');
+    });
+    expect(names).toEqual(['FLYTW.AVI', 'FLYCHINA.AVI', 'FLYJP.AVI', 'FLYUS.AVI']);
+  });
+});
+
+/** 台湾数据包基线（rich4-data/maps/taiwan.map.json）与它对应的台湾皮肤 JSON（多图改造前的 rich4-assets） */
+const TAIWAN_MAP_SHA256 = '14ef91e8429d48da04d317be63e9cb01131aa6a6c72511fd6bab9146302a6c10';
+const TAIWAN_SKIN_SHA256 = 'ca179eee372922da1adbd5fbe06dbf36dd9dc64bce16c0f94f65a76b787d31cd';
+/** 企业 / 地块 / 节点（MapDef 计数）、景观数、快艇节点 */
+const MAP_EXPECT: Record<string, { counts: [number, number, number]; scenery: number; boat: number[] }> = {
+  taiwan: {
+    counts: [3, 54, 103],
+    scenery: 21,
+    boat: [1, 2, 3, 4, 25, 26, 27, 28, 29, 32, 33, 34, 99, 100, 101, 102, 103],
+  },
+  china: { counts: [4, 81, 144], scenery: 26, boat: [] },
+  japan: { counts: [6, 54, 110], scenery: 16, boat: [23, 24, 25, 26, 27, 28, 29] },
+  usa: { counts: [6, 63, 118], scenery: 16, boat: [] },
+};
+const allMaps = available && ORIGINAL_MAPS.every((mm) => existsSync(path.join(MAP_DIR, `${mm.mapId}.map.json`)));
+
+describe.skipIf(!allMaps)('四张原版地图的皮肤（本机原版文件 + rich4-data/maps）', () => {
+  let dir: string;
+  let m: PackManifestV1;
+  const file = (lp: string) => new Uint8Array(readFileSync(path.join(dir, m.files[lp]!.path)));
+  const skinOf = (id: string) => parseMapSkin(JSON.parse(Buffer.from(file(m.maps[id]!.skin)).toString('utf8')));
+
+  beforeAll(async () => {
+    dir = makeRepoTmpDir('rich4-a2-maps-');
+    const full = catalogV206();
+    const catalog = {
+      ...full,
+      items: full.items.filter(
+        (it) =>
+          it.group.startsWith('map.') || ['board.landmarks', 'board.common', 'board.buildings'].includes(it.group),
+      ),
+    };
+    const r = await buildPack({
+      ctx: originalCtx,
+      outDir: dir,
+      only: parseParts('board'),
+      catalog,
+      mapDataDir: MAP_DIR,
+      strict: true,
+      reportDir: path.join(dir, '.report'),
+      log: quiet,
+    });
+    m = r.manifest;
+  }, 300_000);
+
+  afterAll(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('manifest.maps 有四张图；绑定计数（企业/地块/节点）、景观数、快艇节点按图核对', () => {
+    expect(Object.keys(m.maps)).toEqual(['china', 'japan', 'taiwan', 'usa']);
+    for (const mm of ORIGINAL_MAPS) {
+      const want = MAP_EXPECT[mm.mapId]!;
+      const mp = m.maps[mm.mapId]!;
+      expect(mp.group).toBe(`map.${mm.mapId}`);
+      const c = mp.binding.counts;
+      expect([c.companies, c.lots, c.tiles], mm.mapId).toEqual(want.counts);
+      const skin = skinOf(mm.mapId);
+      expect(skin.world, mm.mapId).toEqual({ w: 2304, h: 2304 });
+      expect(skin.scenery, mm.mapId).toHaveLength(want.scenery);
+      expect(skin.boatTiles, mm.mapId).toEqual(want.boat);
+      expect(skin.minimap?.sprite, mm.mapId).toBe(`map.${mm.mapId}.minimap`);
+      expect(skin.buildings.house.levels, mm.mapId).toEqual([1, 2, 3, 4, 5].map((L) => `map.${mm.mapId}.house.${L}`));
+    }
+  });
+
+  it('台湾 MapDef 仍是基线时，台湾皮肤 JSON 与多图改造前逐字节相同', () => {
+    if (hashHex(readFileSync(MAP_DATA), 'sha256') !== TAIWAN_MAP_SHA256) return;
+    expect(m.files['maps/taiwan.skin.json']!.sha256).toBe(TAIWAN_SKIN_SHA256);
+  });
+
+  it('共用精灵在 board.landmarks，其余企业/景观精灵在唯一引用它的图的分组', () => {
+    for (const res of SHARED_LANDMARKS) expect(m.entries[`board.landmark.${res}`]!.group).toBe('board.landmarks');
+    expect(m.entries['board.landmark.85']!.group).toBe('map.china');
+    expect(m.entries['board.landmark.149']!.group).toBe('map.taiwan');
+    expect(m.groups['board.landmarks']!.category).toBe('board');
+  });
+});
+
 // ───────────────────────── 已构建的完整素材包 ─────────────────────────
 
 const PACK = path.join(REPO, 'rich4-assets');
@@ -279,12 +390,20 @@ describe.skipIf(!packBuilt)('已构建的完整素材包（rich4-assets/）', ()
         ).toBe(cat.items.filter((it) => it.type === t).length);
       }
       expect(count((_, e) => e.type === 'flic')).toBe(105);
-      expect(Object.keys(m.maps)).toEqual(['taiwan']);
+      expect(count((k) => k.startsWith('illustration.holiday.'))).toBe(82);
+      expect(count((k) => k.startsWith('title.setup.bg'))).toBe(4);
+      // manifest.maps 与数据包一致：rich4-data/maps 里有 MapDef 的原版地图都有皮肤（数据包更新后须重建素材包）
+      const withData = ORIGINAL_MAPS.filter((mm) => existsSync(path.join(MAP_DIR, `${mm.mapId}.map.json`)));
+      expect(Object.keys(m.maps).sort()).toEqual(withData.map((mm) => mm.mapId).sort());
     }
     if (m.features.voice) expect(count((k) => k.startsWith('voice.'))).toBe(1374);
     if (m.features.audio) expect(count((k) => k.startsWith('sfx.'))).toBe(99);
     if (m.features.music) expect(count((k) => k.startsWith('music.'))).toBe(25);
-    if (m.features.video) expect(count((k) => k.startsWith('video.'))).toBe(7);
+    if (m.features.video) {
+      expect(count((k) => k.startsWith('video.'))).toBe(7);
+      for (const k of ['video.flytw', 'video.flychina', 'video.flyjp', 'video.flyus'])
+        expect(m.entries[k]?.type, k).toBe('video');
+    }
     expect(m.license).toBe('private-personal-use');
   }, 180_000);
 });

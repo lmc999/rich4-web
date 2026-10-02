@@ -1,5 +1,6 @@
 // 原版选人画面 + 联机大厅（original-skin.md §4.3；ui.md §2.3）：房间处于大厅阶段时显示。
-// 舞台（640×480）：jump#0 背景风景；jump#4 竖栏（关卡、OK / EXIT、6 个下拉显示当前设置）；12 头像格（jump#4 图0 + Data#2，
+// 舞台（640×480）：jump#gm 背景风景（跟随房间的地图）；jump#4 竖栏（关卡、OK / EXIT、6 个下拉显示当前设置；房主点关卡行
+// 即改房间地图（room:updateSettings，与左栏房间设置的地图下拉同一字段），其他人、读档后与手机横屏 / 粗指针下只读）；12 头像格（jump#4 图0 + Data#2，
 // 格 i = 角色 i = 头像帧 i）：单击没被选走的头像即选定该角色（同原版：点头像就是选人），单击被选走的只移动光标看预览；
 // 悬停显示名字，自己选中的描金边，被别人选走的置灰并标座位；上方 4 个座位牌；中间走动预览（jump#5+3c+v，按房间的行进方式
 // 选步行 / 机车 / 汽车）与 ◀ ▶ 翻看、「选这个」。OK = 开始游戏（房主）/ 准备（其他玩家），按下时光标上的角色还没提交就先提交
@@ -22,6 +23,7 @@ import {
   draftFromSettings,
   draftToPatch,
   fetchMapList,
+  handPrivateNow,
   type MapListingLite,
   type SettingsDraft,
   soloHumanNow,
@@ -37,7 +39,7 @@ import cc from '../classic.module.css';
 import { useEnsureSceneSprites } from '../common/sceneAssets';
 import { regionStyle } from '../layout';
 import { Sprite, useSheetStatus } from '../Sprite';
-import { SetupColumn, StageBanner } from './ClassicCreate';
+import { SetupColumn, stageAvailable } from './ClassicCreate';
 import { ClassicSeatList, FaceThumb } from './ClassicSeats';
 import { ensureScreensI18n } from './i18n';
 import {
@@ -50,7 +52,6 @@ import {
   gridCell,
   LOADING_IMAGE,
   PREVIEW,
-  SETUP_BG,
   SETUP_FIELDS,
   SETUP_SHEET,
   type SetupField,
@@ -60,7 +61,7 @@ import {
   WALK_Y,
   walkerAt,
 } from './layout';
-import { ClassicScreenFrame, HotButton, SceneImage } from './parts';
+import { ClassicScreenFrame, HotButton, SetupBg, useWideHit } from './parts';
 import s from './screens.module.css';
 import { type FieldKey, fieldSpec, RowField } from './settingsFields';
 import { playScreenCue } from './uiSound';
@@ -130,6 +131,22 @@ function SelectStage({ room, onLeave }: ClassicLobbyProps): ReactNode {
   const [cursor, setCursor] = usePickCursor(room);
   const commitPick = useCommitPick(room, cursor);
   const [hover, setHover] = useState<CharacterId | null>(null);
+  const [maps, setMaps] = useState<MapListingLite[] | null>(null);
+  const mapId = room.settings.game.mapId;
+  // 房主点关卡行改地图：目录里可开局的才能点；读档后地图由存档决定，不能改；
+  // 手机横屏 / 粗指针下关卡行不到 44 CSS 像素高、四行紧挨，只读，房主改用左抽屉「房间设置」里的地图下拉
+  const canPickMap = host && !locked;
+  const wide = useWideHit();
+
+  useEffect(() => {
+    let stale = false;
+    void fetchMapList().then((r) => {
+      if (!stale) setMaps(r.maps);
+    });
+    return () => {
+      stale = true;
+    };
+  }, []);
 
   // 开局时叠在对局页上的 Loading 整图（Data#560）在大厅里先下载进浏览器缓存：否则开局那一刻图还没下完，只看到黑底文字
   const packId = useClassicAssets((st) => st.packId);
@@ -163,12 +180,23 @@ function SelectStage({ room, onLeave }: ClassicLobbyProps): ReactNode {
 
   return (
     <div className={s.fill} data-testid="classic-select">
-      <SceneImage imageKey={SETUP_BG} w={640} h={480} testId="setup-bg" />
-      <StageBanner mapId={room.settings.game.mapId} />
+      <SetupBg mapId={mapId} testId="setup-bg" />
       {room.seats.map((st) => (
         <SeatPlate key={st.index} room={room} index={st.index} />
       ))}
-      <SetupColumn mapId={room.settings.game.mapId} />
+      <SetupColumn
+        mapId={mapId}
+        available={maps === null ? null : stageAvailable(maps)}
+        onPick={
+          canPickMap && !wide
+            ? (id) => {
+                // @source exe v2.06 0x405439：点关卡行播全局 UI 音效表第 1 项（0x47f602 = cue.ui.click）
+                playScreenCue('click');
+                void run(client.updateSettings({ game: { mapId: id } }));
+              }
+            : undefined
+        }
+      />
       <ColumnValues room={room} />
 
       <Walker character={cursor} vehicle={vehicle} dim={cursorTaken} />
@@ -603,6 +631,8 @@ function LobbySettings({ room }: { room: RoomView }): ReactNode {
   };
   // 现在座位上只有一名真人、档位不是 off：开局就不计时，计时说明换成「现在只有一名真人：开局后不计时」并高亮
   const untimedNow = timerHintActive(draft.timerPreset, soloHumanNow(room));
+  // 开局后他人看不到本人的手牌与道具（真人 ≥ 2 时服务器锁定私密）；只有一名真人时说明「两名以上真人时…」
+  const handPrivate = handPrivateNow(room);
 
   return (
     <div className={clsx(s.railSettings)} data-testid="room-settings">
@@ -616,6 +646,9 @@ function LobbySettings({ room }: { room: RoomView }): ReactNode {
           hintActive={k === 'timerPreset' && untimedNow}
         />
       ))}
+      <small className={s.rowHint} data-testid="room-hand-hint" data-active={handPrivate ? 'true' : 'false'}>
+        {t(handPrivate ? 'lobby:settings.handHintActive' : 'lobby:settings.handHint')}
+      </small>
     </div>
   );
 }

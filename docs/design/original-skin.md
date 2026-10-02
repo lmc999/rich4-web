@@ -28,7 +28,7 @@ original/（用户正版，只读） ──npm run extract -- assets build──
    │  自写：LZHUF 严格解压、SPR/SMP/GND/RAW16/FLC/WAVE 解码、PNG 编码、MaxRects 装箱、ffmpeg 转码
    ▼
 rich4-assets/manifest.json（schema rich4.assets/1，packId，license=private-personal-use，分组懒加载）
-   ├ maps/taiwan.skin.<h8>.json（绑定 MapDef.meta.source.resourceSha256 + 几何摘要）
+   ├ maps/<mapId>.skin.<h8>.json（四张原版地图各一份；绑定 MapDef.meta.source.resourceSha256 + 几何摘要，见 §6）
    ├ ground/ sprites/ images/ flic/ masks/ audio/{voice,sfx,music}/ video/ data/{voice-map,sfx-sets,flic-map,music-map}
 server：RICH4_ASSETS_DIR（只读）→ /pack/*（manifest 白名单、private、noindex、Range、预压缩）＋ 访问门禁（口令/授权 cookie）
 client：skin/（PackClient、FLC 播放器、皮肤选择与回退）
@@ -65,6 +65,11 @@ client：skin/（PackClient、FLC 播放器、皮肤选择与回退）
 - `ui/classic/ClassicStage`：640×480 逻辑坐标；`scale = min(W/640, H/480)`，整数倍时 `image-rendering: pixelated`，否则平滑；letterbox 居中。
 - 原版区域（坐标以 ui 调研为准）：工具列 (0,0) 440×40；棋盘视窗 (0,40) 440×440，内嵌 OrigRenderer；个人资料栏 (440,0) 200×280（Panel#0 四页：資金/地產/股票/其他，头像 Data#2 72×72，代表色条，物价指数行）；日历/月历/缩小地图 (440,280) 200×200（Panel#2，节日当天换 Data#4–86）。
 - **联机侧栏**（舞台两侧剩余宽度）：左栏 房间信息、座位与在线/托管状态、观战者、倒计时；右栏 聊天、表情、事件日志。16:9 桌面约各 240 px；手机横屏 844×390（舞台 520×390）两侧各约 162 px，或收成抽屉按钮。
+- **toast**（网页版的提示条，原版没有）：缺省画在页面上部正中、固定 CSS 像素大小（client.md §5.1）。舞台缩小（scale < 1，手机横屏）时这个位置正好叠在棋盘视窗上部——亮卡消息框 (123,48)–(318,181)、神明弹窗的消息框、新闻板插图都在那里，844×390 时第一条 toast 盖住亮卡的出卡人那一行（`test/toast-placement.mjs` 实测，截图在 `.cache/toast/`）。所以对局画面（`ClassicStage` 的 `toasts`）在舞台缩小时把 toast 挪到棋盘视窗以外、没被抽屉盖住的第一个空位（`layout.classicToastSlot`，经 `hud/toastSlot` 登记给 `Toasts`，列表带 `data-place`）：
+  1. 边距条（抽屉模式、宽 ≥ 140 px）：抽屉按钮以下、从上往下排，先左后右；哪边的抽屉开着就换另一边。844×390、932×430 属于这种，toast 完全不碰舞台；
+  2. 边距条太窄（667×375 两侧各 84 px）或整栏模式（侧栏有内容，如 844×340）：舞台右栏（资料栏 + 日历，x 440–640）贴下缘往上长，一两条只盖住日历；右抽屉盖住右栏时（窄屏开着聊天）不用；
+  3. 都不行：缺省位置。
+  空位里字小一号（13px）、可折行、铺满空位宽度，新的在下，放不下时截掉最旧的；层级不变（在抽屉与系统界面之上）。舞台不缩小（桌面、1366×768 这类笔电，含抽屉模式）照旧用缺省位置：toast 相对舞台小，一条只到工具列下缘附近。
 - 棋盘视窗内可缩放拖拽（默认原版 1:1 源像素，缩放范围参数化），8 视角旋转沿用原版热键 `<` `>` 与小地图旋转钮。
 - **掷骰**（2026-09-29 按 exe v2.06 修正，调研产物 `test/dice-*-probe.mjs`、`.cache/dice/`；v3.11 0x419595–0x41967a 结构相同）：
   - 等待掷骰时人物是静止的站姿（原版 state 0）；收到 DICE_ROLLED 才播持骰动作（`BoardPort.throwDice` → `OrigActor.throwDice`）：持骰库（Data#87+21c+3·vehicle+2，机车 / 汽车 / 快艇各自的持骰库）每方向的帧逐 tick 播一遍（抱骰 → 抛出 → 空手，步行 7–9 帧、机车 / 汽车 4–8 帧），停在最后一帧直到开始行走（状态机 fcn.0040d28a case 2 0x40d43b–0x40d470，渲染 0x4083a9）。别人的回合同样处理；程序化皮肤没有持骰姿态，不实现。
@@ -78,14 +83,14 @@ client：skin/（PackClient、FLC 播放器、皮肤选择与回退）
   - 未做（与本次反馈无关，记在这里）：原版按下 GO 后隐去 GO 钮（0x417ae2）、GO 钮默认在 (180,120) 且可拖动（0x47310c；fcn.00417623 里按下掩膜区 2 紫色边框只记下指针位置、置 [0x488ba2]=1（0x417ab1–0x417abd，应是拖动的起点），只有区 3 钮面才掷骰）；我们固定在视窗右下角、区 2 也算 GO，不能按时（原版此时隐去 GO）借用「停留」帧 2/3 作禁止态。
 
 ### 4.2 原版场景与对话框（替代现有 React 对话框的表现层）
-- 通用：YES/NO（Data#399 + 消息框 Data#476）、计算器数字输入（Panel#21，命中掩膜 Panel#22）、讲话框与头像表情（map#15–26）、卡片欄（Panel#11）、神明老虎机（Panel#67）、轮盘（Panel#68–71：航空/旅馆/购物中心/保险，按盘面核对）、新闻板与命运板（Panel#66 + 插图 Data#400–475；命运插图 Data#436–475 与各条命运的对应未核实（guess），核实前命运整体回退程序化弹窗）、月结颁奖（Panel#25）、资产表（Panel#9）。
+- 通用：YES/NO（Data#399 + 消息框 Data#476）、计算器数字输入（Panel#21，命中掩膜 Panel#22）、讲话框与头像表情（map#15–26）、卡片欄（Panel#11）、神明老虎机（Panel#67）、轮盘（Panel#68–71：航空/旅馆/购物中心/保险，按盘面核对）、新闻板与命运板（Panel#66 + 插图 Data#400–475；命运插图 Data#436–475 与各条命运的对应已从 exe 0x473dd8 读出、catalog 升为 exe（§6.1），客户端接回原版命运板之前仍整体回退程序化弹窗）、月结颁奖（Panel#25）、资产表（Panel#9）。
 - 场所屏：银行与 ATM（Panel#23/24）、百货（Panel#10）、乐透投注与开奖（Panel#12/14–17）、魔法屋（Panel#18–20，区域掩膜 Panel#19）、拍卖（Panel#26）、股市（Panel#75/76）、公佈欄（Panel#73）、监狱/恶人/医院（Panel#63–65）、托管 AI（Panel#77）。
 - 目标选择：在棋盘视窗内用原版光标（Data#0 箭头、手形、准星）点选，同时保留可访问的 DOM 候选列表（隐藏在侧栏，E2E 使用）。
 - 亮卡（`ui/classic/popups/CardCast`，出卡 CARD_USED、被动卡 PASSIVE、没有效果 CARD_NO_EFFECT；exe 亮卡函数 fcn.00440bac，细节见 research/original-assets/ui.md §2.2）：
   - 素材：卡号 k → 逻辑键 `card.<k>` → Data#(529+k)（0x440bea），165×256 **不透明**整图（0x440c95 纯拷贝、无色键）；catalog 早先按「四角 0 值透明」泛洪抠图，把黑框和陷害、復仇插画底部的黑色一并抠掉，出卡时透出棋盘与资料栏——已改为 opaque（置信度 exe），素材包要重建并按 docs/deploy.md §9.4 重新 rsync（客户端另垫黑底兜底旧包，见下）。
   - 版式同原版：宝石消息框 Data#476 图5 画在 (220,129)、字以 (220,129) 为中心逐行居中（16px 粗体 #F0F0F0、#101010 阴影），卡图贴在 (138,200)；静止不翻面。卡图下垫黑底：旧素材包（`corner-rgb0`）抠掉的像素原值都是 0x0000，垫黑后与原版的不透明拷贝逐像素相同，素材包晚于镜像更新也不透出棋盘；插画没下载完时是黑色卡位。
   - 跳过照原版（exe `fcn.00450f9a(1500)` 遇 WM_LBUTTONUP / WM_RBUTTONUP / WM_KEYUP 即返回）：没有最短时间、不画「点一下跳过」钮，页面上任意鼠标左 / 右键放开或按键放开就结束（`PopupScene` 的 `anyInputSkips`）。网页版只监听、不拦截——点到的工具列与棋盘照常响应；焦点在聊天框等输入框里打字不算；只算亮卡出现之后按下的键 / 指针（联机版亮卡在出卡确认之后才出现，按得稍久时确认那一下的放开会落在亮卡里）。
-  - 棋盘静止：原版亮卡只画消息框、写字、贴卡图、刷新棋盘视窗，之后静止 1.5 秒。弹窗用原版画面时（`popupStore.opensClassic`，由 `ClassicPopupHost` 登记）handler 不叠网页版的气泡台词、粒子、光束与「没有效果」飘字；网页版的 toast 在亮卡期间暂缓显示（手机横屏下它正好压住消息框的出卡人那一行），结束后重新出现。
+  - 棋盘静止：原版亮卡只画消息框、写字、贴卡图、刷新棋盘视窗，之后静止 1.5 秒。弹窗用原版画面时（`popupStore.opensClassic`，由 `ClassicPopupHost` 登记）handler 不叠网页版的气泡台词、粒子、光束与「没有效果」飘字；网页版的 toast 在缺省位置（页面上部正中）时亮卡期间暂缓显示（两条以上会压到消息框），结束后重新出现并从那时起计时；手机横屏时 toast 已挪到棋盘视窗以外（§4.1「toast」），不暂缓。
   - 声音顺序同原版：Effect#62 在亮卡开始时响；卡片台词等亮卡结束后才说（soundMap 标 `timed`，handler 经 `ctx.audio.voices` 说出；中止时作废）。被动卡持卡人说完，对方接一句反应台词（卡片台词 mode 2）：复仇是出卡者、嫁祸是新目标、免费是地主或查税的出卡者，免罪没有；对方由引擎事件 `PASSIVE.other` 给出（research/original-assets/ui.md §2.2）。
   - 文字：原版单句「使用XX卡」「<名>\n\nXX卡生效！」；联机时别人看不到出卡人选目标，所以出卡也带出卡人（与被动卡同一格式），有目标时另起一行小字写目标；卡片说明不上框。
   - 时长：original 节奏按原版 1.5 秒（shared/view/pacing 的 `CARD_SHOW_MS`，CARD_USED / PASSIVE 的预算随之放宽），compact 1.2 / 0.95 秒；音效 Effect#62（`card.use`，exe 0x440cd2）。
@@ -122,3 +127,43 @@ client：skin/（PackClient、FLC 播放器、皮肤选择与回退）
 | A14 | 标题/选人/开局设置/Loading/片头、收尾（上下文恢复、显存预算、镜像扫描、deploy.md、DEVIATIONS/VERIFY） | npm run check 全绿；E2E 全绿；镜像扫描 0 |
 
 **与原里程碑的关系**：M9（台湾图核实）放在 A6 之后（原版底图天然可作对照）；M10 改为「原版皮肤收尾 + 通用打磨」（程序化美术冻结）；M11 增加素材包挂载与门禁。
+
+---
+
+## 6. 按地图素材与选关流程（大陆 / 日本 / 美国接入，2026-09-30）
+
+原版四张图的 id 与全局地图号 gm：taiwan 0、china 1、japan 2、usa 3（exe 当前地图号 [0x495ec0]；开局设置关卡一至四即 gm 0–3）。资源目录 `tools/extract/src/assets/catalog.v206.ts` 的 `ORIGINAL_MAPS` 按 gm 生成每张图的条目。
+
+### 6.1 按地图的素材
+
+| 素材 | 原版资源 | 逻辑键 | 分组 | 证据 |
+|---|---|---|---|---|
+| 地面 | map#2gm（GND 2304²，2×2 切块） | 地面条目 `map.<id>.ground` → `ground/<id>/…` | `map.<id>` | 载入器 fcn.0040779b（GND = gm·2） |
+| 缩小地图 | map#8+gm（SMP 200² / 400²） | `map.<id>.minimap` | `map.<id>` | fcn.0040779b |
+| 住宅 1–5 级 | map#27+5gm+L−1 | `map.<id>.house.<L>` | `map.<id>` | 0x408d60、0x407a98 |
+| 企业 / 景观精灵 | map#spriteRes+26 | `board.landmark.<res>`（与地图无关） | 只有一张图用的 → `map.<id>`；多图共用 {75,80,82,84,87,132,144} → `board.landmarks` | 0x4091b3 / 0x4092f8 |
+| 节日插画 | Data#基址[gm]+slot，基址 (4,28,47,67)，每图 24/19/19/20 张 | `illustration.holiday.<res−4>`（沿用台湾的全局编号；客户端偏移 [0,24,43,63][gm]+slot） | `illustration.holiday` | 0x473098；0x416428 / 0x43333e；slot 由 fcn.00450a17 查节日表 |
+| 开局设置背景 | jump#gm | 台湾 `title.setup.bg`（沿用），其他 `title.setup.bg.<id>` | `title` | 0x406c05、0x40549c、0x40730c |
+| 飞行动画 | Media/Fly{tw,china,jp,us}.avi | `video.flytw` / `flychina` / `flyjp` / `flyus`（`assets build --video`） | `video` | 指针表 0x472f78，唯一使用点 0x41523e |
+| 命运插图 | Data#436–475 | `illustration.fate.<res−436>`（置信度升为 exe） | `illustration.fate` | 0x473dd8 u16[49]：k<33 用表[k]（0x44c542），k≥33 用表[k+4gm]（0x44c58a） |
+
+- 不收的：Data#66（日本七夕，节日表没有 7/7，从未显示）；map#1/3/5/7（地图结构数据，由 map build 处理）；map#69–74、83、86、88、100（四张图的 raw 地图都不引用；88/100 与监狱堡垒重复）。覆盖率仍为 100%。
+- 素材包里已有、只需客户端按图选帧的：拍卖住宅缩图 Panel#26 帧 29+5gm+L（0x43ad6e）；存读档缩图 Data#479 帧 2+gm；股市行业图 Panel#75（行业码→帧表 0x4733b7 = [0,11,0,7,5,6,9,3,0,0,4,10]，日本 gm=2 时帧 7 改帧 8，0x429481）。
+- 四张图共用、不分图：装饰 map#12、占地标志 #13、地块高亮 #14、讲话头像 #15–26、连锁店 #47、设施 #48–68、Loading Data#560。
+
+### 6.2 构建与校验
+
+- `assets build --map-data <目录或文件>`：MapDef 按 mapId 读 `<目录>/<id>.map.json`（默认 `rich4-data/maps/`）；给单个文件时只作为台湾的 MapDef（旧用法），其他图仍从默认目录读。每张有地面的图各生成一份 `maps/<id>.skin.json`，绑定各自的 resourceSha256 与几何摘要；raw 地图（MapDef.meta.source 指定的来源、第 gm 个资源）引用的企业/景观精灵与 `ORIGINAL_MAPS` 逐项核对；MapDef 的 id / globalMapId 与目录不符即失败。
+- 缺某张图的 MapDef：只跳过它的皮肤并告警（地面、住宅照常入包，客户端该图回退程序化棋盘），`assets verify` 同样只告警；`--strict` 时失败（exit 2）。构建报告 `.cache/extract/assets/build.v206.json` 的 `maps` 记下已建、跳过的图与绑定计数（企业 / 地块 / 节点：台湾 3/54/103、大陆 4/81/144、日本 6/54/110、美国 6/63/118）。
+- 台湾：皮肤 JSON 与多图改造前逐字节相同（taiwan.map.json 为 14ef91e8… 时皮肤 sha256 为 ca179eee…，本机测试 `assets.local.test.ts` 锁定），旧键全部保留；只有共用精灵 75/80/84/87/144 的条目从 `map.taiwan` 挪到 `board.landmarks`，所以客户端预取当前图的 `map.<id>` 之外还要预取 `board.landmarks`。
+- `assets preview`：对 manifest.maps 的每张图读自己的 MapDef 渲染棋盘（台湾沿用中部 / 台北 / 绿岛三个镜头；其他图取节点包围盒中心、医院与监狱的关押格，日本另加快艇段）。
+- 体积（本机 board+ui 试建）：`map.china` 3.87 MB、`map.japan` 4.02 MB、`map.usa` 3.49 MB；节日插画 0.61 → 2.17 MB；`title` 多 0.87 MB（三张开局背景）；`board.landmarks` 0.35 MB（其中约 0.25 MB 从 `map.taiwan` 挪来）。
+- 合成素材包（CI）：`title.setup.bg.china/japan/usa` 占位（按图换天色，左上角画 gm 个白块），每张图首末 slot 的节日插画占位；不含 `video.fly*`（客户端缺条目时直接跳过飞行动画）。
+
+### 6.3 原版的选关流程（exe v2.06）
+
+- 开局设置（wndproc 0x404cb9，场景曲 0x8001）：背景 jump#gm（0x406c05）；新开局强制 gm = 0（0x406caa）。重绘时竖栏表面贴在 (445,10)、头像格表面贴在 (4,10)（0x404f55–0x404f83）。点击区表 0x46aac4 共 13 项：0 头像格 (8,15)–(440,159)，1 OK (456,176)–(535,215)，2 EXIT (544,176)–(623,215)，3–8 六个下拉箭头，9–12 关卡一至四 (457,31+32k)–(625,62+32k)。
+- 点关卡行（经跳转表进 0x405428）：播全局 UI 音效表 0x47f5fa 第 1 项（0x405439 push 0x47f602，即 `cue.ui.click` / sfx.001）；记 [0x46aa00] = k；在竖栏内 (150, y) 画勾 jump#4 帧 8，y 取 0x46ab2c 的 (20, 52, 84, 116)；重新载入背景 jump#k（0x40549c）。按 OK 后 gm = [0x46aa00]（0x4070e1），股票模板取 0x47ce92 + gm·432。
+- 进棋盘：载入地图 fcn.0040779b → 飞行动画与跳伞 fcn.00415184（按 gm 查 0x472f78 播 FLY*.AVI，再播 jump#41 机舱、jump#42 舱门 FLIC、jump#43+12i+角色号，最后从棋盘曲第 0 首开始放）；读档分支 0x401ca2 不经过这里，不播飞行动画。
+- 一局结束（fcn.004072e6）：记这一关已通过（[0x495cb8+gm]），背景换 jump#gm，弹出「下一关」列表（wndproc 0x405f4f，场景曲 0x8006；列表 jump#4 帧 15 上给已通过的关卡画勾，悬停行画帧 10+行即 11–14），已通过的关卡不能选（0x4065ff），点选后 gm = 行 − 1（0x406700）并回到开局设置、再播一次飞行动画。
+- 联机复刻的取舍（DEVIATIONS）：房主在关卡行或联机设置里自选地图（手机横屏 / 粗指针下关卡行只读，只用地图下拉：关卡行 32 高、四行紧挨，缩放后不到 44 CSS 像素），没有通关记录与「下一关」列表；飞行动画只在客户端播、可跳过，读档、重连、观战不播；开局设置不画 StageBanner（原版这个画面没有，帧 11–14 只在「下一关」列表里用）。

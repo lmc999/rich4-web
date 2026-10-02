@@ -1,6 +1,7 @@
 // 股市的原版场景（original-skin.md §4.2 场所屏：股市 Panel#75）：回合菜单（TURN_MENU）的股票子页在原版皮肤下打开它。
 // 绿色行情表（图0）：顶栏 6 格写股市开闭、日期、存款、持股市值，第 6 格是烘焙的 EXIT；第 0 行栏名，1–12 行是 12 支股票
-// （名称、现价、涨跌（红涨绿跌、涨停跌停）、持股、均价、盈亏）。点一行打开公司详情框（图2）：行业图（图3–11，按序号取模）、
+// （名称、现价、涨跌（红涨绿跌、涨停跌停）、持股、均价、盈亏）。点一行打开公司详情框（图2）：行业图（图3–11，按所属企业的行业码查
+// exe 表 0x4733b7，日本电子业帧 8；没有企业的股票不画）、
 // 行情与持股、30 日走势折线（画在彩色色带上）、买入 / 卖出切换、股数用计算器（Panel#21），圆台就是「成交」钮——提交
 // STOCK_BUY / STOCK_SELL（非终结：服务器以新 decisionId 重发回合菜单），成交后回到行情表。EXIT / Esc 关闭（详情框开着时先关详情）。
 // 金额 = trunc(价(分) × 股数 / 100)，从存款结算、没有手续费（与 StockPanel、引擎相同）；可买可卖量全部来自 options。
@@ -26,7 +27,7 @@ import { NUMPAD_MASK, NUMPAD_SHEET } from '../../common/numpad';
 import { SceneLayer, type SceneStatusTone, Stage4x3 } from '../../common/Stage4x3';
 import { TEXT } from '../../common/textStyles';
 import { Sprite } from '../../Sprite';
-import { STOCK, stockCol, stockIndustryFrame, stockRowRect, trendPoints, VENUE_KEYS } from './layout';
+import { STOCK, stockCol, stockIndustryFrame, stockIndustryOf, stockRowRect, trendPoints, VENUE_KEYS } from './layout';
 import { Amount, PlateButton, SceneText, SrNumber, signColor } from './parts';
 import v from './venues.module.css';
 
@@ -59,6 +60,7 @@ export function StockMarketScene({ decision: d, view, map, isMine, ctl, onClose 
   const [side, setSide] = useState<StockSide>('buy');
   const [shares, setShares] = useState(100);
   const row = rows.find((r) => r.idx === sel) ?? null;
+  const industryFrame = row ? stockIndustryFrame(stockIndustryOf(map.def, row.idx), map.def.globalMapId) : null;
   const menuFull = d.options.menuActions.used >= d.options.menuActions.limit;
   const totalValue = rows.reduce((sum, r) => sum + stockAmount(r.priceCents, r.shares), 0);
 
@@ -269,14 +271,16 @@ export function StockMarketScene({ decision: d, view, map, isMine, ctl, onClose 
       {row && (
         <SceneLayer x={P.x} y={P.y} w={P.w} h={P.h} testId="stock-trade" z={5}>
           <Sprite sheet={VENUE_KEYS.stock} frame={STOCK.detail} x={0} y={0} origin="topLeft" />
-          <Sprite
-            sheet={VENUE_KEYS.stock}
-            frame={stockIndustryFrame(row.idx)}
-            x={P.image.x}
-            y={P.image.y}
-            origin="topLeft"
-            testId="stock-industry"
-          />
+          {industryFrame !== null && (
+            <Sprite
+              sheet={VENUE_KEYS.stock}
+              frame={industryFrame}
+              x={P.image.x}
+              y={P.image.y}
+              origin="topLeft"
+              testId="stock-industry"
+            />
+          )}
           <SceneText rect={P.info} style={{ ...TEXT.body, lineHeight: '17px' }}>
             <p style={{ ...TEXT.title, fontSize: 20, lineHeight: '26px' }}>{text.stock(row.idx)}</p>
             <p>

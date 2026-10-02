@@ -32,10 +32,12 @@ import {
   type ChatSender,
   DEFAULT_PACING,
   EMOTE_COOLDOWN_MS,
+  effectiveHandVisibility,
   effectiveTimerPreset,
   fail,
   IN_GAME_MUTABLE_SETTINGS,
   isEmoteId,
+  isHumanSeatControl,
   ok,
   type PublicRoomSummary,
   RECONNECT_GRACE_MAX_S,
@@ -912,15 +914,24 @@ export class Room implements PersistableRoom {
     return { seat, control, connected: h ? h.socketId !== null : true };
   }
 
-  /** 开局或读档开局：epoch+1，建 runner 并开始计时；失败时回滚 epoch */
+  /**
+   * 开局或读档开局：epoch+1，建 runner 并开始计时；失败时回滚 epoch 与手牌可见性。
+   * 手牌可见性在这里锁定（net/room.ts effectiveHandVisibility）：真人座位 ≥ 2 的联机对局改为 private，写进房间设置，
+   * 随房间快照（重启恢复）与存档保存；runner.begin() 发出的第一批就已经按它投影。
+   */
   private launch(state: GameState, seats: SeatInit[]): Result<void> {
     this.epoch++;
+    const handBefore = this.settings.handVisibility;
+    const humans = seats.filter((s) => isHumanSeatControl(s.control)).length;
+    const hand = effectiveHandVisibility(handBefore, humans);
+    if (hand !== handBefore) this.settings = { ...this.settings, handVisibility: hand };
     const runner = this.makeRunner(state, seats);
     try {
       runner.begin();
     } catch (err) {
       runner.dispose();
       this.epoch--;
+      if (hand !== handBefore) this.settings = { ...this.settings, handVisibility: handBefore };
       this.deps.log.error({ err, code: this.code }, 'GameRunner.begin failed');
       return fail('INTERNAL', { reason: 'createGameFailed' });
     }
@@ -1595,6 +1606,12 @@ export class Room implements PersistableRoom {
     room.chat.restore(m.chat);
     if (game !== null && rec.phase !== 'lobby') {
       room.epoch = rec.epoch + 1;
+      // 手牌可见性按 launch 同一规则再锁定一次：私密锁定上线前开局、快照里还是 public 的联机对局，重启恢复后改为 private。
+      // 按座位上的真人占用计数，不按 control：对局中离开的真人是 autopilot:left（isHumanSeatControl 不算），
+      // 但他开局时在座，这局本来就该私密；被踢的座位已换成电脑占用，不算
+      const humans = game.state.players.filter((p) => room.seats[p.seat]?.occupant?.kind === 'human').length;
+      const hand = effectiveHandVisibility(room.settings.handVisibility, humans);
+      if (hand !== room.settings.handVisibility) room.settings = { ...room.settings, handVisibility: hand };
       const ended = rec.phase === 'ended';
       const inits: SeatInit[] = game.state.players.map((p) => {
         const ps = m.seats.find((x) => x.index === p.seat);

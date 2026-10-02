@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { syntheticManifest } from '../../../../packages/shared/src/assets/testing/synthetic';
-import { checkEntry, type ResolveInput, resolveSkin, usableEntry } from './resolve';
+import { checkEntry, mapWarmGroups, type ResolveInput, resolveSkin, usableEntry } from './resolve';
 import type { MapCheck, PackState, SkinPref } from './types';
 
 const manifest = syntheticManifest();
@@ -86,6 +86,15 @@ describe('resolveSkin', () => {
     expect(r({ failedGroups: ['map.test'] })).toMatchObject({ skin: 'procedural', reason: 'group-missing' });
     expect(r({ failedGroups: new Set(['char.0']) })).toMatchObject({ skin: 'original', board: 'original' });
     expect(r({ map: null, mapPending: true })).toMatchObject({ skin: 'procedural', reason: 'pack-loading' });
+    // 共用棋盘组（board.landmarks）失败：同样缺精灵
+    expect(r({ failedGroups: ['board.landmarks'] })).toMatchObject({ skin: 'procedural', reason: 'group-missing' });
+  });
+
+  it('预取的组：当前地图组 + 素材包里有的共用棋盘组（旧素材包没有 board.landmarks 时只取地图组）', () => {
+    expect(mapWarmGroups(manifest, 'map.test')).toEqual(['map.test']);
+    const withShared = { groups: { ...manifest.groups, 'board.landmarks': manifest.groups['map.test']! } };
+    expect(mapWarmGroups(withShared, 'map.china')).toEqual(['map.china', 'board.landmarks']);
+    expect(mapWarmGroups(null, 'map.test')).toEqual(['map.test']);
   });
 });
 

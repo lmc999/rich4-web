@@ -81,16 +81,55 @@ export function holidaysForMap(t: ExtractedTables, gm: number): MapHolidays {
   return { holidays, dropped, empty };
 }
 
+export type CompanyStockStatus = 'OK' | 'KNOWN' | 'BAD';
+
 export interface CompanyStockCheck {
   company: string;
   stockIndex: number;
+  /** OK 一致；KNOWN 命中原版已知名称不一致白名单（不改原版数据，data-pipeline §7）；BAD 失败 */
+  status: CompanyStockStatus;
+  /** status !== 'BAD'（只有 BAD 让 map build 失败） */
   ok: boolean;
   detail: string;
 }
 
+/** 原版企业名与股票名不一致、但确属原版文案的已知项（按 globalMapId + 企业号 + 两个名称精确匹配）。 */
+export interface KnownNameMismatch {
+  globalMapId: number;
+  company: string;
+  stockIndex: number;
+  companyName: string;
+  stockName: string;
+  evidence: string;
+}
+
+export const KNOWN_NAME_MISMATCHES: readonly KnownNameMismatch[] = [
+  {
+    globalMapId: 1,
+    company: 'C4',
+    stockIndex: 2,
+    companyName: '王井府百貨',
+    stockName: '王府井百貨',
+    evidence:
+      '@source MapDat.MKF#1 与 v3.11 map.mkf#1 的 companies#4 都是「王井府百貨」（v2.06 map.mkf#1 为「玉井府百貨」），' +
+      'rich4.exe v2.06 股票模板表 0x47ce92 + 432（gm 1）下标 2 为「王府井百貨」；原版笔误，照原样保留',
+  },
+];
+
+function knownMismatch(gm: number | null, company: string, stockIndex: number, cn: string, sn: string) {
+  return KNOWN_NAME_MISMATCHES.find(
+    (k) =>
+      k.globalMapId === gm &&
+      k.company === company &&
+      k.stockIndex === stockIndex &&
+      k.companyName === cn &&
+      k.stockName === sn,
+  );
+}
+
 /**
  * 企业 +0x19 股票行号 ↔ exe 股票模板（V-M3）：被引用的股票必须 hasCompany，且与企业同名；
- * hasCompany 的股票数应等于企业数。
+ * hasCompany 的股票数应等于企业数。名称不一致但在 KNOWN_NAME_MISMATCHES 里的记为 KNOWN（不算失败）。
  */
 export function companyStockChecks(def: MapDef): CompanyStockCheck[] {
   const tw = def.strings['zh-TW'];
@@ -98,19 +137,29 @@ export function companyStockChecks(def: MapDef): CompanyStockCheck[] {
     const s = def.stocks.find((x) => x.index === c.stockIndex);
     const cn = tw[c.nameKey] ?? '';
     const sn = s ? (tw[s.nameKey] ?? '') : '';
-    const ok = s?.hasCompany === true && cn === sn;
+    let status: CompanyStockStatus = s?.hasCompany === true && cn === sn ? 'OK' : 'BAD';
+    let note = '';
+    if (status === 'BAD' && s?.hasCompany === true && knownMismatch(def.globalMapId, c.id, c.stockIndex, cn, sn)) {
+      status = 'KNOWN';
+      note = '（原版名称不一致，已登记，照原样保留）';
+    }
     return {
       company: c.id,
       stockIndex: c.stockIndex,
-      ok,
-      detail: s ? `「${cn}」→ 股票 ${c.stockIndex}「${sn}」hasCompany=${s.hasCompany}` : `股票 ${c.stockIndex} 不存在`,
+      status,
+      ok: status !== 'BAD',
+      detail: s
+        ? `「${cn}」→ 股票 ${c.stockIndex}「${sn}」hasCompany=${s.hasCompany}${note}`
+        : `股票 ${c.stockIndex} 不存在`,
     };
   });
   const listed = def.stocks.filter((s) => s.hasCompany).length;
+  const countOk = listed === def.companies.length;
   out.push({
     company: '*',
     stockIndex: -1,
-    ok: listed === def.companies.length,
+    status: countOk ? 'OK' : 'BAD',
+    ok: countOk,
     detail: `hasCompany 的股票 ${listed} 支，企业 ${def.companies.length} 家`,
   });
   return out;

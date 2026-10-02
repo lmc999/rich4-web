@@ -2,7 +2,7 @@
  * 从决策的 options 里均匀抽一个合法 intent（属性测试、fuzz、simulate --policy random 用）。
  * 使用独立的 xoshiro 流，不消耗引擎 RNG。覆盖 M1 的 TURN_MENU（掷骰颗数）、BUY_LAND、UPGRADE_LAND，
  * M4 的股票买卖、银行、设施、研究所、百货、乐透、认购、建设公司，
- * M6 的用卡、用道具（按候选取样）、保释、免费卡、嫁祸卡、满手弃牌；
+ * M6 的用卡、用道具（按候选取样）、保释、免费卡、嫁祸卡、满手弃牌；收起交通工具（STOW_VEHICLE）；
  * M7 的公布栏（挂牌 / 撤牌 / 购买）、投降、雇恶人、拍卖出价、魔法屋、死神目标、生日挑卡；
  * 其余 kind 退回 defaultIntent（它总是合法的）。
  * anyNode（飞弹、核弹）没有候选列表：用 hint.nodes（randomAction 取玩家与物件所在格）。
@@ -123,6 +123,8 @@ export function candidateIntents(d: PendingDecision, hint: IntentHint = { nodes:
           if (!r.usable) continue;
           for (const target of sampleTargets(r.targets, hint)) out.push({ type: 'USE_ITEM', item: r.item, target });
         }
+        // 收起机车 / 汽车（真人专用的非终结 intent；随机对局对所有座位都会挑，引擎不看座位的控制方）
+        if (o.vehicle?.canStow) out.push({ type: 'STOW_VEHICLE' });
         // M7 公布栏：买别人的、撤自己的、挂一件（地产按上限的一半标价）
         for (const l of o.board.listings.slice(0, TARGET_SAMPLES)) {
           if (l.mine) out.push({ type: 'BOARD_DELIST', listingId: l.id });

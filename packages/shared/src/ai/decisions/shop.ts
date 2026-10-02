@@ -1,5 +1,6 @@
 /**
- * SHOP（百货公司；design/minigames-ai.md §9.7；@0x42ed8d..0x42f307）。电脑座位面对整副牌堆（options.fullDeck）。
+ * SHOP（百货公司；design/minigames-ai.md §9.7；@0x42ed8d..0x42f307 为 v3.11 地址，v2.06 为 0x42e181..0x42e6ea）。
+ * 电脑座位面对整副牌堆（options.fullDeck）。道具每种每次进店最多买 1 件（引擎同样只接受 qty 1、不能重复买）。
  * 原版一次进店把整套流程做完；引擎每笔交易后重发 SHOP，所以这里每次按 options（含本次进店的交易记录 visit.trades）
  * 推算下一步，保证与一次做完的结果一致：
  *   S1 逐槽卖掉 f7 − 个性 == 2 的卡；S2 f7 − 个性 == 2 的道具整种卖光；
@@ -23,7 +24,7 @@ const NEVER = 2;
 
 function itemOwn(v: AiView, o: ShopOptions, item: ItemId): number {
   const row = o.items.find((r) => r.item === item);
-  return row ? row.own : (v.me.items[item] ?? 0);
+  return row ? row.own : (v.me.items?.[item] ?? 0);
 }
 
 /** 卖出阶段（S1–S3）的下一笔；没有返回 null */

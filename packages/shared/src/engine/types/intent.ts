@@ -62,6 +62,8 @@ export type PlayerIntent =
   | { type: 'ROLL'; dice?: DiceCount }
   | { type: 'USE_CARD'; slot: number; card: CardId; target: CardTarget }
   | { type: 'USE_ITEM'; item: ItemId; target: ItemTarget }
+  /** 收起身上的机车 / 汽车、改回步行（非终结；只有 options.vehicle.canStow 时可用，电脑从不提交） */
+  | { type: 'STOW_VEHICLE' }
   | { type: 'STOCK_BUY'; stock: number; shares: number }
   | { type: 'STOCK_SELL'; stock: number; shares: number }
   | { type: 'BOARD_LIST'; asset: ListingAsset; price: number }
@@ -109,6 +111,7 @@ const INTENT_TYPE_SET = {
   ROLL: true,
   USE_CARD: true,
   USE_ITEM: true,
+  STOW_VEHICLE: true,
   STOCK_BUY: true,
   STOCK_SELL: true,
   BOARD_LIST: true,
@@ -272,6 +275,7 @@ export const PlayerIntentSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('ROLL'), dice: z.literal([1, 2, 3]).optional() }),
   z.strictObject({ type: z.literal('USE_CARD'), slot: SlotSchema, card: CardIdSchema, target: UseTargetSchema }),
   z.strictObject({ type: z.literal('USE_ITEM'), item: ItemIdSchema, target: UseTargetSchema }),
+  bare('STOW_VEHICLE'),
   z.strictObject({ type: z.literal('STOCK_BUY'), stock: StockIdxSchema, shares: SharesSchema }),
   z.strictObject({ type: z.literal('STOCK_SELL'), stock: StockIdxSchema, shares: SharesSchema }),
   z.strictObject({ type: z.literal('BOARD_LIST'), asset: ListingAssetSchema, price: PriceSchema }),

@@ -11,7 +11,9 @@
       "!.cache",
       "!rich4-data",
       "!**/*.json",
-      "!test"
+      "!test",
+      "!test-results",
+      "!playwright-report"
     ]
   },
   "formatter": {

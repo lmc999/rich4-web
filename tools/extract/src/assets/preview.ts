@@ -5,7 +5,8 @@
  * - 精灵：按帧序排成网格（8 方向的资源每行一个方向槽、每列一个动画帧），棋盘格底显示透明，红点标锚点，左上角标帧号；
  * - 整图 / 掩膜（伪彩色）/ FLIC（均匀抽帧）；
  * - 地图皮肤：用拟合的仿射投影把地面、装饰、建筑、景观、几个角色渲染成原版 440×440 棋盘视窗（视角 0/1/2/5），
- *   核对建筑是否落在地块框内、装饰是否在路口、朝向与帧号是否正确。
+ *   核对建筑是否落在地块框内、装饰是否在路口、朝向与帧号是否正确。manifest.maps 里每张图各渲染一组
+ *  （MapDef 按 mapId 取 <mapDataDir>/<id>.map.json；缺 MapDef 的图跳过棋盘渲染）。
  * 输出目录守卫见 ./outputDir（默认 .cache/assets-preview/）；只在带 rich4-extract 归属标记的目录里清理旧文件；PNG 带派生标记。
  */
 import { readFile, rm } from 'node:fs/promises';
@@ -30,6 +31,7 @@ import { decodeFlcFrames, flcFrameToRgba, parseFlc } from '../gfx/flc';
 import { encodePngRgba } from '../gfx/png';
 import { isFile } from '../io/readOnly';
 import { safeWriteFile } from '../io/writeCanonicalJson';
+import { type MapDataLocation, mapDefPath } from './build';
 import { type Catalog, catalogV206 } from './catalog.v206';
 import { MANIFEST_FILE, resolvePackOutputDir } from './manifest';
 import { assertOwnedOutputDir, checkClaimable, claimOutputDir } from './outputDir';
@@ -37,7 +39,7 @@ import { readPng } from './pngRead';
 
 export const DEFAULT_PREVIEW_DIR = path.join('.cache', 'assets-preview');
 
-export interface PreviewOptions {
+export interface PreviewOptions extends MapDataLocation {
   ctx: ExtractContext;
   packDir: string;
   outDir?: string;
@@ -45,8 +47,6 @@ export interface PreviewOptions {
   allowOutsideRepo?: boolean;
   /** 只做这些分组（前缀匹配） */
   group?: string;
-  /** 台湾 MapDef（棋盘渲染用；缺失时跳过棋盘渲染） */
-  mapData?: string;
   catalog?: Catalog;
   log?: Logger;
 }
@@ -474,6 +474,39 @@ async function renderBoard(
   return out;
 }
 
+/**
+ * 棋盘渲染的镜头。台湾与调研原型 render-proto 相同（中部、台北、绿岛 = 节点 1），便于并排对照；
+ * 其他图取节点包围盒中心、医院与监狱的关押格（环路上的关押格要看被关棋子与路过棋子的相对位置），有快艇节点时加一个快艇段。
+ */
+export function previewCameras(def: MapDef, skin: MapSkinV1): [string, { x: number; y: number }][] {
+  if (def.id === 'taiwan') {
+    return [
+      ['center', { x: 1203, y: 578 }],
+      ['taipei', { x: 1463, y: 239 }],
+      ['greenisland', def.tiles.find((t) => t.id === 1)?.world ?? { x: 1752, y: 1871 }],
+    ];
+  }
+  const xs = def.tiles.map((t) => t.world.x);
+  const ys = def.tiles.map((t) => t.world.y);
+  const cams: [string, { x: number; y: number }][] = [
+    [
+      'center',
+      {
+        x: Math.round((Math.min(...xs) + Math.max(...xs)) / 2),
+        y: Math.round((Math.min(...ys) + Math.max(...ys)) / 2),
+      },
+    ],
+  ];
+  const tile = (id: number | undefined) => (id === undefined ? undefined : def.tiles.find((t) => t.id === id));
+  for (const kind of ['hospital', 'jail'] as const) {
+    const t = tile(def.landmarks.find((l) => l.kind === kind && l.holdTile !== undefined)?.holdTile);
+    if (t) cams.push([kind, t.world]);
+  }
+  const boat = tile(skin.boatTiles[Math.trunc(skin.boatTiles.length / 2)]);
+  if (boat) cams.push(['boat', boat.world]);
+  return cams;
+}
+
 // ───────────────────────── 主流程 ─────────────────────────
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -526,23 +559,18 @@ export async function buildPreview(opts: PreviewOptions): Promise<PreviewResult>
     cards.push({ group: e.group, key, img: rel, e });
     if (++n % 100 === 0) log.out(`  联系表：${n}`);
   }
-  // 地图皮肤：棋盘渲染
-  const mapPath = path.resolve(ctx.root, opts.mapData ?? path.join('rich4-data', 'maps', 'taiwan.map.json'));
+  // 地图皮肤：棋盘渲染（每张图读自己的 MapDef）
   for (const [id, mp] of Object.entries(m.maps)) {
     if (opts.group && !mp.group.startsWith(opts.group)) continue;
     const skin = parseMapSkin(JSON.parse(Buffer.from(await r.bytes(mp.skin)).toString('utf8')));
+    const mapPath = mapDefPath(ctx.root, id, opts);
     let def: MapDef | null = null;
-    if (id === 'taiwan' && (await isFile(mapPath))) def = parseMapDef(JSON.parse(await readFile(mapPath, 'utf8')));
-    if (!def) {
-      log.err(`  （跳过 ${id} 的棋盘渲染：没有 MapDef）`);
+    if (await isFile(mapPath)) def = parseMapDef(JSON.parse(await readFile(mapPath, 'utf8')));
+    if (!def || def.id !== id) {
+      log.err(`  （跳过 ${id} 的棋盘渲染：没有 MapDef ${ctx.displayPath(mapPath)}）`);
       continue;
     }
-    // 与调研原型 render-proto 的镜头相同（台北、绿岛 = 节点 1、中部），便于并排对照
-    const cams: [string, { x: number; y: number }][] = [
-      ['center', { x: 1203, y: 578 }],
-      ['taipei', { x: 1463, y: 239 }],
-      ['greenisland', def.tiles.find((t) => t.id === 1)?.world ?? { x: 1752, y: 1871 }],
-    ];
+    const cams = previewCameras(def, skin);
     for (const view of [0, 1, 2, 5]) {
       for (const [name, cam] of cams) {
         const img = await renderBoard(r, skin, def, view, cam);

@@ -231,6 +231,59 @@ describe('RoomManager.restore', () => {
     p.close();
   });
 
+  it('私密锁定上线前开局、快照里还是 public 的联机对局：恢复后按座位上的真人重新锁定 private（离开的真人也算）', () => {
+    const p = openPersistence({ kind: 'sqlite', location: ':memory:' });
+    const b1 = boot(p);
+    const created = b1.rooms.create(who('T0'), { timerPreset: 'off' });
+    if (!created.ok) throw new Error('create');
+    const r = created.data.room;
+    expect(r.join(who('T1'), 'player').ok).toBe(true);
+    r.setReady('T1', true);
+    expect(r.start('T0').ok).toBe(true);
+    expect(r.settings.handVisibility).toBe('private');
+    expect(r.debug('T0', { op: 'give', seat: 0, cards: [3], items: [] }).ok).toBe(true);
+    // 1 号对局中离开（autopilot:left，座位仍是他的真人占用）
+    expect(r.leave('T1').ok).toBe(true);
+    b1.rooms.suspendAll({ flush: false, autosave: false });
+    // 模拟旧版本写下的快照：开局时还没有私密锁定
+    const [rec] = p.rooms.listActive(0);
+    p.rooms.writeSnapshot({
+      ...rec!,
+      meta: { ...rec!.meta, settings: { ...rec!.meta.settings, handVisibility: 'public' } },
+    });
+    expect(p.rooms.listActive(0)[0]!.meta.settings.handVisibility).toBe('public');
+
+    const b2 = boot(p);
+    expect(b2.restore()).toMatchObject([{ code: r.code, mode: 'journal' }]);
+    const room = b2.rooms.get(r.code)!;
+    expect(room.controlOf(1)).toBe('autopilot:left');
+    expect(room.settings.handVisibility).toBe('private');
+    // runner 按新设置投影：1 号看不到 0 号的手牌，只有张数
+    const p0 = room.runner!.snapshotMsg({ kind: 'seat', seat: 1 }).view.players.find((x) => x.seat === 0)!;
+    expect(p0).toMatchObject({ cards: null, items: null, cardCount: 1 });
+    expect(room.runner!.snapshotMsg({ kind: 'seat', seat: 0 }).view.players[0]!.cards).toEqual([3]);
+    // 恢复后写的新快照带上锁定值
+    expect(p.rooms.listActive(0)[0]!.meta.settings.handVisibility).toBe('private');
+    p.close();
+  });
+
+  it('恢复时 1 名真人 + 电脑的对局保持 public（和开局时的锁定规则一致）', () => {
+    const p = openPersistence({ kind: 'sqlite', location: ':memory:' });
+    const b1 = boot(p);
+    const created = b1.rooms.create(who('T0'), { timerPreset: 'off' });
+    if (!created.ok) throw new Error('create');
+    const r = created.data.room;
+    expect(r.setSeatAi('T0', 1, { preset: 'normal' }).ok).toBe(true);
+    expect(r.start('T0').ok).toBe(true);
+    expect(r.settings.handVisibility).toBe('public');
+    b1.rooms.suspendAll({ flush: false, autosave: false });
+
+    const b2 = boot(p);
+    expect(b2.restore()).toMatchObject([{ code: r.code, mode: 'journal' }]);
+    expect(b2.rooms.get(r.code)!.settings.handVisibility).toBe('public');
+    p.close();
+  });
+
   it('有效计时档位按恢复出的座位控制方式判定：对局中离开的座位不算真人，离开的人回来后恢复计时', () => {
     const p = openPersistence({ kind: 'sqlite', location: ':memory:' });
     const b1 = boot(p);

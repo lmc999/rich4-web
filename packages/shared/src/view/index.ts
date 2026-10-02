@@ -8,6 +8,7 @@ export {
   type PatchableWorld,
   publicWorld,
 } from '../engine/core/postPatch';
+export * from './handLeaks';
 export * from './pacing';
 export * from './project';
 export * from './types';

@@ -83,6 +83,8 @@ export interface RoomOptions {
   spectators?: boolean;
   /** 演出节奏（缺省不动表单，即默认 original） */
   pacing?: 'original' | 'compact';
+  /** 开局交通工具（缺省不动表单，即默认步行） */
+  vehicle?: 'walk' | 'moto' | 'car';
 }
 
 /** 首页建房，返回房间号（停在房间大厅） */
@@ -93,6 +95,7 @@ export async function createRoom(page: Page, o: RoomOptions = {}): Promise<strin
   await map.selectOption(o.map ?? 'test');
   await page.getByTestId('set-timer').selectOption(o.timer ?? 'off');
   if (o.pacing) await page.getByTestId('set-pacing').selectOption(o.pacing);
+  if (o.vehicle) await page.getByTestId('set-vehicle').selectOption(o.vehicle);
   if (o.spectators === false) await page.getByTestId('set-spectators').uncheck();
   if (o.aiCount) await page.getByTestId('set-ai-count').selectOption(String(o.aiCount));
   await page.getByTestId('create-submit').click();

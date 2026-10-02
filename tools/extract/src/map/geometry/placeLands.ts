@@ -23,7 +23,9 @@ import {
  *   cost(i,c) = 10·manhattan(c, want_i) + facingPenalty(i,c) + ε·order(c)
  * facingPenalty：在「want_i 本身与前沿格 4-相邻」的样本上检验假设「facing 0..7 = 从前沿格看地块的
  * 方位 N、NE、E、SE、S、SW、W、NW」，一致性 ≥ 90% 才启用（方向不符罚 3），否则为 0；统计写入报告。
- * 某块地没有候选时放宽为全部空闲 N4；指派仍不可行时报 E_LOT_NO_CELL。
+ * 放宽只针对拥挤的地块：严格候选为空的地块直接放宽为全部空闲 N4；严格指派不可行时，逐轮只放宽没分到格的地块
+ * （它们已放宽时再放宽与之争格的地块），仍不可行才全部放宽；最终仍无解报 E_LOT_NO_CELL。
+ * I_LAND_FAR 只列最终落点距期望格超过 2 的地块（放宽了但仍落在 2 格内的不算）。
  */
 
 export interface LandItem {
@@ -153,11 +155,12 @@ export function placeLands(
     rects.set(it.id, r);
   }
 
-  const relaxed = new Set<string>();
-  const solve = (relaxAll: boolean): { assign: (Cell | null)[] } => {
+  /** widen 中的地块不用严格候选；返回指派与本次实际放宽的地块 */
+  const solve = (widen: ReadonlySet<string>): { assign: (Cell | null)[]; cand: Cell[][]; relaxed: Set<string> } => {
+    const relaxed = new Set<string>();
     const cand = todo.map((it) => {
       const fronts = frontsOf(it);
-      let cs = relaxAll ? [] : candidatesFor(it, fronts, ctx, true);
+      let cs = widen.has(it.id) ? [] : candidatesFor(it, fronts, ctx, true);
       if (cs.length === 0) {
         cs = candidatesFor(it, fronts, ctx, false);
         relaxed.add(it.id);
@@ -185,14 +188,33 @@ export function placeLands(
       return row;
     });
     const res = hungarian(cost);
-    return { assign: res.map((j, i) => (j >= 0 && j < cols.length && cost[i]![j]! < INFEASIBLE ? cols[j]! : null)) };
+    return {
+      assign: res.map((j, i) => (j >= 0 && j < cols.length && cost[i]![j]! < INFEASIBLE ? cols[j]! : null)),
+      cand,
+      relaxed,
+    };
   };
 
-  let { assign } = solve(false);
-  if (assign.some((a) => a === null)) {
-    ctx.issues.add('I_LANDS_RELAXED', 'info', '住宅地严格候选下指派不可行，放宽为全部空闲 N4 后重解');
-    assign = solve(true).assign;
+  const widen = new Set<string>();
+  let res = solve(widen);
+  if (res.assign.some((a) => a === null)) {
+    ctx.issues.add('I_LANDS_RELAXED', 'info', '住宅地严格候选下指派不可行，只对拥挤的地块放宽为全部空闲 N4 后重解');
+    for (let round = 0; round < todo.length && res.assign.some((a) => a === null); round++) {
+      const stuck = todo.filter((_, i) => res.assign[i] === null);
+      let add = stuck.filter((it) => !widen.has(it.id));
+      if (add.length === 0) {
+        // 没分到格的都已放宽：再放宽与它们争同一批格的地块
+        const contested = new Set(stuck.flatMap((it) => res.cand[todo.indexOf(it)]!.map(ck)));
+        add = todo.filter((it, i) => !widen.has(it.id) && res.cand[i]!.some((c) => contested.has(ck(c))));
+      }
+      if (add.length === 0) break;
+      for (const it of add) widen.add(it.id);
+      res = solve(widen);
+    }
+    if (res.assign.some((a) => a === null)) res = solve(new Set(todo.map((it) => it.id)));
   }
+  const { assign } = res;
+  const far: string[] = [];
   todo.forEach((it, i) => {
     const c = assign[i];
     if (!c) {
@@ -204,10 +226,12 @@ export function placeLands(
     const r = { x: c.x, y: c.y, w: 1, h: 1 };
     ctx.occ.claimRect(r, { kind: 'lot', id: it.id });
     rects.set(it.id, r);
+    if (manhattan(c, wantCellOf(it.want)) > 2) far.push(it.id);
   });
-  const relaxedList = [...relaxed].sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
-  if (relaxedList.length > 0) {
-    ctx.issues.add('I_LAND_FAR', 'info', `住宅地 ${relaxedList.join(',')} 在期望格 2 格内没有候选，已放宽`);
+  const byNum = (a: string, b: string) => Number(a.slice(1)) - Number(b.slice(1));
+  const relaxedList = [...res.relaxed].sort(byNum);
+  if (far.length > 0) {
+    ctx.issues.add('I_LAND_FAR', 'info', `住宅地 ${far.sort(byNum).join(',')} 距期望格超过 2 格（候选已放宽）`);
   }
   return { rects, facing, relaxed: relaxedList };
 }

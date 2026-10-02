@@ -20,7 +20,14 @@ import type { AssetEntry } from '@rich4/shared/assets';
 import { FLC_CHUNK, FLC_FRAME_TYPE, FLC_HEADER_BYTES, FLC_MAGIC } from '../gfx/flc';
 import type { PngOptions } from '../gfx/png';
 import { encodePngRgba } from '../gfx/png';
-import type { Catalog, FlicItem, ImageItem, MaskItem, SpriteItem } from './catalog.v206';
+import {
+  type Catalog,
+  type FlicItem,
+  holidayArtKey,
+  type ImageItem,
+  type MaskItem,
+  type SpriteItem,
+} from './catalog.v206';
 import { type AnchoredRgba, buildAtlasPages, maskPng } from './images';
 import type { PackWriter } from './manifest';
 
@@ -1623,7 +1630,8 @@ export async function addSyntheticUi(writer: PackWriter, cat: Catalog, png: PngO
 //   6 个下拉白框的位置同原版）；图2–15 按钮、箭头、下拉列表、勾 / 叉 / 星、关卡横幅，尺寸与锚点同原版；
 // - title.sidewalk.<c>.<walk|moto|car>（jump#5+3c+v）：帧数同原版，帧尺寸取原版的代表值（步行 124×143、机车 142×162、
 //   汽车 155×134），锚点在脚底中点；小人随帧号摆腿，便于看出动画；
-// - title.setup.bg（jump#0）、title.loading（Data#560）：640×480 不透明整图。
+// - title.setup.bg（jump#0）、title.loading（Data#560）：640×480 不透明整图；另有其他三张图的开局背景
+//   title.setup.bg.<china|japan|usa>（jump#1–3）：按图换天色，左上角画 gm 个白方块，E2E 看选关切换背景用。
 // 内容全部是自绘色块与点阵，不含原版像素。
 
 /** 标题画面三钮的画点（与客户端 TITLE_BUTTONS 相同） */
@@ -1849,13 +1857,25 @@ function sidewalkFrames(c: number, v: string): (count: number) => UiFrame[] {
   };
 }
 
-/** 640×480 不透明整图：开局设置背景（天空、房屋）与 Loading（深色底 + 进度条） */
+/** 开局设置背景的键（下标即 gm：台湾沿用 title.setup.bg，其他图 title.setup.bg.<mapId>） */
+export const SYNTH_SETUP_BGS = [
+  'title.setup.bg',
+  'title.setup.bg.china',
+  'title.setup.bg.japan',
+  'title.setup.bg.usa',
+] as const;
+/** 各图开局背景的天色（台湾同旧版） */
+const SETUP_SKY: readonly Rgba[] = [SKY, [200, 110, 70, 255], [220, 150, 190, 255], [110, 100, 170, 255]];
+
+/** 640×480 不透明整图：开局设置背景（天空、房屋；gm>0 时左上角 gm 个白方块）与 Loading（深色底 + 进度条） */
 function titleImage(key: string, w: number, h: number): Uint8Array {
   const c = new Canvas(w, h);
-  if (key === 'title.setup.bg') {
-    for (let y = 0; y < h; y++) c.rect(0, y, w, 1, lighter(SKY, (y / h) * 0.5));
+  const gm = (SYNTH_SETUP_BGS as readonly string[]).indexOf(key);
+  if (gm >= 0) {
+    for (let y = 0; y < h; y++) c.rect(0, y, w, 1, lighter(SETUP_SKY[gm]!, (y / h) * 0.5));
     c.rect(0, h - 80, w, 80, LAND);
     for (let k = 0; k < 6; k++) c.rect(40 + k * 100, h - 180 + (k % 3) * 20, 70, 110, [200, 80 + k * 20, 60, 255]);
+    if (gm > 0) c.dots(24, 24, gm, WHITE, 16);
   } else {
     for (let y = 0; y < h; y++) c.rect(0, y, w, 1, [20 + Math.round((y / h) * 40), 16, 40, 255]);
     c.frame(170, 360, 300, 24, GOLD, 3);
@@ -1877,7 +1897,7 @@ const TITLE_UI_FRAMES: Readonly<Record<string, (count: number) => UiFrame[]>> = 
 
 /** 合成包里 A14 画面用到的精灵键与整图键 */
 export const SYNTH_TITLE_SPRITES = Object.keys(TITLE_UI_FRAMES);
-export const SYNTH_TITLE_IMAGES = ['title.setup.bg', 'title.loading'] as const;
+export const SYNTH_TITLE_IMAGES = [...SYNTH_SETUP_BGS, 'title.loading'] as const;
 
 /** 把 A14 的标题 / 开局 / 选人条目写进合成包（键、分组、帧数、置信度按资源目录） */
 export async function addSyntheticTitle(writer: PackWriter, cat: Catalog, png: PngOptions): Promise<void> {
@@ -3101,6 +3121,7 @@ async function addSyntheticVenuesAFlics(
 // - venue.assets.screen（Panel#9，25 帧）：三页 640×480（数值栏、道具 / 卡片格、表格线同原版位置）、EXIT、箭头、蓝钮、神明小像；
 // - ui.autoplay（Panel#77，18 帧）：托管对话框 435×355（红点、滑杆刻度、框钮位置同原版）、页签、红点、箭头、12 个圆头像；
 // - card.1–30（Data#530–559）165×256、illustration.news.0–35（Data#400–435）388×251，都是不透明整图（卡片四角涂黑）。
+// - illustration.holiday.<n>（SYNTH_HOLIDAY_ART：四张图各自的首末 slot）200×200 不透明占位，按 gm 换底色、中间画 slot。
 // 内容全部是自绘色块、线条与点阵，不含原版像素。
 
 /** [宽, 高, 锚点 x, 锚点 y] */
@@ -3809,6 +3830,31 @@ function a11NewsImage(i: number): Canvas {
   return c;
 }
 
+/** 节日插画占位（200×200，不透明）：按 gm 换底色，中间画 slot */
+function a11HolidayImage(gm: number, slot: number): Canvas {
+  const c = new Canvas(200, 200);
+  c.rect(0, 0, 200, 200, lighter(hue(3 * gm + 1), 0.35));
+  c.frame(0, 0, 200, 200, hue(3 * gm), 6);
+  a11Number(c, slot, 100, 100, 5, INK);
+  c.dots(12, 180, gm + 1, INK, 6);
+  return c;
+}
+
+/**
+ * 合成包里的节日插画占位：每张图的首末 slot（键 = illustration.holiday.<[0,24,43,63][gm] + slot>，与原版包同键同组）。
+ * 全量 82 张只在原版包里有；客户端测试用这几张看台湾 / 其他图的键偏移。
+ */
+export const SYNTH_HOLIDAY_ART: readonly { key: string; gm: number; slot: number }[] = [
+  [0, 0],
+  [0, 23],
+  [1, 0],
+  [1, 18],
+  [2, 0],
+  [2, 18],
+  [3, 0],
+  [3, 19],
+].map(([gm, slot]) => ({ key: holidayArtKey(gm!, slot!), gm: gm!, slot: slot! }));
+
 /** 合成包里 A11 的键（测试用） */
 export const SYNTH_A11 = {
   sprites: Object.keys(a11UiFrames()),
@@ -3830,6 +3876,26 @@ async function addSyntheticA11Images(
     const item = it as ImageItem;
     const card = /^card\.(\d+)$/.exec(key);
     const canvas = card ? a11CardImage(Number(card[1])) : a11NewsImage(Number(key.split('.').at(-1)));
+    if (canvas.w !== item.w || canvas.h !== item.h) throw new Error(`${key} 尺寸与资源目录不符`);
+    const file = `images/synthetic-ui/${key}.png`;
+    await writer.writeFile(file, encodePngRgba(canvas.w, canvas.h, canvas.rgba, png), 'image', item.group);
+    writer.addEntry(key, {
+      type: 'image',
+      group: item.group,
+      confidence: item.confidence,
+      src: ['synthetic'],
+      file,
+      w: item.w,
+      h: item.h,
+      transparency: item.transparency,
+      anchor: null,
+    });
+  }
+  for (const { key, gm, slot } of SYNTH_HOLIDAY_ART) {
+    const it = byKey.get(key);
+    if (it?.type !== 'image') throw new Error(`资源目录缺少节日插画 ${key}`);
+    const item = it as ImageItem;
+    const canvas = a11HolidayImage(gm, slot);
     if (canvas.w !== item.w || canvas.h !== item.h) throw new Error(`${key} 尺寸与资源目录不符`);
     const file = `images/synthetic-ui/${key}.png`;
     await writer.writeFile(file, encodePngRgba(canvas.w, canvas.h, canvas.rgba, png), 'image', item.group);

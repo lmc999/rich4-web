@@ -8,7 +8,8 @@
 // - 停 1.5 秒（handler 按 shared/view/pacing 的 CARD_SHOW_MS），期间页面上任意鼠标左 / 右键或按键按下再放开（在输入框里
 //   打字除外）立即结束，没有最短时间、不画跳过钮（原版 fcn.00450f9a(1500) 遇 WM_LBUTTONUP / WM_RBUTTONUP / WM_KEYUP
 //   即返回；PopupScene 的 anyInputSkips）；
-// - 亮卡期间棋盘上不叠网页版的气泡、粒子与光束（handlers/cards 经 popupStore.opensClassic 判定），toast 暂缓显示，
+// - 亮卡期间棋盘上不叠网页版的气泡、粒子与光束（handlers/cards 经 popupStore.opensClassic 判定），toast 在缺省位置时暂缓显示
+//   （手机横屏时 toast 排在棋盘视窗以外，不暂缓；hud/Overlays 的 Toasts），
 //   卡片台词在亮卡结束后才说（soundMap 的 timed）。
 // 文字：原版是单句「使用%s」（0x463353）/「%s\n\n復仇卡生效！」（0x46337c，嫁禍 0x46338d、免罪 0x4633e9 同式），
 // 免費卡确认后同样是「使用免費卡」。联机时别人看不到出卡人的选目标过程，所以一律带上出卡人（与被动卡同一格式），

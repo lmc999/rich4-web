@@ -18,6 +18,7 @@ import { ReconnectOverlay } from '../system/ReconnectOverlay';
 import { useTrusteeDialog } from '../system/TrusteeSettings';
 import { AUTOPILOT_LONG_PRESS_MS } from './ActionPad';
 import { Toasts } from './Overlays';
+import { useToastSlot } from './toastSlot';
 
 vi.mock('../screens/BoardCanvas', () => ({
   BoardCanvas: () => <div data-testid="board-host">board</div>,
@@ -506,6 +507,47 @@ describe('Toasts', () => {
     } finally {
       act(() => usePopupStore.getState().clear());
       vi.useRealTimers();
+    }
+  });
+
+  it('经典舞台登记了空位（手机横屏）：排在空位里（行内位置与宽高、data-place）；亮卡期间不暂缓；撤销后回到页面上部正中', () => {
+    const owner = Symbol('test-stage');
+    try {
+      render(<Toasts />);
+      act(() => {
+        useUiStore.getState().toast('忍太郎 付給 糖糖 過路費 800 元');
+      });
+      const list = screen.getByTestId('toasts');
+      expect(list).toHaveAttribute('data-place', 'page');
+      expect(list.getAttribute('style')).toBeNull();
+      // 边距条：从上往下排，列表最高到空位底
+      act(() => {
+        useToastSlot.getState().set(owner, { x: 6, y: 60, w: 150, h: 324, align: 'top', place: 'gutter-left' });
+      });
+      expect(list).toHaveAttribute('data-place', 'gutter-left');
+      expect(list.style).toMatchObject({ left: '6px', top: '60px', width: '150px', maxHeight: '324px', height: '' });
+      // 亮卡：空位里的 toast 碰不到消息框，照常显示
+      act(() => {
+        usePopupStore.getState().setClassicShown({ popupId: 9, kind: 'cardCast' });
+      });
+      expect(screen.getAllByTestId('toast')).toHaveLength(1);
+      // 舞台右栏：贴下缘往上长，列表占满空位
+      act(() => {
+        useToastSlot.getState().set(owner, { x: 434, y: 6, w: 144, h: 363, align: 'bottom', place: 'stage-right' });
+      });
+      expect(screen.getByTestId('toasts').style).toMatchObject({ top: '6px', height: '363px', maxHeight: '' });
+      // 别的登记者撤销不影响；本登记者撤销后回到缺省位置，亮卡还没结束 → 暂缓
+      act(() => useToastSlot.getState().release(Symbol('other')));
+      expect(screen.getByTestId('toasts')).toHaveAttribute('data-place', 'stage-right');
+      act(() => useToastSlot.getState().release(owner));
+      expect(screen.queryByTestId('toasts')).toBeNull();
+      act(() => usePopupStore.getState().setClassicShown(null));
+      expect(screen.getByTestId('toasts')).toHaveAttribute('data-place', 'page');
+    } finally {
+      act(() => {
+        useToastSlot.getState().release(owner);
+        usePopupStore.getState().clear();
+      });
     }
   });
 });

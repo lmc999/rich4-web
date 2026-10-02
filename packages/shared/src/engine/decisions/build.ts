@@ -7,6 +7,7 @@ import { type CardId, ITEM_IDS } from '../../data/tables/ids';
 import type { EngineMap } from '../core/mapCache';
 import { cardEffect } from '../effects/cards/index';
 import { itemEffect } from '../effects/items/index';
+import { canStowVehicle } from '../effects/items/vehicle';
 import { timeMachineStatus } from '../effects/timeMachine';
 import type { MenuRow } from '../effects/types';
 import { canSurrender } from '../flow/surrender';
@@ -80,6 +81,7 @@ export function buildTurnMenu(s: GameState, em: EngineMap, seat: SeatIndex): Tur
       const row = itemEffect(item).menu(s, em, seat);
       return { item, count: p.items[item]!, usable: row.usable, reason: row.reason, targets: row.targets };
     }),
+    vehicle: { current: p.vehicle, canStow: canStowVehicle(p) },
     stock: { open, reason, rows: stockRows(s, seat, open), deposit: p.deposit },
     board: boardOptions(s, em, seat),
     canSurrender: canSurrender(s, seat),

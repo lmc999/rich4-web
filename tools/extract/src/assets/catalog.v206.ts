@@ -5,8 +5,10 @@
  * docs/research/original-assets/{sprites,render,ui}.md，帧数为本机 v2.06 Steam 文件实测（build 时逐项核对，不符即失败）。
  *
  * - 置信度：exe = 有反汇编证据；visual = 只凭目视；guess = 推测（前端默认回退程序化）。
- * - 只收录原版皮肤要用的资源；其余逐段列入 exclusions 并写明原因（其他地图的专属资源、地图结构数据、help 文本），
- *   覆盖率 = (收录 + 明确排除) / 总资源数，未收录清单由 build 输出到 .cache。
+ * - 只收录原版皮肤要用的资源；其余逐段列入 exclusions 并写明原因（没有任何地图引用的精灵、七夕插画、地图结构数据、
+ *   help 文本），覆盖率 = (收录 + 明确排除) / 总资源数，未收录清单由 build 输出到 .cache。
+ * - 四张原版地图（ORIGINAL_MAPS：台湾 / 大陆 / 日本 / 美国，gm 0–3）的地面、小地图、住宅按 gm 生成；企业/景观精灵键名
+ *   board.landmark.<res> 与地图无关，只有一张图用的归该图的分组 map.<id>，多图共用的归 board.landmarks。
  * - FLIC 的用途、尺寸、帧数、同步音效来自 A3 的 data/flic.ts（exe 调用点逐一解出），这里只决定逻辑键与分组。
  * - 客户端只认逻辑键；原版资源号只作为证据（src 第一项 `<mkf>#<res>`）。
  */
@@ -128,6 +130,8 @@ export interface Catalog {
   exclusions: readonly CatalogExclusion[];
   /** 每个 MKF 的资源总数（核对用） */
   counts: Readonly<Record<CatalogMkf, number>>;
+  /** 原版地图（地面条目的 mapId → gm 与企业/景观精灵集合）；缺省为 ORIGINAL_MAPS（测试可注入） */
+  maps?: readonly OriginalMap[];
 }
 
 // ───────────────────────── 分组 → 类别 ─────────────────────────
@@ -175,7 +179,7 @@ export function categoryOfGroup(group: string): AssetCategory {
 
 // ───────────────────────── 常量 ─────────────────────────
 
-/** 台湾图（gm=0）的地图专属资源 */
+/** 台湾图（gm=0）；多图之前的写法，保留为别名 */
 export const TAIWAN = { mapId: 'taiwan', gm: 0 } as const;
 
 /** 原版 12 名角色（下标即 CharacterId） */
@@ -243,6 +247,96 @@ export const TAIWAN_SCENERY_SPRITES: readonly number[] = [
 ];
 /** map.mkf 企业/景观精灵：资源号 = spriteRes + 3n + 14（v2.06 n=4 → +26） */
 export const LANDMARK_SPRITE_OFFSET = 26;
+
+/** 一张原版地图：mapId、全局地图号 gm，以及它引用的企业/景观精灵资源号（build 时与 raw 地图逐项核对） */
+export interface OriginalMap {
+  mapId: string;
+  gm: number;
+  /** 描述用的中文名 */
+  label: string;
+  companies: readonly number[];
+  scenery: readonly number[];
+}
+
+/** 闭区间 [lo, hi] */
+const range = (lo: number, hi: number): number[] => Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+
+/**
+ * 原版四张地图，下标即 gm。exe 当前地图号在 [0x495ec0]；开局设置关卡一至四是点击区表 0x46aac4 第 9–12 项，
+ * 按 OK 后 gm = 所选关卡号（0x4070e1）；载入器 fcn.0040779b 按 gm 取地面、小地图、住宅（见 mapItems）。
+ * 精灵集合取自 raw 地图的 spriteRes+26（v206-mapdat[gm]）：
+ * @source .cache/extract/raw/v206-mapdat/map{0..3}.raw.json（调研：test/maps-orig-sprite-stats.ts）
+ */
+export const ORIGINAL_MAPS: readonly OriginalMap[] = [
+  { mapId: 'taiwan', gm: 0, label: '台湾', companies: TAIWAN_COMPANY_SPRITES, scenery: TAIWAN_SCENERY_SPRITES },
+  { mapId: 'china', gm: 1, label: '中国大陆', companies: [75, 80, 84, 85], scenery: [87, ...range(101, 122)] },
+  { mapId: 'japan', gm: 2, label: '日本', companies: [76, 77, 78, 80, 82, 84], scenery: [87, ...range(123, 132), 144] },
+  {
+    mapId: 'usa',
+    gm: 3,
+    label: '美国',
+    companies: [75, 79, 80, 81, 82, 84],
+    scenery: [87, ...range(89, 99), 132, 144],
+  },
+];
+
+/** 多张地图共用的企业/景观精灵（分组 board.landmarks；其余精灵只属于一张图，分组 map.<id>） */
+export const SHARED_LANDMARKS: readonly number[] = [75, 80, 82, 84, 87, 132, 144];
+/** 企业/景观精灵的资源号范围（map#69–149）；其中四张图都不引用的见 exclusions */
+export const LANDMARK_RES_RANGE = { from: 69, to: 149 } as const;
+
+/**
+ * 节日插画：Data 资源号 = 基址[gm] + slot，slot 由 fcn.00450a17 按日期在节日表（VA 0x47d6aa + gm·288）里查出。
+ * @source rich4.exe v2.06 VA 0x473098 u16[4] = (4, 28, 47, 67)，用于 0x416428 与 0x43333e（mov bx,[gm*2+0x473098]; add ebx,slot）
+ */
+export const HOLIDAY_ART_BASE: readonly number[] = [4, 28, 47, 67];
+/** 每张图节日表的有效项数（tables.v206.json holidays：台湾 24、大陆 19、日本 19、美国 20，slot 连续自 0 起） */
+export const HOLIDAY_COUNT: readonly number[] = [24, 19, 19, 20];
+/** 节日表里没有对应项、从未显示的插画：Data#66（日本七夕；日本节日表没有 7/7） */
+export const HOLIDAY_ART_UNUSED: readonly number[] = [66];
+/** 客户端逻辑键偏移：illustration.holiday.<HOLIDAY_ART_BASE[gm] − 4 + slot>（沿用台湾的全局编号） */
+export const holidayArtKey = (gm: number, slot: number): string =>
+  `illustration.holiday.${HOLIDAY_ART_BASE[gm]! - 4 + slot}`;
+
+/**
+ * 命运插图表（49 项 u16）：第 k 条命运 k<33 用 Data#表[k]（0x44c542），k≥33 用 Data#表[k+4gm]（0x44c58a，
+ * 即 33–36 按地图各有一组）。同一插图可被多条命运/多张图共用。
+ * @source rich4.exe v2.06 VA 0x473dd8（test/maps-t2-exe-tables.ts 读出），处理函数表 0x473d14
+ */
+export const FATE_ART_TABLE: readonly number[] = [
+  // k = 0..32
+  ...range(436, 455),
+  ...[456, 456, 456, 457, 457, 458, 459, 460, 460, 460],
+  ...range(461, 463),
+  // k = 33..36，按 gm：台湾、大陆、日本、美国
+  ...[464, 465, 466, 467],
+  ...[464, 468, 469, 470],
+  ...[471, 465, 466, 472],
+  ...[473, 474, 469, 475],
+];
+
+/** 命运插图 Data#res 被哪些命运引用（「k」或「k@地图」） */
+export function fateArtUsers(res: number): string[] {
+  const out: string[] = [];
+  FATE_ART_TABLE.forEach((r, i) => {
+    if (r !== res) return;
+    if (i < 33) out.push(`k${i}`);
+    else out.push(`k${33 + ((i - 33) % 4)}@${ORIGINAL_MAPS[Math.trunc((i - 33) / 4)]!.mapId}`);
+  });
+  return out;
+}
+
+/** 引用企业/景观精灵 res 的地图（按 gm 顺序） */
+export function mapsUsingLandmark(res: number, maps: readonly OriginalMap[] = ORIGINAL_MAPS): OriginalMap[] {
+  return maps.filter((m) => m.companies.includes(res) || m.scenery.includes(res));
+}
+
+/** 企业/景观精灵的分组：多图共用 → board.landmarks；只有一张图用 → map.<id> */
+export function landmarkGroup(res: number, maps: readonly OriginalMap[] = ORIGINAL_MAPS): string {
+  const users = mapsUsingLandmark(res, maps);
+  if (users.length === 0) throw new Error(`landmarkGroup: 精灵 map#${res} 没有地图引用`);
+  return users.length > 1 ? 'board.landmarks' : `map.${users[0]!.mapId}`;
+}
 
 /** 设施精灵：48 公园；48 + (kind−1)·5 + L（旅馆 49–53、购物中心 54–58、加油站 59–63、研究所 64–68） */
 export const FACILITY_SPRITE_BASE = 48;
@@ -369,8 +463,6 @@ function mask(
   };
 }
 
-const range = (lo: number, hi: number): number[] => Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
-
 // ───────────────────────── FLIC：A3 定义 → 逻辑键与分组 ─────────────────────────
 
 const FLIC_MKF_TO_CATALOG: Readonly<Record<FlicMkf, CatalogMkf>> = { Data: 'Data', Panel: 'Panel', jump: 'jump' };
@@ -477,18 +569,25 @@ function dataItems(): CatalogItem[] {
       '游戏设定对话框 347×363、热键页、日期页、LED、箭头、右上三钮组',
     ),
   );
-  for (const res of range(4, 27)) {
-    out.push(
-      image(
-        'Data',
-        res,
-        `illustration.holiday.${res - 4}`,
-        'illustration.holiday',
-        [200, 200],
-        'opaque',
-        `台湾图节日插画（Data#4–27 中第 ${res - 4} 张），日历区在节日当天替换季节图`,
-      ),
-    );
+  // 节日插画：四张图 Data#4–86（#66 七夕未用，见 exclusions），逻辑键沿用全局编号 res−4
+  for (const m of ORIGINAL_MAPS) {
+    for (let slot = 0; slot < HOLIDAY_COUNT[m.gm]!; slot++) {
+      const res = HOLIDAY_ART_BASE[m.gm]! + slot;
+      out.push({
+        ...image(
+          'Data',
+          res,
+          holidayArtKey(m.gm, slot),
+          'illustration.holiday',
+          [200, 200],
+          'opaque',
+          `${m.label}图节日插画 slot ${slot}（Data#${res} = 基址 ${HOLIDAY_ART_BASE[m.gm]} + slot），日历区在节日当天替换季节图`,
+          'ui',
+          'exe',
+        ),
+        src: HOLIDAY_ART_EVIDENCE,
+      });
+    }
   }
   // 角色 21 套姿态库
   for (let c = 0; c < CHARACTER_COUNT; c++) {
@@ -589,19 +688,20 @@ function dataItems(): CatalogItem[] {
     );
   }
   for (const res of range(436, 475)) {
-    out.push(
-      image(
+    out.push({
+      ...image(
         'Data',
         res,
         `illustration.fate.${res - 436}`,
         'illustration.fate',
         [388, 251],
         'opaque',
-        `命运插图 ${res - 436}（40 张与 37 条命运的对应未核实）`,
+        `命运插图 ${res - 436}：${fateArtUsers(res).join(' ')}（命运 k<33 用表[k]，k≥33 用表[k+4gm]）`,
         'ui',
-        'guess',
+        'exe',
       ),
-    );
+      src: FATE_ART_EVIDENCE,
+    });
   }
   out.push(
     smp(
@@ -680,6 +780,25 @@ const CARD_ART_EVIDENCE: readonly string[] = [
   'VA 0x440bea（add eax,0x211 → fcn.0044ec68 载入 Data#(529+k)）',
   'VA 0x43fe70（图结构模板 {w=165,h=256,锚点 0,0}）',
   'VA 0x440c95（fcn.00454a55 → fcn.0045419a 逐行 rep movsd 不透明拷贝，无色键；画点 (138,200)）',
+];
+
+/**
+ * 节日插画的 exe 证据。
+ * @source rich4.exe v2.06：0x473098 基址表；0x416428（日历）与 0x43333e 用「基址 + slot」经 fcn.0044ec68 载入 Data
+ */
+const HOLIDAY_ART_EVIDENCE: readonly string[] = [
+  'VA 0x473098（u16[4] 节日插画基址 4/28/47/67，按 gm 取）',
+  'VA 0x416428 / 0x43333e（资源号 = 基址 + slot）',
+  'fcn.00450a17（按日期查节日表 0x47d6aa+gm·288，返回 slot）',
+];
+
+/**
+ * 命运插图的 exe 证据。
+ * @source rich4.exe v2.06：0x473dd8 u16[49]；0x44c542（k<33）、0x44c58a（k≥33：[2k+gm·8+0x473dd8]）
+ */
+const FATE_ART_EVIDENCE: readonly string[] = [
+  'VA 0x473dd8（u16[49] 命运插图表）',
+  'VA 0x44c542（k<33 用表[k]）/ 0x44c58a（k≥33 用表[k+4gm]）',
 ];
 
 /** Panel#27..62：12 角色 × 3 段 Q 版小人的帧数（实测） */
@@ -954,9 +1073,37 @@ const SIDEWALK_FRAMES: readonly number[] = [
 ];
 const SIDEWALK_VEHICLES: readonly string[] = ['walk', 'moto', 'car'];
 
+/**
+ * 开局设置背景 jump#gm 的 exe 证据。
+ * @source rich4.exe v2.06：0x406c05 进开局设置时以 [0x495ec0] 为资源号读 JUMP.MKF；0x40549c–0x4054c7 点关卡行后
+ *   重新载入 jump#所选关卡；0x40730c 一局结束后换成 jump#gm
+ */
+const SETUP_BG_EVIDENCE: readonly string[] = [
+  'VA 0x406c05（开局设置背景 = jump#gm）',
+  'VA 0x40549c（点关卡行后重载 jump#k）',
+  'VA 0x40730c（一局结束后换成 jump#gm）',
+];
+
+/** 开局设置背景的逻辑键：台湾 title.setup.bg（沿用），其他图 title.setup.bg.<mapId> */
+export const setupBgKey = (mapId: string): string =>
+  mapId === 'taiwan' ? 'title.setup.bg' : `title.setup.bg.${mapId}`;
+
 function jumpItems(): CatalogItem[] {
   const out: CatalogItem[] = [
-    image('jump', 0, 'title.setup.bg', 'title', [640, 480], 'opaque', '开局设置背景（台湾）'),
+    ...ORIGINAL_MAPS.map((m) => ({
+      ...image(
+        'jump',
+        m.gm,
+        setupBgKey(m.mapId),
+        'title',
+        [640, 480],
+        'opaque',
+        `开局设置背景（${m.label}；jump#gm，点关卡行即换）`,
+        'ui',
+        'exe',
+      ),
+      src: SETUP_BG_EVIDENCE,
+    })),
     smp(
       'jump',
       4,
@@ -990,33 +1137,57 @@ function jumpItems(): CatalogItem[] {
 }
 
 function mapItems(): CatalogItem[] {
-  const out: CatalogItem[] = [
-    {
-      type: 'ground',
-      kind: 'GND',
-      key: 'map.taiwan.ground',
-      mkf: 'map',
-      res: 2 * TAIWAN.gm,
-      group: 'map.taiwan',
-      token: 'board',
-      confidence: 'exe',
-      src: ['VA 0x40779b（载入器：GND = gm·2）', 'VA 0x407ebd（地面绘制）'],
-      desc: '台湾图地面：2304² 正射底图（72×72 块 × 32²），切成 2×2 张 1152²（每块多带 1px 重叠）',
-      mapId: TAIWAN.mapId,
-      cols: 2,
-      rows: 2,
-    },
-    smp(
-      'map',
-      8 + TAIWAN.gm,
-      'map.taiwan.minimap',
-      'map.taiwan',
-      2,
-      'rgb0-backdrop',
-      '台湾图缩小地图：帧0 200×200、帧1 400×400（v2.06 为 map#8+gm）',
-      'board',
-      'exe',
-    ),
+  const out: CatalogItem[] = [];
+  // 每张图：地面 map#2gm、小地图 map#8+gm、住宅 map#27+5gm+(L−1)（载入器 fcn.0040779b）
+  for (const m of ORIGINAL_MAPS) {
+    const group = `map.${m.mapId}`;
+    out.push(
+      {
+        type: 'ground',
+        kind: 'GND',
+        key: `map.${m.mapId}.ground`,
+        mkf: 'map',
+        res: 2 * m.gm,
+        group,
+        token: 'board',
+        confidence: 'exe',
+        src: ['VA 0x40779b（载入器：GND = gm·2）', 'VA 0x407ebd（地面绘制）'],
+        desc: `${m.label}图地面：2304² 正射底图（72×72 块 × 32²），切成 2×2 张 1152²（每块多带 1px 重叠）`,
+        mapId: m.mapId,
+        cols: 2,
+        rows: 2,
+      },
+      smp(
+        'map',
+        8 + m.gm,
+        `map.${m.mapId}.minimap`,
+        group,
+        2,
+        'rgb0-backdrop',
+        `${m.label}图缩小地图：帧0 200×200、帧1 400×400（v2.06 为 map#8+gm）`,
+        'board',
+        'exe',
+      ),
+    );
+    for (let L = 1; L <= 5; L++) {
+      out.push(
+        sprite('map', 27 + 5 * m.gm + (L - 1), `map.${m.mapId}.house.${L}`, {
+          kind: 'SPR',
+          group,
+          token: 'board',
+          frames: 8,
+          dirs: 8,
+          frameRule: 'building-8',
+          transparency: 'index0',
+          ownerMask: true,
+          confidence: 'exe',
+          src: ['VA 0x408d60（住宅 27+gm·5+(L−1)）', 'VA 0x409468（调色板 255 = 主人色）', 'VA 0x407a98（载入住宅）'],
+          desc: `${m.label}图 ${L} 级住宅：帧 = (8−(facing+view))&7；调色板 255 为主人色描边`,
+        }),
+      );
+    }
+  }
+  out.push(
     sprite('map', 12, 'board.decor', {
       kind: 'SMP',
       group: 'board.common',
@@ -1051,7 +1222,7 @@ function mapItems(): CatalogItem[] {
       src: ['render-model.json（0/1 小地块两种朝向、2/3 设施大地块、4 圆；OR 混色）'],
       desc: '地块高亮（涨价/查封）：帧语义与颜色表 0x4861d0 未解码',
     }),
-  ];
+  );
   for (let c = 0; c < CHARACTER_COUNT; c++) {
     out.push(
       smp(
@@ -1063,23 +1234,6 @@ function mapItems(): CatalogItem[] {
         'rgb0',
         `角色 ${c} 讲话头像：图0 大头、图1–4 表情、图5 小头、图6 地图点（贴 (170,130)，图号 = 表情+1）`,
       ),
-    );
-  }
-  for (let L = 1; L <= 5; L++) {
-    out.push(
-      sprite('map', 27 + 5 * TAIWAN.gm + (L - 1), `map.taiwan.house.${L}`, {
-        kind: 'SPR',
-        group: 'map.taiwan',
-        token: 'board',
-        frames: 8,
-        dirs: 8,
-        frameRule: 'building-8',
-        transparency: 'index0',
-        ownerMask: true,
-        confidence: 'exe',
-        src: ['VA 0x408d60（住宅 27+gm·5+(L−1)）', 'VA 0x409468（调色板 255 = 主人色）'],
-        desc: `台湾图 ${L} 级住宅：帧 = (8−(facing+view))&7；调色板 255 为主人色描边`,
-      }),
     );
   }
   const building = (res: number, key: string, desc: string) =>
@@ -1110,12 +1264,16 @@ function mapItems(): CatalogItem[] {
       );
     }
   });
-  for (const res of [...TAIWAN_COMPANY_SPRITES, ...TAIWAN_SCENERY_SPRITES].sort((a, b) => a - b)) {
-    const company = TAIWAN_COMPANY_SPRITES.includes(res);
+  // 企业/景观精灵：键名 board.landmark.<res> 与地图无关；分组按引用它的地图（多图共用 → board.landmarks）
+  const companies = new Set(ORIGINAL_MAPS.flatMap((m) => m.companies));
+  const referenced = [...new Set(ORIGINAL_MAPS.flatMap((m) => [...m.companies, ...m.scenery]))].sort((a, b) => a - b);
+  for (const res of referenced) {
+    const company = companies.has(res);
+    const users = mapsUsingLandmark(res).map((m) => m.label);
     out.push(
       sprite('map', res, `board.landmark.${res}`, {
         kind: 'SPR',
-        group: 'map.taiwan',
+        group: landmarkGroup(res),
         token: 'board',
         frames: 8,
         dirs: 8,
@@ -1125,8 +1283,8 @@ function mapItems(): CatalogItem[] {
         confidence: 'exe',
         src: ['VA 0x4091b3 / 0x4092f8（企业 +0x20 / 景观 +0x1a 读 spriteId，资源 = id+26）'],
         desc: company
-          ? `台湾图企业精灵（spriteRes ${res - LANDMARK_SPRITE_OFFSET}）：有主人色描边`
-          : `台湾图景观精灵（spriteRes ${res - LANDMARK_SPRITE_OFFSET}）：不改色`,
+          ? `企业精灵（spriteRes ${res - LANDMARK_SPRITE_OFFSET}；${users.join('、')}）：有主人色描边`
+          : `景观精灵（spriteRes ${res - LANDMARK_SPRITE_OFFSET}；${users.join('、')}）：不改色`,
       }),
     );
   }
@@ -1137,38 +1295,40 @@ function helpItems(): CatalogItem[] {
   return [smp('help', 0, 'ui.help', 'ui.system', 12, 'rgb0-backdrop', '游戏百科窗 400×400 + 按钮/滚动部件')];
 }
 
-const OTHER_MAPS = '其他地图（中国/日本/美国）的专属资源；引擎目前只有台湾 MapDef';
+/** 企业/景观精灵里四张图都不引用的资源号（88、100 与监狱堡垒重复） */
+export function unreferencedLandmarks(maps: readonly OriginalMap[] = ORIGINAL_MAPS): number[] {
+  const used = new Set(maps.flatMap((m) => [...m.companies, ...m.scenery]));
+  return range(LANDMARK_RES_RANGE.from, LANDMARK_RES_RANGE.to).filter((r) => !used.has(r));
+}
 
 function exclusions(): CatalogExclusion[] {
-  const taiwanLandmarks = new Set([...TAIWAN_COMPANY_SPRITES, ...TAIWAN_SCENERY_SPRITES]);
   const out: CatalogExclusion[] = [
-    { mkf: 'Data', from: 28, to: 86, reason: `${OTHER_MAPS}：节日插画 Data#28–86` },
-    { mkf: 'jump', from: 1, to: 3, reason: `${OTHER_MAPS}：开局设置背景` },
-    { mkf: 'map', from: 1, to: 1, reason: '地图结构数据（由 map build 处理，不进素材包）' },
-    { mkf: 'map', from: 2, to: 2, reason: `${OTHER_MAPS}：地面 GND` },
-    { mkf: 'map', from: 3, to: 3, reason: '地图结构数据（由 map build 处理，不进素材包）' },
-    { mkf: 'map', from: 4, to: 4, reason: `${OTHER_MAPS}：地面 GND` },
-    { mkf: 'map', from: 5, to: 5, reason: '地图结构数据（由 map build 处理，不进素材包）' },
-    { mkf: 'map', from: 6, to: 6, reason: `${OTHER_MAPS}：地面 GND` },
-    { mkf: 'map', from: 7, to: 7, reason: '地图结构数据（由 map build 处理，不进素材包）' },
-    { mkf: 'map', from: 9, to: 11, reason: `${OTHER_MAPS}：缩小地图` },
-    { mkf: 'map', from: 32, to: 46, reason: `${OTHER_MAPS}：住宅 27+gm·5+(L−1)` },
+    ...HOLIDAY_ART_UNUSED.map((res) => ({
+      mkf: 'Data' as const,
+      from: res,
+      to: res,
+      reason: '七夕：节日插画没有对应的节日表项（日本节日表没有 7/7，基址 47 + slot 0–18 = 47–65），从未显示',
+    })),
+    ...ORIGINAL_MAPS.map((m) => ({
+      mkf: 'map' as const,
+      from: 2 * m.gm + 1,
+      to: 2 * m.gm + 1,
+      reason: `地图结构数据（${m.label}图 map#gm·2+1；由 map build 处理，不进素材包）`,
+    })),
     { mkf: 'help', from: 1, to: 99, reason: 'Big5 帮助文本：原版文字由 GDI 绘制，原版皮肤的界面文字走 zh-TW 语言包' },
   ];
-  // map#69..149 中台湾图不引用的企业/景观精灵（按连续段合并）
-  let start = -1;
-  for (let res = 69; res <= 150; res++) {
-    const other = res <= 149 && !taiwanLandmarks.has(res);
-    if (other && start < 0) start = res;
-    if (!other && start >= 0) {
-      out.push({
-        mkf: 'map',
-        from: start,
-        to: res - 1,
-        reason: `${OTHER_MAPS}：企业/景观精灵（spriteRes+26），台湾图不引用`,
-      });
-      start = -1;
-    }
+  // map#69..149 中没有任何地图引用的企业/景观精灵（按连续段合并）
+  const unused = unreferencedLandmarks();
+  for (let i = 0; i < unused.length; ) {
+    let j = i;
+    while (j + 1 < unused.length && unused[j + 1] === unused[j]! + 1) j++;
+    out.push({
+      mkf: 'map',
+      from: unused[i]!,
+      to: unused[j]!,
+      reason: '企业/景观精灵（spriteRes+26）：四张图的 raw 地图都不引用（map#88、#100 与监狱堡垒重复）',
+    });
+    i = j + 1;
   }
   return out;
 }
@@ -1180,7 +1340,7 @@ export function catalogV206(): Catalog {
     (a, b) => order(a.mkf) - order(b.mkf) || a.res - b.res,
   );
   const ex = exclusions().sort((a, b) => order(a.mkf) - order(b.mkf) || a.from - b.from);
-  return { edition: 'v206', items, exclusions: ex, counts: { ...V206_RESOURCE_COUNTS } };
+  return { edition: 'v206', items, exclusions: ex, counts: { ...V206_RESOURCE_COUNTS }, maps: ORIGINAL_MAPS };
 }
 
 // ───────────────────────── 自检与覆盖率 ─────────────────────────

@@ -66,7 +66,7 @@ export function BoardPanel({ view, map, seat, board, onAct, disabled = false }: 
 
   const ownedStocks = view.stocks.filter((_, i) => (p?.holdings[i]?.shares ?? 0) > 0);
   const ownedCards = p?.cards ? CARD_IDS.filter((c) => p.cards?.includes(c)) : [];
-  const ownedItems = p ? ITEM_IDS.filter((i) => (p.items[i] ?? 0) > 0) : [];
+  const ownedItems = p?.items ? ITEM_IDS.filter((i) => (p.items?.[i] ?? 0) > 0) : [];
   const cap = kind === 'lot' && lot ? (board.lotCaps.find((c) => c.lot === lot)?.cap ?? null) : null;
 
   let asset: ListingAsset | null = null;
@@ -76,7 +76,7 @@ export function BoardPanel({ view, map, seat, board, onAct, disabled = false }: 
     asset = { t: 'stock', stock, shares: clampInt(shares, 1, Math.max(1, have)) };
   } else if (kind === 'card' && card) asset = { t: 'card', card };
   else if (kind === 'item' && item)
-    asset = { t: 'item', item, qty: clampInt(qty, 1, Math.max(1, p?.items[item] ?? 1)) };
+    asset = { t: 'item', item, qty: clampInt(qty, 1, Math.max(1, p?.items?.[item] ?? 1)) };
   const priceOk = price >= 1 && (cap === null || price <= cap);
 
   const row = (l: ListingView): ReactNode => (

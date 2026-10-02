@@ -252,6 +252,7 @@ export function ClassicLayout({
     >
       <ClassicStage
         size={size}
+        toasts
         leftLabel={t('classic:rail.left')}
         rightLabel={t('classic:rail.right')}
         rightBadge={unread}

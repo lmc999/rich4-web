@@ -81,7 +81,7 @@ export interface SoundQuery {
   character(seat: SeatIndex): CharacterId | null;
   priceIndex(): number;
   vehicleOf(seat: SeatIndex): Vehicle | null;
-  /** seat 最敌视的对手（hostility 最大且 > 0，并列取座位小者）；没有则 null */
+  /** seat 最敌视的对手（hostility 最大且 > 0，并列取座位小者）；没有或看不到（私密模式下的别人）则 null */
   rivalOf(seat: SeatIndex): SeatIndex | null;
   ownerOf(lot: LotId): SeatIndex | null;
   /** seat 在 lot 所在街区拥有的住宅地块数（事件之前；lot 本身按事件前的归属计） */
@@ -156,7 +156,9 @@ export function makeSoundQuery(view: () => GameView, map: MapIndex | null): Soun
     vehicleOf: (seat) => player(seat)?.vehicle ?? null,
     rivalOf(seat) {
       const p = player(seat);
-      if (!p) return null;
+      // 私密手牌模式下看不到别人的手牌时，服务器也只下发了他对本人的那一项敌意（view/project.ts hideHostility）：
+      // 判断不了他最敌视谁，不猜（「我记住你了」只在付钱的本人那边判定，其他人听按金额分档的台词）
+      if (!p || p.cards === null) return null;
       let best: SeatIndex | null = null;
       let max = 0;
       p.hostility.forEach((h, j) => {

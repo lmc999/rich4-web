@@ -897,6 +897,39 @@
   cursor: pointer;
 }
 
+/* 原版皮肤手机横屏：排在经典舞台登记的空位里（边距条或舞台右栏，位置与宽高由行内样式给出，见 toastSlot.ts）。
+   空位窄：字小一号、可折行、铺满空位宽度；新的在下，放不下时截掉最上面（最旧）的 */
+.toastsSlot {
+  transform: none;
+  box-sizing: border-box;
+  justify-content: flex-end;
+  align-items: stretch;
+  gap: 4px;
+  padding-bottom: 3px;
+  overflow: hidden;
+}
+
+.toastsSlot .toast {
+  gap: 4px;
+  padding: 4px 4px 4px 8px;
+  border-width: 2px;
+  box-shadow: 0 2px 0 var(--c-ink);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.toastsSlot .toast > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.toastsSlot .toastX {
+  flex: none;
+  padding: 0 4px;
+  font-size: 16px;
+}
+
 @keyframes toastIn {
   from {
     opacity: 0;

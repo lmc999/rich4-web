@@ -128,3 +128,76 @@ describe('calendar（design/engine.md §3「日期」）', () => {
     expect(holidayOn(20000229, [{ ...third, day: 5, weekday: 2 }])?.slot).toBe(6);
   });
 });
+
+/**
+ * 美国图（gm 3）的 kind 2 节日：字面量照抄 exe v2.06 节日表 0x47d6aa + 3·288 的对应项（MapDef 口径：
+ * flagsRaw 16..23 位 = 星期，weekday 同值）。CI 没有原版数据，所以不读 rich4-data。
+ * 行为照搬 exe（fcn.00450a17 0x450b12–0x450b6c）：w < 当月 1 日的星期时落在星期日，超出当月天数不命中。
+ * 美国图的实机表现（1998-01-18、1998-09-06 是否显示节日）登记在 VERIFY 待核实。
+ */
+describe('calendar：美国图 kind 2 节日（原版算法，锁定现状）', () => {
+  // slot 2：1 月第 3 个星期一（马丁路德金纪念日）
+  const mlk: HolidayDef = { slot: 2, month: 1, day: 3, kind: 2, flagsRaw: 1 << 16, weekday: 1, closed: false };
+  // slot 8：5 月第 2 个星期日（母亲节），w = 0
+  const mother: HolidayDef = { slot: 8, month: 5, day: 2, kind: 2, flagsRaw: 0, weekday: 0, closed: false };
+  // slot 9：5 月第 5 个星期一（阵亡将士纪念日的原版写法）
+  const memorial: HolidayDef = { slot: 9, month: 5, day: 5, kind: 2, flagsRaw: 1 << 16, weekday: 1, closed: false };
+  // slot 13：9 月第 1 个星期一（劳动节）
+  const labor: HolidayDef = { slot: 13, month: 9, day: 1, kind: 2, flagsRaw: 1 << 16, weekday: 1, closed: false };
+  // slot 17：11 月第 4 个星期四（感恩节），休市
+  const thanks: HolidayDef = {
+    slot: 17,
+    month: 11,
+    day: 4,
+    kind: 2,
+    flagsRaw: (4 << 16) | 1,
+    weekday: 4,
+    closed: true,
+  };
+  const usa = [mlk, mother, memorial, labor, thanks];
+
+  it('1998 年 1 月第 3 个星期一 → 1/18（星期日；1998-01-01 是星期四 > 星期一）', () => {
+    expect(weekdayOf(19980101)).toBe(4);
+    expect(holidayOn(19980118, usa)).toBe(mlk);
+    expect(weekdayOf(19980118)).toBe(0);
+    expect(holidayOn(19980119, usa)).toBeNull(); // 数学上的第 3 个星期一
+    // 当月 1 日是星期一或更早时与数学定义一致：2001-01-01 是星期一 → 1/15
+    expect(holidayOn(20010115, usa)).toBe(mlk);
+    expect(weekdayOf(20010115)).toBe(1);
+  });
+
+  it('1998 年 9 月第 1 个星期一 → 9/6（星期日）', () => {
+    expect(weekdayOf(19980901)).toBe(2);
+    expect(holidayOn(19980906, usa)).toBe(labor);
+    expect(weekdayOf(19980906)).toBe(0);
+    expect(holidayOn(19980907, usa)).toBeNull();
+    expect(holidayOn(20030901, usa)).toBe(labor); // 2003-09-01 是星期一
+  });
+
+  it('11 月第 4 个星期四：1998 → 11/26（星期四）；2002 → 11/24（星期日，休市）', () => {
+    expect(weekdayOf(19981101)).toBe(0);
+    expect(holidayOn(19981126, usa)).toBe(thanks);
+    expect(weekdayOf(19981126)).toBe(4);
+    expect(weekdayOf(20021101)).toBe(5);
+    expect(holidayOn(20021124, usa)).toBe(thanks);
+    expect(weekdayOf(20021124)).toBe(0);
+    expect(holidayOn(20021128, usa)).toBeNull(); // 数学上的第 4 个星期四照常开市
+    expect(isMarketClosedDay(20021128, 4, usa)).toBe(false);
+  });
+
+  it('5 月第 5 个星期一：2001 年不命中（算出 5/34）；1998 年落在 5/31 星期日', () => {
+    expect(weekdayOf(20010501)).toBe(2);
+    expect(nthWeekdayDay(2, 1, 5)).toBe(34);
+    for (let d = 20010501; d <= 20010531; d++) expect(holidayOn(d, [memorial]), String(d)).toBeNull();
+    expect(holidayOn(19980531, [memorial])).toBe(memorial);
+    expect(weekdayOf(19980531)).toBe(0);
+  });
+
+  it('5 月第 2 个星期日（w = 0）总是正确：1998-05-10、1999-05-09、2001-05-13', () => {
+    for (const d of [19980510, 19990509, 20010513]) {
+      expect(holidayOn(d, usa), String(d)).toBe(mother);
+      expect(weekdayOf(d)).toBe(0);
+    }
+    expect(holidayOn(19980503, usa)).toBeNull();
+  });
+});

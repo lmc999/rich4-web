@@ -192,6 +192,28 @@ describe('LobbyView', () => {
 });
 
 describe('CreateRoomForm', () => {
+  it('缺省地图取服务器地图目录的 defaultMap（不写死台湾）；手选过就不再覆盖', async () => {
+    vi.stubGlobal('fetch', async () =>
+      Response.json({
+        defaultMap: 'japan',
+        maps: [
+          { id: 'taiwan', mapHash: 'a', playable: true },
+          { id: 'japan', mapHash: 'b', playable: true },
+        ],
+      }),
+    );
+    try {
+      const { transport } = renderWith(<CreateRoomForm onCreated={() => {}} />);
+      await waitFor(() => expect(screen.getByTestId('set-map')).toHaveValue('japan'));
+      await userEvent.selectOptions(screen.getByTestId('set-map'), 'taiwan');
+      await userEvent.click(screen.getByTestId('create-submit'));
+      await waitFor(() => expect(transport.payloads('room:create')).toHaveLength(1));
+      expect(transport.payloads('room:create')[0]).toMatchObject({ settings: { game: { mapId: 'taiwan' } } });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('提交 room:create（带全部设置），再给 1..N 号座位补电脑，回调房间号', async () => {
     const onCreated = vi.fn();
     const { transport } = renderWith(<CreateRoomForm onCreated={onCreated} />);
@@ -232,6 +254,31 @@ describe('CreateRoomForm', () => {
       { seat: 1, ai: { preset: 'gentle' } },
       { seat: 2, ai: { preset: 'gentle' } },
     ]);
+  });
+});
+
+describe('手牌说明（真人 ≥ 2 时他人看不到本人的手牌与道具，net.md §6.1）', () => {
+  it('两名真人：说明为「他人无法查看自己手牌及道具」并高亮；只有一名真人时说明适用条件', () => {
+    const two = roomView({
+      seats: [human(0, '房主', { isYou: true, host: true }), human(1, '小明'), seat(2), seat(3)],
+    });
+    const r = renderWith(<LobbyView room={two} onLeave={() => {}} />);
+    const hint = within(screen.getByTestId('room-settings')).getByTestId('room-hand-hint');
+    expect(hint).toHaveTextContent('他人无法查看自己手牌及道具');
+    expect(hint).not.toHaveTextContent('两名以上');
+    expect(hint).toHaveAttribute('data-active', 'true');
+    r.unmount();
+    renderWith(<LobbyView room={roomView()} onLeave={() => {}} />);
+    expect(screen.getByTestId('room-hand-hint')).toHaveTextContent('两名以上真人时，他人无法查看自己手牌及道具');
+    expect(screen.getByTestId('room-hand-hint')).toHaveAttribute('data-active', 'false');
+  });
+
+  it('房间已锁定私密（例如对局后回到大厅只剩一名真人）：照样显示「他人无法查看自己手牌及道具」', () => {
+    const base = roomView();
+    renderWith(
+      <LobbyView room={roomView({ settings: { ...base.settings, handVisibility: 'private' } })} onLeave={() => {}} />,
+    );
+    expect(screen.getByTestId('room-hand-hint')).toHaveAttribute('data-active', 'true');
   });
 });
 

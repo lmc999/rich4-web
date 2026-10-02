@@ -22,8 +22,12 @@ export const ITEM_USED: EventHandler<'ITEM_USED'> = async (e, ctx) => {
   await ctx.wait(200);
 };
 
+/**
+ * 换乘 / 改回步行。真人从回合菜单收起机车 / 汽车（stowed）不弹提示：原版收起只刷新外观、重画（v2.06 0x4467b1 调
+ * 0x40b425、0x41cc56），不说台词也不出对话框；日志照记（EventPlayer 按 logFormat 写）
+ */
 export const VEHICLE: EventHandler<'VEHICLE'> = async (e, ctx) => {
-  const line = formatEvent(e, ctx.names);
+  const line = e.stowed ? null : formatEvent(e, ctx.names);
   if (line) ctx.ui.toast(line);
   await stageOf(ctx).vehicle(e.seat, e.vehicle, ctx.signal);
   syncFromPost(ctx, e.post);

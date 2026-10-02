@@ -4,6 +4,7 @@
 // - 浏览器不许有声自动播放时改为静音播放并给出「打开声音」钮；
 // - 素材包没有 video.start（或不可用）时跳过；设置里可重播（标题画面「设置」面板）；
 // - 播放期间 uiStore.introPlaying 为 true：音频导演层暂不放标题曲。
+// 全屏视频层（VideoOverlay）与取视频地址（videoUrl）也给开局飞行动画（FlyVideo）共用。
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { appFlags } from '../../../app/flags';
 import { useTx } from '../../../i18n/tx';
@@ -16,17 +17,26 @@ export const INTRO_SEEN_KEY = 'rich4.introSeen';
 /** 这么久还没开始播放（加载卡住）就跳过 */
 export const STALL_MS = 10_000;
 
-/** 片头视频的地址（按浏览器能力选 mp4 / webm）；条目不可用时 null */
-export function introUrl(
+/** 素材包 video 条目的地址（按浏览器能力选 mp4 / webm）；条目不可用时 null */
+export function videoUrl(
   client: Pick<PackClient, 'usableEntry' | 'fileUrl'> | null,
+  key: string,
   canPlay: (mime: string) => string = defaultCanPlay,
 ): string | null {
-  const e = client?.usableEntry(INTRO_VIDEO);
+  const e = client?.usableEntry(key);
   if (!client || e?.type !== 'video') return null;
   const mp4 = e.files.mp4 && canPlay('video/mp4') !== '' ? e.files.mp4 : undefined;
   const webm = e.files.webm && canPlay('video/webm') !== '' ? e.files.webm : undefined;
   const file = mp4 ?? webm ?? e.files.mp4 ?? e.files.webm;
   return file ? client.fileUrl(file) : null;
+}
+
+/** 片头视频的地址；条目不可用时 null */
+export function introUrl(
+  client: Pick<PackClient, 'usableEntry' | 'fileUrl'> | null,
+  canPlay: (mime: string) => string = defaultCanPlay,
+): string | null {
+  return videoUrl(client, INTRO_VIDEO, canPlay);
 }
 
 function defaultCanPlay(mime: string): string {
@@ -58,13 +68,42 @@ export function shouldAutoPlayIntro(url: string | null): boolean {
   return url !== null && !appFlags().animInstant && !introSeen();
 }
 
-export interface IntroVideoProps {
+export interface VideoOverlayProps {
   url: string;
   onDone(): void;
+  /** 根的 testid；视频、跳过、打开声音依次为 <testId>-video / -skip / -unmute */
+  testId: string;
+  label: string;
+  skipLabel: string;
+  unmuteLabel: string;
+  /** 跳过钮醒目（对局里轮到本人决策、服务器计时照走时） */
+  urgent?: boolean;
+  /** 这么久还没开始播放就结束 */
+  stallMs?: number;
+  /** 最长播放时间（毫秒，缺省不限）：卡在中途也能结束 */
+  maxMs?: number;
+  /**
+   * 在捕获阶段接管 Esc / Enter / 空格（阻止继续传播）：对局页有全局快捷键（空格 = 掷骰），视频层之下的画面不能收到
+   */
+  captureKeys?: boolean;
+  /** 附加在根上的类（层级等） */
+  className?: string;
 }
 
-export function IntroVideo({ url, onDone }: IntroVideoProps): ReactNode {
-  const t = useTx();
+/** 全屏视频层：播放、跳过（按钮、Esc / Enter / 空格）、静音回退、卡住超时；期间 uiStore.introPlaying 为 true */
+export function VideoOverlay({
+  url,
+  onDone,
+  testId,
+  label,
+  skipLabel,
+  unmuteLabel,
+  urgent = false,
+  stallMs = STALL_MS,
+  maxMs,
+  captureKeys = false,
+  className,
+}: VideoOverlayProps): ReactNode {
   const ref = useRef<HTMLVideoElement>(null);
   const skipRef = useRef<HTMLButtonElement>(null);
   const [muted, setMuted] = useState(false);
@@ -74,11 +113,10 @@ export function IntroVideo({ url, onDone }: IntroVideoProps): ReactNode {
   const finish = (): void => {
     if (finished.current) return;
     finished.current = true;
-    markIntroSeen();
     doneRef.current();
   };
 
-  // 片头期间音频导演层不放标题曲（app/audioWiring 读 uiStore.introPlaying）
+  // 播放期间音频导演层不放场景曲（app/audioWiring 读 uiStore.introPlaying）
   useEffect(() => {
     useUiStore.getState().setIntroPlaying(true);
     return () => useUiStore.getState().setIntroPlaying(false);
@@ -96,7 +134,8 @@ export function IntroVideo({ url, onDone }: IntroVideoProps): ReactNode {
     v.addEventListener('playing', onPlaying);
     const stall = setTimeout(() => {
       if (!started) finish();
-    }, STALL_MS);
+    }, stallMs);
+    const cap = maxMs === undefined ? null : setTimeout(finish, maxMs);
     const p = v.play();
     if (p && typeof p.catch === 'function') {
       p.catch((e: unknown) => {
@@ -111,21 +150,28 @@ export function IntroVideo({ url, onDone }: IntroVideoProps): ReactNode {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
+        if (captureKeys) e.stopPropagation();
         finish();
       }
     };
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, captureKeys);
     return () => {
       clearTimeout(stall);
+      if (cap !== null) clearTimeout(cap);
       v.removeEventListener('playing', onPlaying);
-      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onKey, captureKeys);
       v.pause();
     };
   }, []);
 
   return (
-    <div className={s.overlay} role="dialog" aria-label={t('classicScreens:intro.label')} data-testid="intro">
-      {/* biome-ignore lint/a11y/useMediaCaption: 原版片头没有对白字幕 */}
+    <div
+      className={className ? `${s.overlay} ${className}` : s.overlay}
+      role="dialog"
+      aria-label={label}
+      data-testid={testId}
+    >
+      {/* biome-ignore lint/a11y/useMediaCaption: 原版片头与飞行动画没有对白字幕 */}
       <video
         ref={ref}
         src={url}
@@ -133,7 +179,7 @@ export function IntroVideo({ url, onDone }: IntroVideoProps): ReactNode {
         preload="auto"
         onEnded={finish}
         onError={finish}
-        data-testid="intro-video"
+        data-testid={`${testId}-video`}
       />
       <div className={s.introBtns}>
         {muted && (
@@ -148,15 +194,44 @@ export function IntroVideo({ url, onDone }: IntroVideoProps): ReactNode {
               }
               setMuted(false);
             }}
-            data-testid="intro-unmute"
+            data-testid={`${testId}-unmute`}
           >
-            {t('classicScreens:intro.unmute')}
+            {unmuteLabel}
           </button>
         )}
-        <button type="button" className={s.introBtn} ref={skipRef} onClick={finish} data-testid="intro-skip">
-          {t('classicScreens:intro.skip')}
+        <button
+          type="button"
+          className={s.introBtn}
+          ref={skipRef}
+          onClick={finish}
+          data-testid={`${testId}-skip`}
+          data-urgent={urgent ? 'true' : 'false'}
+        >
+          {skipLabel}
         </button>
       </div>
     </div>
+  );
+}
+
+export interface IntroVideoProps {
+  url: string;
+  onDone(): void;
+}
+
+export function IntroVideo({ url, onDone }: IntroVideoProps): ReactNode {
+  const t = useTx();
+  return (
+    <VideoOverlay
+      url={url}
+      onDone={() => {
+        markIntroSeen();
+        onDone();
+      }}
+      testId="intro"
+      label={t('classicScreens:intro.label')}
+      skipLabel={t('classicScreens:intro.skip')}
+      unmuteLabel={t('classicScreens:intro.unmute')}
+    />
   );
 }

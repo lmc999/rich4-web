@@ -3,6 +3,7 @@ import type { AiPreset, InitialFund, StartVehicle, Tenure, TimeLimitDays, WinMul
 import { DEFAULT_INITIAL_FUND, QUICK_GAME_PRESET } from '@rich4/shared/engine';
 import {
   DEFAULT_PACING,
+  effectiveHandVisibility,
   PACING_PROFILES,
   type PacingProfile,
   type RoomSettings,
@@ -36,7 +37,13 @@ export const TIMER_PRESETS: readonly TimerPreset[] = ['fast', 'normal', 'slow', 
 /** 演出节奏选项（默认原版在前） */
 export const PACING_OPTIONS: readonly PacingProfile[] = PACING_PROFILES;
 
-export function defaultDraft(mapId = 'taiwan'): SettingsDraft {
+/**
+ * 地图目录（GET /api/maps）到达之前草稿里的占位地图：服务端 DEFAULT_MAP 的缺省值（apps/server/src/config.ts）。
+ * 目录到达后换成服务端给的 defaultMap（mapAfterList）；请求失败时 fetchMapList 只列 fixture、缺省 test
+ */
+export const FALLBACK_MAP_ID = 'taiwan';
+
+export function defaultDraft(mapId = FALLBACK_MAP_ID): SettingsDraft {
   return {
     mapId,
     initialFund: DEFAULT_INITIAL_FUND,
@@ -69,6 +76,15 @@ export function soloHumanNow(room: RoomView): boolean {
 /** 建房：电脑补满其余座位（1..3 号都是电脑），开局时只有房主一名真人 */
 export function draftSoloHuman(d: SettingsDraft): boolean {
   return d.aiCount >= 3;
+}
+
+/**
+ * 大厅：开局后他人看不到本人的手牌与道具——座位上真人 ≥ 2 时服务器开局锁定私密（net/room.ts effectiveHandVisibility），
+ * 房间已锁定私密时也算。只有一名真人时手牌照原版公开（观战者也看得到），说明换成「两名以上真人时…」
+ */
+export function handPrivateNow(room: RoomView): boolean {
+  const humans = room.seats.filter((s) => s.occupant?.kind === 'human').length;
+  return effectiveHandVisibility(room.settings.handVisibility, humans) === 'private';
 }
 
 /** 计时说明此刻就适用（换成「现在只有一名真人：开局后不计时」）：只有一名真人，且计时档位不是 off */
@@ -128,6 +144,18 @@ export interface MapListingLite {
   fixture?: boolean;
 }
 
+/**
+ * 地图目录到达后草稿的地图：用户手选过、并且那张图在目录里 → 保留；否则用服务端的 defaultMap
+ * （不再因为占位地图恰好也在目录里就留着它）
+ */
+export function mapAfterList(
+  current: string,
+  userPicked: boolean,
+  list: { defaultMap: string; maps: readonly MapListingLite[] },
+): string {
+  return userPicked && list.maps.some((m) => m.id === current) ? current : list.defaultMap;
+}
+
 export async function fetchMapList(
   fetchImpl: (u: string) => Promise<{ ok: boolean; status?: number; json(): Promise<unknown> }> = (u) => fetch(u),
 ): Promise<{ defaultMap: string; maps: MapListingLite[] }> {
@@ -137,7 +165,9 @@ export async function fetchMapList(
     if (r.ok) {
       const j = (await r.json()) as { defaultMap?: string; maps?: MapListingLite[] };
       const maps = (j.maps ?? []).filter((m) => m.playable !== false);
-      if (maps.length > 0) return { defaultMap: j.defaultMap ?? maps[0]!.id, maps };
+      // 服务端的 defaultMap 不在可开局列表里（旧服务器、数据包变化）时取第一张
+      const def = j.defaultMap !== undefined && maps.some((m) => m.id === j.defaultMap) ? j.defaultMap : undefined;
+      if (maps.length > 0) return { defaultMap: def ?? maps[0]!.id, maps };
     }
   } catch {
     // 服务器不可达：只列出 fixture

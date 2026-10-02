@@ -104,9 +104,17 @@ describe('拍卖厅', () => {
     expect(lotArtFrame({ facility: 'lab', chain: false }, 5, 0)).toBe(71);
     expect(lotArtFrame({ facility: 'lab', chain: false }, 0, 0)).toBe(103);
     expect(lotArtFrame(null, 2, 0)).toBe(31);
-    expect(mapStyleIndex('taiwan')).toBe(0);
-    expect(mapStyleIndex('japan')).toBe(2);
+    // 按 MapDef.globalMapId（台 0 / 中 1 / 日 2 / 美 3）；fixture（null）与越界按台湾
+    expect([0, 1, 2, 3].map((gm) => mapStyleIndex(gm))).toEqual([0, 1, 2, 3]);
+    expect(mapStyleIndex(null)).toBe(0);
     expect(mapStyleIndex(undefined)).toBe(0);
+    expect(mapStyleIndex(4)).toBe(0);
+    expect(mapStyleIndex(-1)).toBe(0);
+    // 各图 1..5 级住宅缩图：大陆 35–39、日本 40–44、美国 45–49（Panel#26 帧 29 + 5·gm + L）
+    const house = { facility: null, chain: false };
+    expect([1, 5].map((L) => lotArtFrame(house, L, mapStyleIndex(1)))).toEqual([35, 39]);
+    expect([1, 5].map((L) => lotArtFrame(house, L, mapStyleIndex(2)))).toEqual([40, 44]);
+    expect([1, 5].map((L) => lotArtFrame(house, L, mapStyleIndex(3)))).toEqual([45, 49]);
   });
 
   it('7 颗竞价钮：常态帧 3+2i、悬停帧 4+2i，排成一排不重叠、都在场景里', () => {

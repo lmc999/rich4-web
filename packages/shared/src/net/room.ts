@@ -3,7 +3,7 @@
  */
 import type { GameConfig, RuleConfig } from '../engine/types/config';
 import type { CharacterId, DateNum, SeatAiConfig, SeatIndex } from '../engine/types/ids';
-import type { SeatControl } from '../view/types';
+import type { HandVisibility, SeatControl } from '../view/types';
 import { DEFAULT_MAX_SPECTATORS } from './limits';
 import type { SaveWarning } from './protocol';
 import { type AiPace, DEFAULT_PACING, DEFAULT_RECONNECT_GRACE_S, type PacingProfile, type TimerPreset } from './timing';
@@ -23,8 +23,11 @@ export interface RoomSettings {
   /** 0..MAX_SPECTATORS_LIMIT */
   maxSpectators: number;
   spectatorChat: SpectatorChat;
-  /** 默认 public（还原原版同屏体验） */
-  handVisibility: 'public' | 'private';
+  /**
+   * 默认 public（还原原版同屏体验）。开局时服务器按 effectiveHandVisibility 锁定：座位上有 ≥ 2 名真人（联机）一律改为
+   * private，并随房间快照、存档保存；同一房间只会从公开改为私密，对局中有人离开也不会改回公开
+   */
+  handVisibility: HandVisibility;
   /** 默认 normal；单机默认 off。只有一名真人（其余是电脑）时实际不计时（RoomView.effectiveTimerPreset） */
   timerPreset: TimerPreset;
   /** 默认 default */
@@ -76,6 +79,20 @@ export const SOLO_ROOM_OVERRIDES = Object.freeze({
 /** 默认房间设置（每次返回新对象） */
 export function defaultRoomSettings(game: GameConfig): RoomSettings {
   return { ...DEFAULT_ROOM_SETTINGS, game: { ...game, rules: { ...game.rules } } };
+}
+
+/**
+ * 座位上的真人不少于这么多时（联机对局）对手与观战者看不到别人手上卡片与道具的种类（用户要求「联机时禁止对手查看自己
+ * 手上的道具与卡片」）。单机与「1 名真人 + 电脑」仍按房间设置（默认 public），和原版单机一样可以查看电脑的资产。
+ */
+export const PRIVATE_HAND_MIN_HUMAN_SEATS = 2;
+
+/**
+ * 开局（含读档开局）时锁定的手牌可见性：真人座位 ≥ PRIVATE_HAND_MIN_HUMAN_SEATS 时为 private，否则沿用房间设置。
+ * 只会从 public 改为 private（房间设置为 private 时保持 private）。humanSeats 按 timing.ts isHumanSeatControl 计数。
+ */
+export function effectiveHandVisibility(setting: HandVisibility, humanSeats: number): HandVisibility {
+  return humanSeats >= PRIVATE_HAND_MIN_HUMAN_SEATS ? 'private' : setting;
 }
 
 /** 对局中 room:updateSettings 只允许改这些字段（design/net.md §9） */

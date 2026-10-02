@@ -104,6 +104,26 @@ describe('GameRenderer（Chromium + WebGL）', () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 
+  it('宿主晚于 window resize 才变尺寸（React 提交晚于 Pixi 读尺寸那一帧）：画布、屏幕与镜头视窗仍跟着宿主', async () => {
+    const g = await GameRenderer.create({ host, quality: 'low' });
+    r = g;
+    // 先发 window resize，让 Pixi 在下一帧读到旧的宿主尺寸，之后宿主才变
+    window.dispatchEvent(new Event('resize'));
+    await nextFrame();
+    host.style.width = '500px';
+    host.style.height = '300px';
+    await vi.waitFor(() => expect(g.app.screen).toMatchObject({ width: 500, height: 300 }));
+    const b = g.app.canvas.getBoundingClientRect();
+    expect([b.width, b.height]).toEqual([500, 300]);
+    expect(g.camera.effectiveViewport()).toMatchObject({ w: 500, h: 300 });
+    // 销毁后不再观察宿主（宿主再变尺寸不报错）
+    g.destroy();
+    r = null;
+    host.style.width = '400px';
+    for (let i = 0; i < 3; i++) await nextFrame();
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
   it('WebGL 上下文丢失并恢复后重建纹理，画面仍非空', async (ctx) => {
     r = await GameRenderer.create({ host });
     await r.loadMap(buildTestMapAllKinds());

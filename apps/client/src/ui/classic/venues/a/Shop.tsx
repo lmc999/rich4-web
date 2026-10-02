@@ -2,9 +2,13 @@
 // CARD 货架图1）与道具店（图16 底图、店员女孩图18、粉色讲话框图34、ITEM 货架图17）；右上角翻页角（图13/14 锤子 → 道具店，
 // 图29/30 CARD → 卡片店）；左下 EXIT（图35/36）与点数底板（图37）。
 // 货架每行一颗热区（卡片 15 行 × 26、道具 8 行 × 48，道具行画 Panel#74 小图标，缺素材时只写字）；选中后店员在讲话框里介绍，
-// 左下详情区显示卡图（Data#530–559，可选）、价格与「买下 / 卖出」钮，道具可选数量。买 / 卖用页签切换。
+// 左下详情区显示卡图（Data#530–559，可选）、价格与「买下 / 卖出」钮。买 / 卖用页签切换。
+// 道具按原版：货架只写名称与价格，不显示库存（@source v2.06 0x42e011..0x42e0a6 每行只画名称与 "$%d"），
+// 只列进店时有库存的道具（options.items[].listed，行压紧）；一次买 1 个，买过的那一行变灰、本次进店不能再选
+// （@source v2.06 0x42d869 call fcn.0042c64b 无数量参数、0x42d89c 灰色 0xa0a0a0 重画、0x42d9cf 货架行清零）；
+// 卖道具也是一次 1 个（@source v2.06 0x42d4e6 push 1），可以一直卖。没有数量钮。
 // 每笔交易都是非终结 intent（服务器以新 decisionId 重发 SHOP，场景保持打开）；EXIT / Esc 提交 LEAVE。
-// 逻辑与程序化 ShopDialog 相同（货架、价格、库存、可买上限全部来自 options；卖回价公式同引擎）；
+// 逻辑与程序化 ShopDialog 相同（货架、价格、能不能买全部来自 options；卖回价公式同引擎）；
 // data-testid 沿用程序化对话框（shop-shelf-<idx>、shop-buy-card、shop-item-<item>、shop-buy-item、shop-sell-card-<slot>、
 // shop-sell-card、shop-sell-item-<item>、shop-sell-item、shop-leave、shop-points）。
 // 手机横屏：货架行太密（26 / 48 逻辑像素），另给一个原生下拉框（系统选择器）选商品；买卖钮、页签、翻页、EXIT 热区 ≥44px。
@@ -23,13 +27,13 @@ import { DecisionStage } from '../../common/DecisionStage';
 import { type HotspotSpec, Hotspots } from '../../common/Hotspots';
 import { SceneLayer } from '../../common/Stage4x3';
 import { useEnsureSceneSprites } from '../../common/sceneAssets';
-import { TEXT } from '../../common/textStyles';
+import { classicText, TEXT } from '../../common/textStyles';
 import type { RequiredKeys } from '../../decisions/scene';
 import { CARD_ART_UNDERLAY } from '../../dialogs/parts';
 import { ensureClassicI18n } from '../../i18n';
 import { Sprite, useSpriteFrame } from '../../Sprite';
 import { SHOP, type ShopPage, shopRowRect, VENUE_KEYS } from './layout';
-import { Amount, PlateButton, SceneText, SrNumber, useBlink, useTalk } from './parts';
+import { Amount, PlateButton, SceneText, useBlink, useTalk } from './parts';
 import v from './venues.module.css';
 
 export const requiredKeys: RequiredKeys<'SHOP'> = [VENUE_KEYS.shop];
@@ -51,11 +55,19 @@ interface Row {
   name: string;
   /** 右侧数字：价格或卖回价 */
   points: number;
-  /** 道具：库存 / 持有 */
+  /** 卖道具：持有数（×n）；买道具页不写（原版货架行只有名称与价格） */
   note: string | null;
-  /** 不能选的原因（null 可选） */
+  /** 不能买卖的原因（null 可以） */
   reason: string | null;
+  /** 本次进店已经买过的道具行：原版灰色重画、点了没反应（热区与下拉框项都禁用） */
+  off: boolean;
 }
+
+/**
+ * 本次进店买过的道具行：原版用灰字 0xa0a0a0、边框色 0x101010、样式 3（描边 + 粗体）重画这一行
+ * （@source v2.06 0x42d893..0x42d8a3 push 0 / 3 / 0x101010 / 0xa0a0a0 / 0x14 → fcn.0044e200）
+ */
+const SOLD_TEXT = classicText({ size: 12, color: '#a0a0a0', outline: '#101010', bold: true });
 
 /** 卡图（Data#530–559 = card.<k>，165×256；可选：不可用时画卡名框） */
 function CardArt({ card, name, x, y }: { card: CardId; name: string; x: number; y: number }): ReactNode {
@@ -111,7 +123,6 @@ export default function ShopScene(props: DecisionProps<'SHOP'>): ReactNode {
   const [page, setPage] = useState<ShopPage>('card');
   const [mode, setMode] = useState<Mode>('buy');
   const [pick, setPick] = useState<string | null>(null);
-  const [qty, setQty] = useState(1);
   const [shelfPage, setShelfPage] = useState(0);
   const handFull = o.handCount >= o.handMax;
   const tradesLeft = o.visit.remaining > 0;
@@ -138,6 +149,7 @@ export default function ShopScene(props: DecisionProps<'SHOP'>): ReactNode {
           : r.price > o.points
             ? text.reason('notEnoughPoints')
             : text.reason('poolEmpty'),
+      off: false,
     }));
   } else if (page === 'card') {
     rows = o.sell.cards.map((r) => ({
@@ -150,26 +162,36 @@ export default function ShopScene(props: DecisionProps<'SHOP'>): ReactNode {
       points: r.value,
       note: null,
       reason: null,
+      off: false,
     }));
   } else if (mode === 'buy') {
-    rows = o.items.map((r) => ({
-      id: `item-${r.item}`,
-      testId: `shop-item-${r.item}`,
-      kind: 'item',
-      card: null,
-      item: r.item,
-      name: text.item(r.item),
-      points: r.price,
-      note: `${t('dlg.shop.stock', { n: r.pool })}${r.own > 0 ? ` ×${r.own}` : ''}`,
-      reason:
-        r.maxQty > 0
-          ? null
-          : r.pool <= 0
-            ? text.reason('poolEmpty')
-            : r.own >= 9
-              ? text.reason('itemFull')
-              : text.reason('notEnoughPoints'),
-    }));
+    // 进店时卖完的不上架（旧存档的 options 没有 listed：照常列出）；货架行只写名称与价格：不显示库存，也不显示持有数
+    // （原版持有数只在下方自己的持有格里 '×%d'，fcn.0044681f；货架上的「×n」容易被看成「剩 n 个」。持有数在卖道具页与资产屏）
+    rows = o.items
+      .filter((r) => r.listed !== false)
+      .map((r) => ({
+        id: `item-${r.item}`,
+        testId: `shop-item-${r.item}`,
+        kind: 'item',
+        card: null,
+        item: r.item,
+        name: text.item(r.item),
+        points: r.price,
+        note: null,
+        reason:
+          r.bought === true
+            ? text.reason('boughtThisVisit')
+            : r.maxQty > 0
+              ? null
+              : r.pool <= 0
+                ? text.reason('poolEmpty')
+                : r.own >= 9
+                  ? text.reason('itemFull')
+                  : r.price > o.points
+                    ? text.reason('notEnoughPoints')
+                    : null,
+        off: r.bought === true,
+      }));
   } else {
     rows = o.sell.items.map((r) => ({
       id: `selli-${r.item}`,
@@ -181,39 +203,37 @@ export default function ShopScene(props: DecisionProps<'SHOP'>): ReactNode {
       points: r.unitValue,
       note: `×${r.count}`,
       reason: null,
+      off: false,
     }));
   }
   const limit = page === 'card' ? SHOP.cardRows.count : SHOP.itemRows.count;
   const pages = Math.max(1, Math.ceil(rows.length / limit));
   const curPage = Math.min(shelfPage, pages - 1);
   const shown = rows.slice(curPage * limit, curPage * limit + limit);
-  const sel = rows.find((r) => r.id === pick) ?? null;
+  // 刚买下的道具行变灰（off）后不再算选中：详情区收起，和原版买后该行作废一样
+  const sel = rows.find((r) => r.id === pick && !r.off) ?? null;
+  const selId = sel?.id ?? null;
   const pickRow = (id: string | null): void => {
     setPick(id);
-    setQty(1);
     const i = id === null ? -1 : rows.findIndex((r) => r.id === id);
     if (i >= 0) setShelfPage(Math.floor(i / limit));
   };
 
-  // 数量（道具）
+  // 道具：一次 1 个
   const buyRow =
     page === 'item' && mode === 'buy' && sel?.item != null ? o.items.find((r) => r.item === sel.item) : null;
   const sellRow =
     page === 'item' && mode === 'sell' && sel?.item != null ? o.sell.items.find((r) => r.item === sel.item) : null;
-  const qtyMax = buyRow ? Math.max(0, buyRow.maxQty) : sellRow ? sellRow.count : 0;
-  const n = Math.min(Math.max(1, qty), Math.max(1, qtyMax));
 
   const switchPage = (p: ShopPage): void => {
     setPage(p);
     setMode('buy');
     setPick(null);
-    setQty(1);
     setShelfPage(0);
   };
   const switchMode = (m: Mode): void => {
     setMode(m);
     setPick(null);
-    setQty(1);
     setShelfPage(0);
   };
 
@@ -242,17 +262,17 @@ export default function ShopScene(props: DecisionProps<'SHOP'>): ReactNode {
       action = {
         label: t('dlg.shop.buyFor'),
         testId: 'shop-buy-item',
-        points: buyRow.price * n,
-        disabled: qtyMax < 1 || !tradesLeft,
-        run: () => ctl.send({ type: 'SHOP_BUY_ITEM', item: buyRow.item, qty: Math.min(n, qtyMax) }),
+        points: buyRow.price,
+        disabled: buyRow.maxQty < 1 || !tradesLeft,
+        run: () => ctl.send({ type: 'SHOP_BUY_ITEM', item: buyRow.item, qty: 1 }),
       };
     } else if (sellRow) {
       action = {
         label: t('dlg.shop.sellFor'),
         testId: 'shop-sell-item',
-        points: sellItemValue(sellRow.item, Math.min(n, qtyMax)),
-        disabled: qtyMax < 1 || !tradesLeft,
-        run: () => ctl.send({ type: 'SHOP_SELL_ITEM', item: sellRow.item, qty: Math.min(n, qtyMax) }),
+        points: sellItemValue(sellRow.item, 1),
+        disabled: sellRow.count < 1 || !tradesLeft,
+        run: () => ctl.send({ type: 'SHOP_SELL_ITEM', item: sellRow.item, qty: 1 }),
       };
     }
   }
@@ -326,8 +346,8 @@ export default function ShopScene(props: DecisionProps<'SHOP'>): ReactNode {
       rect: { x: rect.x - shelfX, y: rect.y - shelfY, w: rect.w, h: rect.h },
       label: `${r.name} ${r.points}`,
       title: r.reason ?? undefined,
-      pressed: pick === r.id,
-      disabled: r.reason !== null && mode === 'buy' && page === 'card',
+      pressed: selId === r.id,
+      disabled: r.off || (r.reason !== null && mode === 'buy' && page === 'card'),
       hit: 'none',
       testId: r.testId,
       onActivate: () => pickRow(r.id),
@@ -406,8 +426,10 @@ export default function ShopScene(props: DecisionProps<'SHOP'>): ReactNode {
           const y = rect.y - shelfY;
           const icon = r.item !== null && iconsReady;
           return (
-            <div key={r.id} className={r.reason ? v.rowOff : undefined}>
-              {pick === r.id && <span className={v.rowHi} style={{ left: x, top: y, width: rect.w, height: rect.h }} />}
+            <div key={r.id} className={r.reason && !r.off ? v.rowOff : undefined} data-sold={r.off || undefined}>
+              {selId === r.id && (
+                <span className={v.rowHi} style={{ left: x, top: y, width: rect.w, height: rect.h }} />
+              )}
               {r.item !== null && (
                 <Sprite
                   sheet={VENUE_KEYS.itemIcons}
@@ -415,12 +437,13 @@ export default function ShopScene(props: DecisionProps<'SHOP'>): ReactNode {
                   x={x + 8}
                   y={y + (rect.h - 20) / 2}
                   origin="topLeft"
+                  className={r.off ? v.rowOff : undefined}
                 />
               )}
               <span
                 className={v.cellText}
                 style={{
-                  ...TEXT.bodyDark,
+                  ...(r.off ? SOLD_TEXT : TEXT.bodyDark),
                   left: x + (page === 'card' ? 36 : icon ? 38 : 10),
                   top: y,
                   width: 110,
@@ -432,14 +455,26 @@ export default function ShopScene(props: DecisionProps<'SHOP'>): ReactNode {
               {r.note && (
                 <span
                   className={v.cellText}
-                  style={{ ...TEXT.bodyDark, left: x + (icon ? 38 : 10), top: y + 24, width: 110, height: 20 }}
+                  style={{
+                    ...(r.off ? SOLD_TEXT : TEXT.bodyDark),
+                    left: x + (icon ? 38 : 10),
+                    top: y + 24,
+                    width: 110,
+                    height: 20,
+                  }}
                 >
                   {r.note}
                 </span>
               )}
               <span
                 className={`${v.cellText} ${v.num}`}
-                style={{ ...TEXT.bodyDark, left: x + 140, top: y, width: rect.w - 140, height: rect.h }}
+                style={{
+                  ...(r.off ? SOLD_TEXT : TEXT.bodyDark),
+                  left: x + 140,
+                  top: y,
+                  width: rect.w - 140,
+                  height: rect.h,
+                }}
               >
                 {r.points}
                 {t('cmp.unit.points')}
@@ -478,14 +513,14 @@ export default function ShopScene(props: DecisionProps<'SHOP'>): ReactNode {
         className={v.picker}
         style={{ left: SHOP.picker.x, top: SHOP.picker.y, width: SHOP.picker.w }}
         aria-label={tabLabels[page][mode]}
-        value={sel?.id ?? ''}
+        value={selId ?? ''}
         disabled={!ctl.interactive}
         onChange={(e) => pickRow(e.currentTarget.value || null)}
         data-testid="shop-picker"
       >
         <option value="">—</option>
         {rows.map((r) => (
-          <option key={r.id} value={r.id} disabled={r.reason !== null && mode === 'buy' && page === 'card'}>
+          <option key={r.id} value={r.id} disabled={r.off || (r.reason !== null && mode === 'buy' && page === 'card')}>
             {r.name} {r.points}
             {t('cmp.unit.points')}
           </option>
@@ -503,57 +538,10 @@ export default function ShopScene(props: DecisionProps<'SHOP'>): ReactNode {
           <SceneText rect={{ x: 92, y: 4, w: 170, h: 40 }}>
             <p style={{ ...TEXT.title, fontSize: 15 }}>{sel.name}</p>
             <p>
-              {mode === 'buy'
-                ? t('dlg.shop.buyFor')
-                : page === 'card'
-                  ? t('dlg.shop.sellValue')
-                  : t('dlg.shop.unitValue')}{' '}
+              {mode === 'buy' ? t('dlg.shop.buyFor') : t('dlg.shop.sellValue')}{' '}
               <Amount value={sel.points} unit={t('cmp.unit.points')} testId="shop-price" />
             </p>
           </SceneText>
-          {sel.item !== null && qtyMax >= 1 && (
-            <>
-              <PlateButton
-                x={92}
-                y={52}
-                w={36}
-                h={32}
-                label={t('cmp.stepper.dec')}
-                disabled={n <= 1}
-                onClick={() => setQty(Math.max(1, n - 1))}
-                testId="shop-qty-dec"
-              >
-                −
-              </PlateButton>
-              <SceneText
-                rect={{ x: 130, y: 52, w: 60, h: 32 }}
-                style={{ ...TEXT.number, textAlign: 'center', lineHeight: '32px' }}
-              >
-                <span data-testid="shop-qty" data-value={n}>
-                  {t('dlg.shop.qty')} {n}
-                </span>
-              </SceneText>
-              <PlateButton
-                x={192}
-                y={52}
-                w={36}
-                h={32}
-                label={t('cmp.stepper.inc')}
-                disabled={n >= qtyMax}
-                onClick={() => setQty(Math.min(qtyMax, n + 1))}
-                testId="shop-qty-inc"
-              >
-                +
-              </PlateButton>
-              <SrNumber
-                label={t('dlg.shop.qty')}
-                value={n}
-                min={1}
-                max={qtyMax}
-                onChange={(x) => setQty(Math.max(1, x))}
-              />
-            </>
-          )}
           {action && (
             <PlateButton
               x={92}

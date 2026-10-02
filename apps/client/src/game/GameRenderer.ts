@@ -20,6 +20,7 @@ import { type BoardLabels, BoardView } from './board/BoardView';
 import { TILE_GLYPHS } from './board/tileStyles';
 import { Camera, MAX_ZOOM, MIN_ZOOM } from './camera/Camera';
 import { attachGestures } from './camera/gestures';
+import { followHostSize } from './followHost';
 import type { PickResult } from './iso/picking';
 import { normRotation, type Pt, type Rotation } from './iso/projection';
 import { createLayers, type Layers } from './layers';
@@ -78,6 +79,7 @@ export class GameRenderer {
   layers!: Layers;
   cache!: TextureCache;
   private detachGestures: (() => void) | null = null;
+  private unfollowHost: (() => void) | null = null;
   private destroyed = false;
   private followSeat: number | null = null;
   private readonly quality: QualityPreset;
@@ -160,6 +162,8 @@ export class GameRenderer {
       chunkCells: 12,
     });
     app.renderer.on('resize', (w: number, h: number) => this.camera.setViewport(w, h));
+    // resizeTo 只跟 window 'resize'：宿主尺寸晚一步变化时画布会停在旧尺寸，另外观察宿主（见 followHost）
+    this.unfollowHost = followHostSize(app, opts.host);
     app.ticker.add((t) => {
       const dt = Math.min(100, t.deltaMS);
       if (this.ownsClock) this.clock.advance(dt);
@@ -290,6 +294,8 @@ export class GameRenderer {
     this.destroyed = true;
     this.detachGestures?.();
     this.detachGestures = null;
+    this.unfollowHost?.();
+    this.unfollowHost = null;
     const canvas = this.app.canvas;
     if (!this.ownsClock) this.camera.follow(null);
     // 共享时钟上可能还有镜头补间（没带 signal 的 zoomTo 等）：先让镜头失效，再销毁 world

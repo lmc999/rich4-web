@@ -208,3 +208,71 @@ export function diffRaw(raws: readonly MapDataRaw[]): MapRawDiff {
 export function diffExitCode(diff: MapRawDiff): number {
   return diff.rule.length > 0 ? ExitCode.RULE_DIFF : ExitCode.OK;
 }
+
+/** 规则差异项的键：`<表>#<记录号>.<字段>`（头部 / 资源级没有记录号，写 -），例如 companies#4.name。 */
+export function ruleDiffKey(it: Pick<DiffItem, 'table' | 'id' | 'field'>): string {
+  return `${it.table}#${it.id ?? '-'}.${it.field}`;
+}
+
+export interface AcceptedRuleDiffs {
+  /** 选定的基线（该图 overrides 的 source.id 必须与之相同） */
+  baseline: RawSourceId;
+  /** 已知的规则差异键（ruleDiffKey） */
+  keys: readonly string[];
+  /** 人读说明 */
+  note: string;
+}
+
+/**
+ * 已知、并已选定基线的 map diff 规则差异（按 gm）。`all` 子命令只在某图的规则差异**正好等于**这里的清单、
+ * 且该图 overrides 的 source.id 与清单的基线相同时，把 map diff 的 exit 4 视为已处理；其余一律按 exit 4 停下。
+ * 两处都以 v206-mapdat 为基线：与 v3.11 一致，v2.06 exe 先读 MapDat（VERIFY V-M1、data-pipeline.md §3）。
+ */
+export const ACCEPTED_RULE_DIFFS: Readonly<Record<number, AcceptedRuleDiffs>> = {
+  1: {
+    baseline: 'v206-mapdat',
+    keys: ['companies#4.name'],
+    note: '大陆 C4 名称：v206-mapdat / v3.11「王井府百貨」，v206-mapmkf「玉井府百貨」',
+  },
+  2: {
+    baseline: 'v206-mapdat',
+    keys: ['lands#17.rent'],
+    note: '日本 L17 二级过路费：v206-mapdat / v3.11 750，v206-mapmkf 7500',
+  },
+};
+
+export interface RuleDiffAcceptance {
+  ok: boolean;
+  /** 清单之外的规则差异 */
+  unexpected: string[];
+  /** 清单里有、这次没出现的差异 */
+  missing: string[];
+  /** 基线不符时的说明（overrides 未选基线或选的不是清单的基线） */
+  baselineProblem: string | null;
+}
+
+/**
+ * 某图的规则差异能否视为已处理：规则差异键的集合与 ACCEPTED_RULE_DIFFS[gm].keys 完全相同，
+ * 且 overrides 选定的基线（chosen，读不到时为 null）与清单一致。没有清单的图一律不放行。
+ */
+export function acceptRuleDiffs(
+  diff: Pick<MapRawDiff, 'globalMapId' | 'rule'>,
+  chosen: RawSourceId | null,
+  accepted: Readonly<Record<number, AcceptedRuleDiffs>> = ACCEPTED_RULE_DIFFS,
+): RuleDiffAcceptance {
+  const spec = accepted[diff.globalMapId];
+  const got = [...new Set(diff.rule.map(ruleDiffKey))].sort();
+  const want = [...(spec?.keys ?? [])].sort();
+  const unexpected = got.filter((k) => !want.includes(k));
+  const missing = want.filter((k) => !got.includes(k));
+  let baselineProblem: string | null = null;
+  if (!spec) baselineProblem = `gm ${diff.globalMapId} 没有已知规则差异清单`;
+  else if (chosen === null) baselineProblem = `overrides 没有选定基线（清单要求 ${spec.baseline}）`;
+  else if (chosen !== spec.baseline) baselineProblem = `overrides 的基线是 ${chosen}，清单要求 ${spec.baseline}`;
+  return {
+    ok: unexpected.length === 0 && missing.length === 0 && baselineProblem === null,
+    unexpected,
+    missing,
+    baselineProblem,
+  };
+}

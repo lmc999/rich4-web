@@ -1,0 +1,37 @@
+{
+  "$schema": "./overrides.schema.json",
+  "mapKey": "japan",
+  "source": {
+    "id": "v206-mapdat",
+    "expectResourceSha256": "9177f5d654721cff09afa1d390eaa3fef7a6ac20d244bb56c753980f621317ac"
+  },
+  "lattice": { "tile": 48, "origin": [17, 41], "transform": "identity" },
+  "compact": false,
+  "nodeCell": {
+    "11": [18, 36],
+    "57": [27, 24],
+    "101": [37, 29],
+    "103": [37, 31]
+  },
+  "edgeRoute": {
+    "60-61": [[30, 23]]
+  },
+  "lot": {
+    "C2": { "rect": [28, 21, 2, 2] }
+  },
+  "landmark": {},
+  "terrain": { "margin": 4 },
+  "expect": { "nodes": 110, "lands": 49, "facilities": 5, "companies": 6, "landscapes": 16 },
+  "notes": [
+    "坐标为格点坐标：(世界坐标 − origin) / tile 四舍五入、再做 transform 之后，平移到原点之前（与 taiwan.overrides.json 相同）。",
+    "基线 source.id = v206-mapdat（MapDat.MKF#2）：v2.06 exe 先读 MapDat.MKF[gm]、失败才回退 map.mkf（tools/extract/src/map/sources.ts 的 RAW_SOURCES 顺序），且与 v3.11 map.mkf#5 一致。map diff 唯一的规则相关差异是 lands#17（名古屋）rent[1]：MapDat 与 v3.11 为 750（同街 L16、L18 也是 750），v2.06 map.mkf 为 7500（VERIFY V-M1）；取 750。仙台 L6 地价 500（同街其余 800）三个来源一致，照原样保留。",
+    "expectResourceSha256 锁定 MapDat.MKF#2 的资源字节；输入变化时本文件整体作废（exit 5），需重新审阅。",
+    "lattice：T=32 覆盖率只有 12.7%；自动检测得到 T=48、原点 (17,41)（0 个节点同格），此处固定下来。transform 暂用 identity，尚未与原版截图核对。",
+    "terrain.margin 4：与台湾相同，四周多留两格让外海与海岸显示出来。",
+    "edgeRoute 60-61 + lot.C2：C2 豐田汽車的前沿格 59 (28,23)、60 (29,23) 横向相邻，默认 60→61 的 L 形连接格走 (29,22)，会占住它们正上方的 2×2（E_LOT_FRONT_NOT_ADJ）；连接格改走 (30,23)，C2 放在 (28..29, 21..22)。C2 的 rect 与自动结果相同，写明是为了把这对决定钉住。",
+    "nodeCell 11：神戶街（8–12，住宅地在西北侧）的 L26（前沿 10）原来只能放到东南侧；11 上移一格（拐角翻转随之把 10 移到 (18,35)）后 L26 回到 10 北侧。",
+    "nodeCell 57：松本街（56–58，住宅地在西北侧）的 L41（前沿 58）原来只能放到东南侧；57 上移一格后拐角翻转把 58 移到 (27,23)，L41 回到 58 北侧。",
+    "nodeCell 101、103：東京街（99–101 与 104–106，住宅地在西北侧，中间 102、103 是 C5 ＳＥＧＡ 的前沿格）的 L12（前沿 101）原来西北两侧被 100 与 C5 占住；101 左移一格、103 向右下移一格后 L12 回到 101 北侧，C5 改放在 102/103 东侧的 2×2。两条要一起改：只改其中一条时 C5 找不到同时与 102、103 相邻的矩形。",
+    "剩下的告警都是原版结构，不处理：W_LINK_ONEWAY 78（監獄）→79 的静态封路；W_DEADEND 79–84 支路尽头的监狱关押格 84（北海道）；W_COMPANY_REMOTE_FRONT C1 三越百貨的前沿格 50 与 107 相距过远；W_NAME_EMPTY 景观 10–13 原版名称为空（台湾景观 18–21 同样为空）。"
+  ]
+}

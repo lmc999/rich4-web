@@ -133,6 +133,35 @@ describe('EventPlayer', () => {
     expect(h.clock.speed).toBe(1);
   });
 
+  it('暂缓（开局飞行动画）：hold 期间批次只入队不开播，解除后接着播；解除函数幂等；多个持有者全部解除才开播', async () => {
+    const release = h.player.hold();
+    const other = h.player.hold();
+    expect(h.player.held).toBe(true);
+    h.player.enqueue(batch(0));
+    h.player.enqueue(batch(1));
+    for (let i = 0; i < 20; i++) h.clock.advance(100);
+    await h.flush();
+    expect(h.rec.log).toEqual([]);
+    expect(h.player.idle).toBe(false);
+    expect(h.player.backlogMs).toBe(batch(0).animMs + batch(1).animMs);
+    release();
+    release();
+    await h.flush();
+    expect(h.rec.log).toEqual([]);
+    other();
+    expect(h.player.held).toBe(false);
+    await h.drain();
+    expect(h.rec.log.at(-1)).toBe('batch:2');
+    expect(h.player.displayView).toEqual(batch(1).view);
+    // 快照在暂缓期间照常直达；dispose 清掉持有者（之后的解除是空操作）
+    const r2 = h.player.hold();
+    h.player.reset(sp.initial);
+    expect(h.rec.resets).toBe(2);
+    h.player.dispose();
+    expect(h.player.held).toBe(false);
+    r2();
+  });
+
   it('中止（reset）时连同最近 handler 留下的不阻塞尾巴一起中止；abortEpoch 递增', async () => {
     const tails: AbortSignal[] = [];
     const clock = new AnimClock();

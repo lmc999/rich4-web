@@ -4,11 +4,14 @@ import { DataError } from '../../errors';
 import { kindForLandingCode, slotOfStep, TILE_KINDS } from '../kinds';
 import { parseMapDef } from '../schema';
 import type { MapDef } from '../types';
+import { validateMap } from '../validate';
 import { type AsciiMapSpec, buildAsciiMap } from './ascii';
 import {
   buildFixtureMaps,
   buildTestMap,
   buildTestMapAllKinds,
+  buildTestMapIndustries,
+  buildTestOnlyFixtureMaps,
   FIXTURE_FILES,
   fixtureJson,
   TEST_MAP_SPEC,
@@ -27,11 +30,13 @@ function readFixture(id: string): string {
 
 describe('入库的 fixture JSON', () => {
   it('与生成器输出逐字节一致（否则请运行 npm run fixtures）', () => {
-    for (const def of buildFixtureMaps()) expect(readFixture(def.id)).toBe(fixtureJson(def));
+    for (const def of [...buildFixtureMaps(), ...buildTestOnlyFixtureMaps()]) {
+      expect(readFixture(def.id)).toBe(fixtureJson(def));
+    }
   });
 
   it('能通过 zod 结构校验并与生成器输出相等', () => {
-    for (const def of buildFixtureMaps()) {
+    for (const def of [...buildFixtureMaps(), ...buildTestOnlyFixtureMaps()]) {
       const parsed = parseMapDef(JSON.parse(readFixture(def.id)));
       expect(parsed).toEqual(def);
     }
@@ -152,6 +157,50 @@ describe('fixture 内容', () => {
         .stocks.filter((s) => s.hasCompany)
         .map((s) => s.index),
     ).toEqual([0, 1, 2]);
+  });
+});
+
+describe('fixture test-industries（只给测试用）', () => {
+  it('不在服务器注册的 fixture 里；strict4 校验无错误，警告只有支线封路与死路', () => {
+    expect(buildFixtureMaps().map((d) => d.id)).not.toContain('test-industries');
+    expect(buildTestOnlyFixtureMaps().map((d) => d.id)).toEqual(['test-industries']);
+    const d = buildTestMapIndustries();
+    const r = validateMap(d, { strict4: true, expect: { nodes: 26, lands: 4, facilities: 0, companies: 5 } });
+    expect(r.ok).toBe(true);
+    expect(r.issues.map((i) => i.code).sort()).toEqual(['W_DEADEND', 'W_LINK_ONEWAY']);
+  });
+
+  it('五种新行业的企业：航空 / 电子 / 汽车 / 石油 / 建设，前沿格为落点码 0 + lot 引用', () => {
+    const d = buildTestMapIndustries();
+    expect(d.companies.map((c) => [c.id, c.industry, c.industryKey, c.stockIndex, c.frontTiles])).toEqual([
+      ['C1', 1, 'airline', 0, [6, 7]],
+      ['C2', 3, 'electronics', 1, [10, 11]],
+      ['C3', 5, 'auto', 2, [14, 15]],
+      ['C4', 6, 'oil', 3, [17, 18]],
+      ['C5', 11, 'construction', 4, [22, 23]],
+    ]);
+    const byId = new Map(d.tiles.map((t) => [t.id, t]));
+    for (const c of d.companies) {
+      for (const f of c.frontTiles) expect(byId.get(f)).toMatchObject({ landingCode: 0, ref: { lot: c.id } });
+    }
+    expect(d.stocks.filter((s) => s.hasCompany).map((s) => s.index)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('两种关押结构：环路式医院（20 = 保释格 = 关押格）与台湾式监狱（16 保释、16→25 封路、26 支线尽头关押）', () => {
+    const d = buildTestMapIndustries();
+    const byId = new Map(d.tiles.map((t) => [t.id, t]));
+    expect(byId.get(20)).toMatchObject({ kind: 'hospital', landingCode: 5, holdFor: 'hospital' });
+    expect(byId.get(20)!.links.map((l) => l.to)).toEqual([19, 21]);
+    expect(byId.get(16)).toMatchObject({ kind: 'jail', landingCode: 4 });
+    expect(byId.get(16)!.holdFor).toBeUndefined();
+    expect(byId.get(26)).toMatchObject({ holdFor: 'jail', noItems: true, ref: { landmark: '2' } });
+    expect(byId.get(26)!.links.map((l) => l.to)).toEqual([25]);
+    const blocked = d.tiles.flatMap((t) => t.links.filter((l) => l.blocked).map((l) => `${t.id}>${l.to}`));
+    expect(blocked).toEqual(['16>25']);
+    expect(d.landmarks.map((m) => [m.id, m.kind, m.holdTile])).toEqual([
+      ['1', 'hospital', 20],
+      ['2', 'jail', 26],
+    ]);
   });
 });
 

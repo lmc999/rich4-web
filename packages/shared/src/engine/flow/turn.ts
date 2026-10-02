@@ -31,7 +31,7 @@ import { cardEffect } from '../effects/cards/index';
 import { timesPI } from '../effects/common';
 import { attachedSlot, leaveGod } from '../effects/gods/lifecycle';
 import { itemEffect } from '../effects/items/index';
-import { restoreEngineer, tickEngineer } from '../effects/items/vehicle';
+import { restoreEngineer, stowByHand, tickEngineer } from '../effects/items/vehicle';
 import { captureAnchor } from '../effects/timeMachine';
 import type { MenuRow } from '../effects/types';
 import { EngineInvariantError, EngineRuleError } from '../errors';
@@ -312,6 +312,10 @@ function menuAction(ctx: Ctx, f: TurnFrame, p: PlayerState, a: PlayerAction): vo
       return;
     case 'USE_ITEM':
       useItem(ctx, f, p, a);
+      return;
+    case 'STOW_VEHICLE':
+      // 收起机车 / 汽车改回步行（原版道具欄右下角那一格；effects/items/vehicle.ts stowByHand）
+      stowByHand(ctx, f.seat);
       return;
     case 'STOCK_BUY':
       // 先记日志再成交：日志随 STOCK_TRADED 的 post 公布（非法时整个草稿丢弃）

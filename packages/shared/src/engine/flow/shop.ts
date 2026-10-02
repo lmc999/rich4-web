@@ -5,8 +5,11 @@
  * open  真人座位：进店时抽货架 rand15()%10+6 张（按牌堆剩余张数加权、不放回）；电脑座位面对整副牌堆。
  *       模式在进店时定下（f.fullDeck），离店前不随 controller 改变。
  *       每笔交易后重新发 SHOP（新 id），LEAVE 离店；每次进店最多 SHOP_TRADE_LIMIT 笔。
- *       买卡：点券 ≥ 标价、手牌未满 15 张、牌堆里还有；买道具：只卖 1..8，库存够、持有不超过 9；
+ *       买卡：点券 ≥ 标价、手牌未满 15 张、牌堆里还有；买道具：只卖 1..8，一次 1 个、每种每次进店只能买一次，
+ *       库存够、持有不超过 9，真人座位只能买进店时有库存的（原版货架，见 SHOP_BUY_ITEM）；
  *       卖卡、卖道具：得 trunc(标价 × 数量 × 0.9) 点券，卡回牌堆、道具 1..8 回库存。点券按 uint16。
+ *       卖道具仍接受 qty > 1：原版电脑整堆卖（@source v2.06 0x42e28b 等），托管也走电脑策略；
+ *       原版真人一次卖 1 个（0x42d4e6 push 1），由客户端界面照做。
  */
 import { cardDef } from '../../data/tables/cards';
 import { ECON } from '../../data/tables/economy';
@@ -16,7 +19,7 @@ import { addU16, subU16 } from '../../util/int32';
 import type { Ctx } from '../core/ctx';
 import type { FrameHandler } from '../core/frameHandler';
 import { weightedIndex } from '../core/random';
-import { buildShop, fullDeckShelf, shopHasChoice } from '../decisions/economy';
+import { buildShop, fullDeckShelf, shopHasChoice, shopItemBought, shopItemListed } from '../decisions/economy';
 import { gainCard } from '../effects/common';
 import { EngineRuleError } from '../errors';
 import {
@@ -108,6 +111,16 @@ function trade(ctx: Ctx, f: ShopFrame, a: PlayerAction): void {
     case 'SHOP_BUY_ITEM': {
       const it = a.item;
       if (!isPoolItem(it)) throw new EngineRuleError('INVALID_TARGET', `item ${it} is not sold`);
+      // 原版点一行买 1 个，买后这一行清零、同一次进店不能再买（@source v2.06 0x42d869 call fcn.0042c64b(座位, 道具)
+      // 没有数量参数；0x42d9cf 把货架行 0x489070[行] 清零）。电脑也只按一件买（0x42e597、0x42e5fd、0x42e620..0x42e6ea）
+      if (a.qty !== 1) throw new EngineRuleError('OUT_OF_RANGE', 'one item per purchase');
+      if (shopItemBought(f.trades, it)) {
+        throw new EngineRuleError('NOT_ALLOWED', `item ${it} already bought this visit`);
+      }
+      // 真人座位只能买进店时上架的（@source v2.06 0x42e018：库存为 0 的不上架，进店后卖回的也不补上）
+      if (!isFullDeck(ctx, f) && !shopItemListed(s.pools.items[it] ?? 0, f.trades, it)) {
+        throw new EngineRuleError('NOT_ALLOWED', `item ${it} is not on the shelf`);
+      }
       const cost = itemDef(it).price * a.qty;
       if ((s.pools.items[it] ?? 0) < a.qty) throw new EngineRuleError('NOT_ALLOWED', `item ${it} is sold out`);
       if ((p.items[it] ?? 0) + a.qty > ITEM_MAX) throw new EngineRuleError('OUT_OF_RANGE', `more than ${ITEM_MAX}`);

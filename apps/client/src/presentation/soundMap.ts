@@ -17,6 +17,7 @@ import {
   type VoiceCue,
 } from '../audio/cues';
 import type { ZzfxPresetId } from '../audio/procedural';
+import { fateVariantSlot } from './eventText';
 
 /** 旧名（M3 骨架）：程序化音效 id 即 ZzFX 预设名 */
 export type SfxId = ZzfxPresetId;
@@ -207,7 +208,8 @@ export const SOUND_MAP = {
   ITEM_GAINED: { sfx: z('ding', 'gain.item') },
   ITEM_LOST: {},
   ITEM_USED: { sfx: z('magic'), voice: (e) => [{ k: 'item', seat: e.seat, item: e.item }] },
-  VEHICLE: { sfx: z('ding') },
+  // 真人收起机车 / 汽车（stowed）不出声：原版收起只刷新外观、重画（0x4467b1），不说台词、不另放音效
+  VEHICLE: { sfx: (e) => (e.stowed ? null : z('ding')) },
   VEHICLE_DESTROYED: { sfx: z('boom') },
   OBJECT_PLACED: {
     sfx: (e) => {
@@ -296,7 +298,11 @@ export const SOUND_MAP = {
   BANK_REJECTED: { sfx: z('sad') },
   // ── event
   NEWS: { sfx: z('news'), voice: (e) => [{ k: 'news', key: `news.${e.id}` }] },
-  FATE: { sfx: z('card'), voice: (e) => [{ k: 'news', key: `fate.${e.id}` }] },
+  // 命运 33–36 在大陆 / 日本 / 美国图换成表项 37–48 的语音（voice 0222–0233，见 eventText.fateVariantSlot）
+  FATE: {
+    sfx: z('card'),
+    voice: (e, q) => [{ k: 'news', key: `fate.${fateVariantSlot(e.id, q.map?.def.globalMapId)}` }],
+  },
   MAGIC_CONDITION: { voice: (e) => [{ k: 'npc', key: `magic.condition.${e.cond}` }] },
   MAGIC_CAST: { sfx: z('magic', 'magic.cast'), voice: () => [{ k: 'npc', key: 'magic.chant' }] },
   LOTTERY_TICKET: { sfx: z('coin', 'lottery.bet') },

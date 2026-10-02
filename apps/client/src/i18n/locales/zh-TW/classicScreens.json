@@ -17,6 +17,11 @@
     "unmute": "開啟聲音",
     "replay": "重播片頭"
   },
+  "fly": {
+    "label": "飛行動畫",
+    "skip": "跳過動畫",
+    "skipTurn": "輪到你了：跳過動畫"
+  },
   "options": {
     "title": "設定",
     "system": "系統設定",
@@ -30,7 +35,7 @@
     "exit": "返回標題畫面",
     "aiCount": "電腦人數",
     "stage": "關卡：{{name}}",
-    "stageNone": "（本伺服器沒有這張地圖）",
+    "stageNone": "關卡：{{name}}（本伺服器沒有這張地圖）",
     "values": "對局設定"
   },
   "lobby": {

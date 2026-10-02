@@ -136,17 +136,36 @@ describe('ShopDialog', () => {
     expectSingleIntent(r.submit, { type: 'SHOP_BUY_CARD', shelfIdx: 3 });
   });
 
-  it('买道具：数量步进器受 maxQty 限制 → SHOP_BUY_ITEM{item, qty}', async () => {
+  it('买道具（按原版）：不显示库存、没有数量控件；进店时卖完的不上架；本次买过的置灰 → SHOP_BUY_ITEM{item, qty: 1}', async () => {
     const r = renderDialog(ShopDialog, 'SHOP');
     await r.user.click(screen.getByRole('tab', { name: '买道具' }));
-    expect(screen.getByTestId(`shop-item-${ITEM.MINE}`)).toBeDisabled();
+    const panel = screen.getByRole('tabpanel');
+    expect(panel).not.toHaveTextContent('库存');
+    // 地雷进店时库存为 0：不上架
+    expect(screen.queryByTestId(`shop-item-${ITEM.MINE}`)).toBeNull();
+    // 路障本次已买过：置灰并说明原因
+    const rb = screen.getByTestId(`shop-item-${ITEM.ROADBLOCK}`);
+    expect(rb).toBeDisabled();
+    expect(rb).toHaveTextContent('这次进店已经买过了');
     await r.user.click(screen.getByTestId(`shop-item-${ITEM.CAR}`));
-    const qty = screen.getByRole('spinbutton', { name: '数量' });
-    await r.user.clear(qty);
-    await r.user.type(qty, '9');
-    expect(qty).toHaveValue(2);
+    expect(screen.queryByRole('spinbutton')).toBeNull();
+    expect(screen.getByTestId('shop-buy-item')).toHaveTextContent('150');
     await r.user.click(screen.getByTestId('shop-buy-item'));
-    expectSingleIntent(r.submit, { type: 'SHOP_BUY_ITEM', item: ITEM.CAR, qty: 2 });
+    expectSingleIntent(r.submit, { type: 'SHOP_BUY_ITEM', item: ITEM.CAR, qty: 1 });
+  });
+
+  it('买道具：买下后（新决策 bought=true）这一种置灰、选中收起，不能再买', async () => {
+    const r = renderDialog(ShopDialog, 'SHOP');
+    await r.user.click(screen.getByRole('tab', { name: '买道具' }));
+    await r.user.click(screen.getByTestId(`shop-item-${ITEM.MISSILE}`));
+    await r.user.click(screen.getByTestId('shop-buy-item'));
+    const items = r.decision.options.items.map((x) =>
+      x.item === ITEM.MISSILE ? { ...x, own: 1, pool: 9, maxQty: 0, bought: true } : x,
+    );
+    r.rerenderWith({ decision: { ...r.decision, decisionId: 'd-next', options: { ...r.decision.options, items } } });
+    expect(screen.getByTestId(`shop-item-${ITEM.MISSILE}`)).toBeDisabled();
+    expect(screen.queryByTestId('shop-buy-item')).toBeNull();
+    expect(intents(r.submit)).toEqual([{ type: 'SHOP_BUY_ITEM', item: ITEM.MISSILE, qty: 1 }]);
   });
 
   it('卖卡与卖道具', async () => {
@@ -157,15 +176,16 @@ describe('ShopDialog', () => {
     expect(intents(r.submit)).toEqual([{ type: 'SHOP_SELL_CARD', slot: 1 }]);
   });
 
-  it('卖道具 → SHOP_SELL_ITEM；离开 → LEAVE（新决策 id 到来后解锁）', async () => {
+  it('卖道具一次 1 个（原版 0x42d4e6）→ SHOP_SELL_ITEM{qty: 1}；离开 → LEAVE（新决策 id 到来后解锁）', async () => {
     const r = renderDialog(ShopDialog, 'SHOP');
     await r.user.click(screen.getByRole('tab', { name: '卖道具' }));
     await r.user.click(screen.getByTestId(`shop-sell-item-${ITEM.ROADBLOCK}`));
-    await r.user.click(screen.getByRole('button', { name: '增加' }));
+    expect(screen.queryByRole('spinbutton')).toBeNull();
+    expect(screen.getByTestId('shop-sell-item')).toHaveTextContent('27');
     await r.user.click(screen.getByTestId('shop-sell-item'));
     r.rerenderWith({ decision: { ...r.decision, decisionId: 'd-next' } });
     await r.user.click(screen.getByTestId('shop-leave'));
-    expect(intents(r.submit)).toEqual([{ type: 'SHOP_SELL_ITEM', item: ITEM.ROADBLOCK, qty: 2 }, { type: 'LEAVE' }]);
+    expect(intents(r.submit)).toEqual([{ type: 'SHOP_SELL_ITEM', item: ITEM.ROADBLOCK, qty: 1 }, { type: 'LEAVE' }]);
   });
 
   it('交易次数用完时只能离开', async () => {

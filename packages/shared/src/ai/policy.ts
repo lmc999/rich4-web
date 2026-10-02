@@ -79,6 +79,9 @@ export function fitsOptions(d: DecisionForYou, intent: PlayerIntent): boolean {
           targetMatches(row.targets, intent.target)
         );
       }
+      // 收起交通工具只给真人用（电脑从不提交）；兜底时照样按 options 核对
+      if (intent.type === 'STOW_VEHICLE')
+        return o.menuActions.used < o.menuActions.limit && o.vehicle?.canStow === true;
       if (intent.type === 'STOCK_BUY' || intent.type === 'STOCK_SELL') {
         if (o.menuActions.used >= o.menuActions.limit) return false;
         const row = o.stock.rows.find((r) => r.idx === intent.stock);

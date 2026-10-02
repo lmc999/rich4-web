@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadTableAnchors } from '../../src/exe/anchors';
 import { extractTables, LocateError, locateTable } from '../../src/exe/locate';
-import { companyStockChecks, holidaysForMap, stocksForMap } from '../../src/exe/mapData';
+import { companyStockChecks, holidaysForMap, KNOWN_NAME_MISMATCHES, stocksForMap } from '../../src/exe/mapData';
 import { cardsSpec } from '../../src/exe/tables/cards';
 import { findCodeRefs, plausibleOperand, xrefTransfer } from '../../src/exe/xrefTransfer';
 import { canonicalJson } from '../../src/io/writeCanonicalJson';
@@ -166,8 +166,30 @@ describe('exe → MapDef 按图数据', () => {
       strings: { 'zh-TW': { c1: '臺灣人壽', s0: '中國信託', s1: '臺灣人壽' }, 'zh-CN': {} },
     } as unknown as Parameters<typeof companyStockChecks>[0];
     const r = companyStockChecks(def);
-    expect(r[0]!.ok).toBe(true);
-    expect(r[1]).toMatchObject({ ok: false, detail: 'hasCompany 的股票 2 支，企业 1 家' });
+    expect(r[0]).toMatchObject({ ok: true, status: 'OK' });
+    expect(r[1]).toMatchObject({ ok: false, status: 'BAD', detail: 'hasCompany 的股票 2 支，企业 1 家' });
+  });
+
+  it('companyStockChecks 白名单：大陆 C4「王井府百貨」对股票 2「王府井百貨」为 KNOWN，其余名称不一致仍为 BAD', () => {
+    const defOf = (gm: number, cid: string, cname: string, sname: string, stockIndex = 2) =>
+      ({
+        globalMapId: gm,
+        companies: [{ id: cid, stockIndex, nameKey: 'c' }],
+        stocks: [{ index: stockIndex, hasCompany: true, nameKey: 's' }],
+        strings: { 'zh-TW': { c: cname, s: sname }, 'zh-CN': {} },
+      }) as unknown as Parameters<typeof companyStockChecks>[0];
+    expect(KNOWN_NAME_MISMATCHES).toHaveLength(1);
+    const known = companyStockChecks(defOf(1, 'C4', '王井府百貨', '王府井百貨'))[0]!;
+    expect(known).toMatchObject({ status: 'KNOWN', ok: true, company: 'C4', stockIndex: 2 });
+    expect(known.detail).toContain('原版名称不一致');
+    // 同样的名称出现在别的图、别的企业号、别的股票下标，或名称有任何不同 → BAD
+    expect(companyStockChecks(defOf(0, 'C4', '王井府百貨', '王府井百貨'))[0]!.status).toBe('BAD');
+    expect(companyStockChecks(defOf(1, 'C3', '王井府百貨', '王府井百貨'))[0]!.status).toBe('BAD');
+    expect(companyStockChecks(defOf(1, 'C4', '王井府百貨', '王府井百貨', 1))[0]!.status).toBe('BAD');
+    expect(companyStockChecks(defOf(1, 'C4', '玉井府百貨', '王府井百貨'))[0]!.status).toBe('BAD');
+    expect(companyStockChecks(defOf(1, 'C4', '上海銀行', '上海银行'))[0]!).toMatchObject({ status: 'BAD', ok: false });
+    // 名称一致仍为 OK
+    expect(companyStockChecks(defOf(1, 'C4', '王府井百貨', '王府井百貨'))[0]!.status).toBe('OK');
   });
 });
 

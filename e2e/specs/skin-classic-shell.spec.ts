@@ -7,6 +7,8 @@
 //    过路费；4 个页面的座位数值、地块归属与服务器快照一致，资料栏 4 页数值在 4 个页面上一致；
 // 2) 手机横屏 844×390：舞台 520×390、两侧收成抽屉按钮，抽屉可开关、可聊天；抽屉关着也能看到本人倒计时（叠在棋盘视窗）；
 //    舞台钮与侧栏钮的实际命中尺寸（含透明热区）≥44px（工具列宽度受相邻钮所限）；GO 钮可掷骰，页面不横向滚动；
+//    toast 排在左边距条（开左抽屉时换到右边距条），不碰舞台；视口变一次到 1920×1080 后棋盘画布与棋盘视窗等大，
+//    toast 回到页面上部正中；
 // 3) 观战者（经典布局）：没有掷骰 / 回合菜单 / 决策层 / 本人倒计时，托管、道具、卡片、股市、公佈欄、存读档钮禁用；
 //    聊天双向可用，表情在座位条出现 DOM 气泡，托管标记同步。
 import { execFileSync } from 'node:child_process';
@@ -141,6 +143,40 @@ async function stepFrom(
  */
 function diceIconFrame(i: number, on: boolean): number {
   return 2 * i + (on ? 7 : 6);
+}
+
+/** 棋盘视窗（classic-board-slot）与棋盘画布的 CSS 尺寸（取整） */
+async function boardCanvasSize(page: Page): Promise<{ slot: number[]; canvas: number[] }> {
+  return page.evaluate(() => {
+    const wh = (e: Element | null): number[] => {
+      const b = e?.getBoundingClientRect();
+      return b ? [Math.round(b.width), Math.round(b.height)] : [];
+    };
+    const slot = document.querySelector('[data-testid="classic-board-slot"]');
+    return { slot: wh(slot), canvas: wh(slot?.querySelector('[data-testid="board-host"] canvas') ?? null) };
+  });
+}
+
+/** 注入几条 toast（ttl 足够长，量完自己关掉）；返回 id */
+async function injectToasts(page: Page, texts: string[]): Promise<number[]> {
+  return page.evaluate((list) => {
+    type UiHook = { toast(text: string, kind: string, ttl: number): number };
+    const ui = (window as unknown as { __rich4: { store: { ui: { getState(): UiHook } } } }).__rich4.store.ui;
+    return list.map((x) => ui.getState().toast(x, 'info', 60_000));
+  }, texts);
+}
+
+async function dismissToasts(page: Page, ids: number[]): Promise<void> {
+  await page.evaluate((list) => {
+    type UiHook = { dismissToast(id: number): void };
+    const ui = (window as unknown as { __rich4: { store: { ui: { getState(): UiHook } } } }).__rich4.store.ui;
+    for (const id of list) ui.getState().dismissToast(id);
+  }, ids);
+}
+
+type Box = { x: number; y: number; width: number; height: number };
+function intersects(a: Box, b: Box): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 }
 
 /**
@@ -411,6 +447,36 @@ test('手机横屏 844×390：舞台 520×390，两侧收成抽屉；抽屉可�
     await page.getByTestId('classic-drawer-right-close').click();
     await expect(right).toBeHidden();
 
+    // toast：缺省的页面上部正中在这个尺寸下正好叠在棋盘视窗上部（原版亮卡、神明弹窗的消息框），改排在左边距条
+    // （抽屉按钮以下），整列不碰舞台；开左抽屉时换到右边距条
+    const ids = await injectToasts(page, [
+      '忍太郎 付給 糖糖 過路費 800 元',
+      '忍太郎 與 孫小美 的同盟破裂',
+      '忍太郎：夢遊 5 回合',
+    ]);
+    const toasts = page.getByTestId('toasts');
+    await expect(toasts).toHaveAttribute('data-place', 'gutter-left');
+    const stageBox = (await page.getByTestId('classic-stage-inner').boundingBox())!;
+    const leftBtnBox = (await leftBtn.boundingBox())!;
+    const tl = (await toasts.boundingBox())!;
+    expect(tl.x).toBeGreaterThanOrEqual(0);
+    expect(tl.x + tl.width).toBeLessThanOrEqual(stageBox.x);
+    expect(tl.y).toBeGreaterThanOrEqual(leftBtnBox.y + leftBtnBox.height);
+    expect(tl.y + tl.height).toBeLessThanOrEqual(390);
+    await expect(toasts.getByTestId('toast')).toHaveCount(3);
+    for (const el of await toasts.getByTestId('toast').all()) {
+      const b = (await el.boundingBox())!;
+      expect(intersects(b, stageBox)).toBe(false);
+    }
+    await leftBtn.click();
+    await expect(toasts).toHaveAttribute('data-place', 'gutter-right');
+    const tr = (await toasts.boundingBox())!;
+    expect(tr.x).toBeGreaterThanOrEqual(stageBox.x + stageBox.width);
+    expect(tr.x + tr.width).toBeLessThanOrEqual(844);
+    await page.getByTestId('classic-drawer-left-close').click();
+    await expect(toasts).toHaveAttribute('data-place', 'gutter-left');
+    await dismissToasts(page, ids);
+
     // 抽屉关着：本人倒计时叠在棋盘视窗左上角（不在隐藏的抽屉里）
     await waitMyTurn(page);
     const status = page.getByTestId('classic-stage-status');
@@ -473,6 +539,19 @@ test('手机横屏 844×390：舞台 520×390，两侧收成抽屉；抽屉可�
     expect(gb!.y + gb!.height).toBeLessThanOrEqual(slot!.y + slot!.height + 1);
     await acted(page, () => go.click());
     await waitIdle(page);
+
+    // 单次视口变大（转屏、窗口最大化）：棋盘画布跟着棋盘视窗变大（Pixi resizeTo 只跟 window resize，棋盘视窗的尺寸
+    // 由经典舞台的 React 状态决定、提交晚于 Pixi 读尺寸那一帧，画布曾停在 844×390 时的 358×357）
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await expect(stage).toHaveAttribute('data-scale', '2.2500');
+    await expect.poll(() => boardCanvasSize(page)).toEqual({ slot: [990, 990], canvas: [990, 990] });
+    // 桌面：toast 照旧在页面上部正中（顶栏高缺省 50 + 16）
+    const ids2 = await injectToasts(page, ['忍太郎：夢遊 5 回合']);
+    await expect(page.getByTestId('toasts')).toHaveAttribute('data-place', 'page');
+    const td = (await page.getByTestId('toasts').boundingBox())!;
+    expect(Math.abs(td.x + td.width / 2 - 960)).toBeLessThanOrEqual(1);
+    expect(Math.round(td.y)).toBe(66);
+    await dismissToasts(page, ids2);
     expect(p.errors.filter((e) => !e.includes('WebGL') && !e.includes('favicon'))).toEqual([]);
   } finally {
     await p.context.close();

@@ -7,14 +7,18 @@
  * 12 工程车       原交通工具退回背包，改为工程车、骰子 1 颗，持续 7 个自己的回合（含使用当回合，受困也计数）；
  *                 到期恢复原车（背包里还有才装备，否则步行）；已经在工程车模式不可用
  *                 落点拆房见 LAND 'tail'（PROGRAM：别人（或无主）已有建筑的地产清到 0 级）
+ * 收起交通工具     真人回合菜单的 STOW_VEHICLE（原版道具欄右下角那一格，道具函数表第 14 项）：机车 / 汽车退回背包，
+ *                 改回步行、1 颗骰子；不扣道具、不结束回合、不限次数；工程车不能收起。电脑从不收起
  */
 import { CMB } from '../../../data/tables/combat';
 import { ECON } from '../../../data/tables/economy';
 import { VEHICLE_ITEM } from '../../../data/tables/setup';
 import type { Ctx } from '../../core/ctx';
+import { EngineRuleError } from '../../errors';
 import { maxDice } from '../../rules/movement';
 import type { DiceFace, SeatIndex, Vehicle } from '../../types/ids';
 import type { PlayerState } from '../../types/state';
+import { stowVehicle } from '../common';
 import type { ItemEffect } from '../types';
 import { unusable, usable } from '../types';
 
@@ -46,6 +50,33 @@ function equip(to: 'moto' | 'car'): ItemEffect {
 
 export const motorcycle: ItemEffect = equip('moto');
 export const car: ItemEffect = equip('car');
+
+/**
+ * 能否收起身上的交通工具、改回步行：只有机车、汽车可以。原版真人打开道具欄时，模式字节为 1 / 2 才在右下角那一格
+ * 画「机车 / 汽车 + 禁止圈」（Panel#11 图15 / 16）并把这一格登记为 14 号；工程车的模式字节是 0x1f 一类的值，这一格不出现。
+ * @source v2.06 fcn.00446948 0x4469a7–0x4469e7（v3.11 0x447e24）
+ */
+export function canStowVehicle(p: Pick<PlayerState, 'vehicle'>): boolean {
+  return p.vehicle === 'moto' || p.vehicle === 'car';
+}
+
+/**
+ * 真人在回合菜单里收起交通工具（STOW_VEHICLE，非终结）：机车 / 汽车退回背包（同种最多 10 台，满了回共享库存），
+ * 改回步行、1 颗骰子 → VEHICLE{walk,1,stowed}（stowed = 收回的那台）。不扣道具、不花点券、不结束回合、不限次数，
+ * 也不看停留 / 乌龟；之后可以再用 5 / 6 号道具把车装回去。开局就骑车的人背包里没有车，照样能收起（那台车就是开局从库存
+ * 扣掉的那台）。原版这一步只刷新外观、重画，不说台词（机车道具 0x445a77 会调台词函数 0x44d870），客户端据 stowed
+ * 不弹「换乘」提示、不放音效，只记一行日志。
+ * @source v2.06 道具函数表第 14 项 0x4467b1（指针在 0x473c31；v3.11 0x447c00）：模式 1 背包机车 +1、模式 2 背包汽车 +1，
+ *   模式字节写 0、骰子数写 1，调 0x40b425 刷新外观、0x41cc56 重画，返回 1（0x445742；道具欄随即关闭 0x446b1d），
+ *   其间没有 call 0x44d870；电脑挑道具只在 1–13 号里选（0x446b64–0x446baf），从不收起
+ */
+export function stowByHand(ctx: Ctx, seat: SeatIndex): void {
+  const p = ctx.player(seat);
+  if (!canStowVehicle(p)) {
+    throw new EngineRuleError('NOT_USABLE', `cannot stow vehicle ${p.vehicle}`, { vehicle: p.vehicle });
+  }
+  stowVehicle(ctx, seat, true);
+}
 
 const FACES: readonly DiceFace[] = [1, 2, 3, 4, 5, 6];
 

@@ -2,7 +2,8 @@
  * 原版皮肤 A2：`rich4-extract assets verify [--full]`（design-draft §2.7）。
  *
  * 默认：manifest 结构与一致性（zod）→ 逐文件复算 sha256（含预压缩变体）→ 图集 / 地图皮肤 / 映射表的 JSON 契约与交叉引用 →
- *       资源目录覆盖（原版包：各已构建部分的每个目录项都有条目）→ 列出受管目录里未被引用的杂散文件（只告警）。
+ *       资源目录覆盖（原版包：各已构建部分的每个目录项都有条目；有地面但没有地图皮肤的图只告警）→
+ *       列出受管目录里未被引用的杂散文件（只告警）。
  * --full：另外逐个解码 PNG（CRC、尺寸与图集/条目一致、原版派生标记）、解析 FLC 头（尺寸、帧数、帧间隔）、
  *        检查音视频文件头尾的派生标记（RICH4_DERIVED）、预压缩变体解压后与原文件一致。
  */
@@ -215,7 +216,8 @@ export async function verifyPack(opts: VerifyOptions): Promise<VerifyResult> {
     for (const it of cat.items) {
       if (!tokenBuilt[it.token]) continue;
       if (it.type === 'ground') {
-        if (!m.maps[it.mapId]) issues.push(`目录项 ${it.key}: manifest.maps 缺少 ${it.mapId}`);
+        // 构建时缺该图的 MapDef 会只跳过它的皮肤（assets build 打警告，--strict 才失败）：这里同样只告警
+        if (!m.maps[it.mapId]) warnings.push(`目录项 ${it.key}: manifest.maps 没有 ${it.mapId}（该图回退程序化棋盘）`);
       } else if (!m.entries[it.key]) issues.push(`目录项 ${it.key}（${it.mkf}#${it.res}）没有条目`);
     }
   }

@@ -359,7 +359,7 @@
   white-space: nowrap;
 }
 
-/* 关卡行：当前地图打勾，没有地图的行变暗 */
+/* 关卡行：当前地图打勾，没有地图的行变暗；可选图时（开局设置、房主的选人大厅）是透明按钮 */
 .stageRow {
   position: absolute;
   box-sizing: border-box;
@@ -371,6 +371,30 @@
   position: absolute;
   inset: 2px;
   background: rgb(0 0 0 / 0.35);
+}
+
+button.stageRow {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+button.stageRow:disabled {
+  cursor: default;
+}
+
+button.stageRow:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.12);
+}
+
+button.stageRow:focus-visible {
+  outline: 2px solid #fff36b;
+  outline-offset: -2px;
 }
 
 .banner {
@@ -928,8 +952,11 @@
   color: #ffe9a8;
 }
 
+/* 整图与视频铺满视口、按 4:3 等比留黑边（绝对定位：网格项的百分比高度在这里解析不出，高度会按宽度推出来而上下被裁掉） */
 .overlay img,
 .overlay video {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
@@ -978,6 +1005,35 @@
 
 .introBtn:focus-visible {
   outline: 2px solid #fff36b;
+}
+
+/* 开局飞行动画：叠在进场 Loading（同为 z-index 200）与对局页之上，低于单机页的错误层（210） */
+.fly {
+  z-index: 205;
+}
+
+/* 轮到本人决策（服务器计时照走）：跳过钮醒目 */
+.introBtn[data-urgent="true"] {
+  min-height: 52px;
+  padding: 0 20px;
+  border-color: #fff36b;
+  background: #c98b2b;
+  color: #1a0d02;
+  font-size: 17px;
+  box-shadow: 0 0 0 3px rgb(255 243 107 / 0.45);
+  animation: flyUrgent 1s ease-in-out infinite alternate;
+}
+
+@keyframes flyUrgent {
+  to {
+    box-shadow: 0 0 0 8px rgb(255 243 107 / 0.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .introBtn[data-urgent="true"] {
+    animation: none;
+  }
 }
 
 .pending {

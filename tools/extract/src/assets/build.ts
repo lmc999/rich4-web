@@ -64,10 +64,9 @@ import {
   type ImageToken,
   itemSrc,
   mkfDir,
+  ORIGINAL_MAPS,
+  type OriginalMap,
   type SpriteItem,
-  TAIWAN,
-  TAIWAN_COMPANY_SPRITES,
-  TAIWAN_SCENERY_SPRITES,
   validateCatalog,
 } from './catalog.v206';
 import { MUSIC_TRACKS } from './data/music';
@@ -99,10 +98,24 @@ export const BUILD_PARTS: readonly BuildPart[] = [...IMAGE_TOKENS, 'audio', 'mus
 /** 默认构建的部分（视频需显式开启） */
 export const DEFAULT_PARTS: readonly BuildPart[] = [...IMAGE_TOKENS, 'audio', 'music'];
 
-/** 默认 MapDef（map build / pack 的输出，已被 git 忽略） */
-export const DEFAULT_MAP_DATA = path.join('rich4-data', 'maps', 'taiwan.map.json');
+/** 默认 MapDef 目录（map build / pack 的输出，已被 git 忽略）：每张图读 <目录>/<mapId>.map.json */
+export const DEFAULT_MAP_DATA_DIR = path.join('rich4-data', 'maps');
 
-export interface PackBuildOptions {
+/** 各图 MapDef 的位置：mapDataDir 下的 <mapId>.map.json；旧的单文件参数 mapData 只作为台湾的 MapDef */
+export interface MapDataLocation {
+  /** MapDef 目录；默认 rich4-data/maps（相对仓库根） */
+  mapDataDir?: string;
+  /** 旧参数：单个 MapDef 文件，只作为台湾（taiwan）的 MapDef；其他图仍按 mapDataDir 查找 */
+  mapData?: string;
+}
+
+/** 地图 mapId 的 MapDef 路径（绝对路径） */
+export function mapDefPath(root: string, mapId: string, loc: MapDataLocation = {}): string {
+  if (mapId === 'taiwan' && loc.mapData) return path.resolve(root, loc.mapData);
+  return path.resolve(root, loc.mapDataDir ?? DEFAULT_MAP_DATA_DIR, `${mapId}.map.json`);
+}
+
+export interface PackBuildOptions extends MapDataLocation {
   ctx?: ExtractContext;
   /** Steam Media 目录；默认 <srcDir>/Media */
   mediaDir?: string;
@@ -117,8 +130,8 @@ export interface PackBuildOptions {
   allowUnknown?: boolean;
   /** 测试注入：资源目录 */
   catalog?: Catalog;
-  /** 台湾 MapDef（默认 rich4-data/maps/taiwan.map.json） */
-  mapData?: string;
+  /** 缺某张图的 MapDef 时失败（默认只跳过该图的原版皮肤并给出警告） */
+  strict?: boolean;
   /** 测试注入：exe 视角表；缺省从 .cache/extract/tables.v206.json 读取（与 exe 哈希不符时现场抽取） */
   viewTables?: ViewTablesInput;
   /** 默认 true：写出 manifest 后删除不再引用的旧产物 */
@@ -139,6 +152,10 @@ export interface PackBuildResult {
   groupBytes: Record<string, number>;
   coverage: CoverageReport & { audio: AudioCoverage | null };
   warnings: string[];
+  /** 生成了原版皮肤的地图（按 manifest.maps 的键序） */
+  mapsBuilt: string[];
+  /** 有地面条目、但缺 MapDef 而跳过皮肤的地图 */
+  mapsSkipped: string[];
   pruned: string[];
   reportFiles: string[];
 }
@@ -537,21 +554,37 @@ export async function buildPack(opts: PackBuildOptions = {}): Promise<PackBuildR
   }
   if (selected.length > 0) log.out(`  图像：${selected.length} 项完成`);
 
-  // ── 地图皮肤 ──
+  // ── 地图皮肤：每张有地面的图各生成一份（MapDef 按 mapId 取 <mapDataDir>/<id>.map.json）──
   const skins: MapSkinV1[] = [];
+  const mapsSkipped: string[] = [];
+  const catMaps = cat.maps ?? ORIGINAL_MAPS;
+  let view: ViewTablesInput | null = null;
   for (const [mapId, g] of groundOut) {
-    if (mapId !== TAIWAN.mapId) throw new ExtractError('E_ASSETS_MAP', `不支持的地图皮肤：${mapId}`);
-    const mapPath = path.resolve(ctx.root, opts.mapData ?? DEFAULT_MAP_DATA);
+    const om: OriginalMap | undefined = catMaps.find((m) => m.mapId === mapId);
+    if (!om)
+      throw new ExtractError('E_ASSETS_MAP', `资源目录没有地图 ${mapId}（ORIGINAL_MAPS 里找不到 gm 与精灵集合）`);
+    const mapPath = mapDefPath(ctx.root, mapId, opts);
     if (!(await isFile(mapPath))) {
-      throw missing(`台湾 MapDef：${ctx.displayPath(mapPath)}（先运行 map build --map taiwan 与 pack）`);
+      const what = `${om.label} MapDef：${ctx.displayPath(mapPath)}（先运行 map build --map ${mapId} 与 pack）`;
+      if (opts.strict) throw missing(what);
+      warnings.push(`缺少${what}，跳过 ${mapId} 的原版皮肤（该图回退程序化棋盘）`);
+      mapsSkipped.push(mapId);
+      continue;
     }
     const def: MapDef = parseMapDef(JSON.parse(await readFile(mapPath, 'utf8')));
+    if (def.id !== mapId || def.globalMapId !== om.gm) {
+      throw new ExtractError(
+        'E_ASSETS_MAP',
+        `${ctx.displayPath(mapPath)}: MapDef id=${def.id} globalMapId=${def.globalMapId}，期望 ${mapId} / gm ${om.gm}`,
+      );
+    }
     const srcId = 'id' in def.meta.source ? String((def.meta.source as { id?: string }).id) : 'v206-mapdat';
-    const { raw } = await loadRawSource(ctx, sourceDef(srcId), TAIWAN.gm, known);
+    const { raw } = await loadRawSource(ctx, sourceDef(srcId), om.gm, known);
     const rawStat = await stat(path.join(srcDir, ...raw.source.file.split('/')));
     addSource({ file: raw.source.file, sha256: raw.source.fileSha256, bytes: rawStat.size });
-    const view = opts.viewTables ?? (await loadViewTables(ctx, exeSha, log));
+    view ??= opts.viewTables ?? (await loadViewTables(ctx, exeSha, log));
     const decorEntry = writer.entry('board.decor');
+    const minimapKey = `map.${mapId}.minimap`;
     const skin = buildOriginalSkin({
       mapDef: def,
       raw,
@@ -560,20 +593,22 @@ export async function buildPack(opts: PackBuildOptions = {}): Promise<PackBuildR
       ground: { chunks: g.chunks, overlap: 1 },
       decorFrames: decorEntry?.type === 'sprite' ? decorEntry.frames.count : 17,
       keys: {
-        minimap: writer.hasEntry('map.taiwan.minimap') ? 'map.taiwan.minimap' : null,
+        minimap: writer.hasEntry(minimapKey) ? minimapKey : null,
         decor: 'board.decor',
-        houses: [1, 2, 3, 4, 5].map((L) => `map.taiwan.house.${L}`),
+        houses: [1, 2, 3, 4, 5].map((L) => `map.${mapId}.house.${L}`),
         chain: 'board.chain',
         ownerMark: 'board.ownerMark',
         lotHighlight: 'board.lotHighlight',
       },
       src: [`${raw.source.file}#${raw.source.resource}`, 'exe 视角表拟合（dy 外层、(sy,sx)）', 'render.md'],
-      expectSprites: { companies: TAIWAN_COMPANY_SPRITES, scenery: TAIWAN_SCENERY_SPRITES },
+      expectSprites: { companies: om.companies, scenery: om.scenery },
     });
     const logical = `maps/${mapId}.skin.json`;
     await writer.writeJson(logical, skin, 'mapskin', g.item.group);
     writer.addMap(mapId, { skin: logical, group: g.item.group, binding: skin.binding });
     skins.push(skin);
+    const c = skin.binding.counts;
+    log.out(`  地图皮肤 ${mapId}：企业 ${c.companies} / 地块 ${c.lots} / 节点 ${c.tiles}`);
   }
 
   // ── 映射表 ──
@@ -730,6 +765,11 @@ export async function buildPack(opts: PackBuildOptions = {}): Promise<PackBuildR
       totalBytes,
       groups: groupBytes,
       features: manifest.features,
+      maps: {
+        built: Object.keys(manifest.maps),
+        skipped: mapsSkipped,
+        bindings: Object.fromEntries(Object.entries(manifest.maps).map(([id, mp]) => [id, mp.binding.counts])),
+      },
       warnings,
     }),
   ];
@@ -747,6 +787,8 @@ export async function buildPack(opts: PackBuildOptions = {}): Promise<PackBuildR
     groupBytes,
     coverage,
     warnings,
+    mapsBuilt: Object.keys(manifest.maps),
+    mapsSkipped,
     pruned,
     reportFiles,
   };

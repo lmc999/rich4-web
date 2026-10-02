@@ -8,13 +8,19 @@ import { publicWorld } from '../core/postPatch';
 import type { PendingDecision } from '../types/decision';
 import type { PlayerState, PublicWorld } from '../types/state';
 
-export type SimpleView = Omit<PublicWorld, 'players'> & { players: (PlayerState & { cardCount: number })[] };
+export type SimpleView = Omit<PublicWorld, 'players'> & {
+  players: (PlayerState & { cardCount: number; itemCount: number })[];
+};
 
 export function simpleView(s: PublicWorld): SimpleView {
   const w = publicWorld(s);
   return {
     ...structuredClone(w),
-    players: structuredClone(w.players).map((p) => ({ ...p, cardCount: p.cards.length })),
+    players: structuredClone(w.players).map((p) => ({
+      ...p,
+      cardCount: p.cards.length,
+      itemCount: p.items.reduce((a, b) => a + b, 0),
+    })),
   };
 }
 

@@ -11,7 +11,7 @@ import { origMiniMapFor } from '../minimap/OrigMiniMap';
 import { createOrigBoard } from './createOrigBoard';
 import { smoothingFor } from './OrigAssets';
 import type { OrigBoardController } from './OrigBoardController';
-import type { OrigRenderer } from './OrigRenderer';
+import { defaultOrigZoom, type OrigRenderer } from './OrigRenderer';
 import { buildFakePack } from './testing/fakePack';
 
 let host: HTMLDivElement;
@@ -394,6 +394,32 @@ describe('OrigRenderer（合成素材包，Chromium + WebGL）', () => {
     s.destroy();
     surface = null;
     expect(origMiniMapFor(def)).toBeNull();
+  });
+
+  it('宿主晚于 window resize 才变尺寸（经典舞台 React 提交晚于 Pixi 读尺寸那一帧）：画布、屏幕、镜头视窗与缺省缩放跟着宿主', async () => {
+    const { surface: s } = await create();
+    const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+    // 手机横屏 844×390 → 桌面 1920×1080 时棋盘视窗 358×357 → 990×990：每次都先发 window resize、下一帧之后宿主才变
+    for (const [w, h] of [
+      [358, 357],
+      [990, 990],
+    ] as const) {
+      window.dispatchEvent(new Event('resize'));
+      await nextFrame();
+      host.style.width = `${w}px`;
+      host.style.height = `${h}px`;
+      await vi.waitFor(() => expect(s.app.screen).toMatchObject({ width: w, height: h }));
+      const b = s.app.canvas.getBoundingClientRect();
+      expect([b.width, b.height]).toEqual([w, h]);
+      expect(s.camera.effectiveViewport()).toMatchObject({ w, h });
+      expect(s.camera.zoom).toBeCloseTo(defaultOrigZoom(w, h), 6);
+    }
+    // 销毁后不再观察宿主（宿主再变尺寸不报错）
+    s.destroy();
+    surface = null;
+    host.style.width = '400px';
+    for (let i = 0; i < 3; i++) await nextFrame();
+    expect(consoleError).not.toHaveBeenCalled();
   });
 
   it('销毁：借来的位图全部归还给素材包客户端（离开对局不再常驻）', async () => {

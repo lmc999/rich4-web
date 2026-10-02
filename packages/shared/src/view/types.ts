@@ -15,6 +15,7 @@ import type {
   GameState,
   PlayerIntent,
   PlayerState,
+  Pools,
   PublicWorld,
   SeatIndex,
 } from '../engine/types/index';
@@ -22,18 +23,37 @@ import type {
 export type HandVisibility = 'public' | 'private';
 
 export interface VisibilityOptions {
-  /** 默认 public（还原原版同屏体验）；private 时对手只看到张数 */
+  /**
+   * 默认 public（还原原版同屏体验）；private 时对手与观战者只看到卡片张数与道具总数（服务器开局时按真人座位数锁定：
+   * 联机 ≥ 2 名真人一律 private，见 net/room.ts effectiveHandVisibility）
+   */
   handVisibility: HandVisibility;
 }
 
 export type Viewer = { kind: 'seat'; seat: SeatIndex } | { kind: 'spectator' };
 
-/** 私密模式下非本人的 cards 为 null；cardCount 始终有效 */
-export type PlayerView = Omit<PlayerState, 'cards'> & { cards: CardId[] | null; cardCount: number };
+/**
+ * 私密模式下非本人的 cards / items 为 null；cardCount / itemCount 始终有效；非本人的 hostility 只保留对观察者本人的
+ * 那一项、其余为 0（观战者全为 0；project.ts hideHostility）。
+ * 保留为公开的：张数与道具总数（原版资产表本来就有「卡片 N / 道具 N」，得失事件的数量也公开）、正在骑的交通工具
+ * （vehicle，棋盘上看得见）、点券。
+ */
+export type PlayerView = Omit<PlayerState, 'cards' | 'items'> & {
+  cards: CardId[] | null;
+  cardCount: number;
+  /** 长度 14，下标 = ItemId；私密模式下非本人为 null */
+  items: number[] | null;
+  /** 背包里的道具合计（装备中的机车、汽车不计入，与 items 同口径） */
+  itemCount: number;
+};
 
-/** 下发给客户端的世界：包含 dataRef、config、pools（牌堆剩余张数），不含 secret / flow / pending / counters */
-export interface GameView extends Omit<PublicWorld, 'players'> {
+/**
+ * 下发给客户端的世界：包含 dataRef、config、pools（牌堆剩余张数），不含 secret / flow / pending / counters。
+ * pools 在私密手牌模式下为 null：每批前后的张数差能精确推出别人摸到、买到了哪张卡、哪种道具（客户端与 AI 都不读它）
+ */
+export interface GameView extends Omit<PublicWorld, 'players' | 'pools'> {
   players: PlayerView[];
+  pools: Pools | null;
 }
 
 /** 座位控制状态（托管状态机见 design/net.md §5.3）；托管不改变引擎里的 controller */
@@ -104,7 +124,7 @@ export function asAnyDecision<Ticket>(d: DecisionForYou<DecisionKind, Ticket>): 
 
 /** 去掉 secret/flow/pending/counters，按手牌可见性改写 players */
 export type ProjectStateFn = (s: GameState, v: Viewer, o: VisibilityOptions) => GameView;
-/** 私密模式下把非本人的 post.players[].set.cards 改写为 cardCount，并按 EVENT_META.privacy 脱敏载荷 */
+/** 私密模式下把非本人的 post.players[].set.cards / items 改写为 null（补 cardCount / itemCount）、去掉 post.pools，并按 EVENT_META.privacy 脱敏载荷 */
 export type ProjectEventFn = (e: GameEvent, v: Viewer, o: VisibilityOptions) => GameEvent;
 /** public 模式下全员共用一个 key，投影只算一次 */
 export type ViewerClassKeyFn = (v: Viewer, o: VisibilityOptions) => string;

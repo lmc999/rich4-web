@@ -58,7 +58,7 @@ export const FATE: EventHandler<'FATE'> = async (e, ctx) => {
       player,
       id: e.id,
       title: fateTitle(ctx.names, e.id),
-      text: ctx.t(`fate:${e.id}.text`, { ...shown.params, defaultValue: '' }),
+      text: shown.text,
       amountText: shown.amountText,
       amountTone: shown.amountTone,
       tone: shown.tone,

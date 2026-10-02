@@ -10,7 +10,7 @@ import { MiniMapPainter, miniToWorld } from '../game/minimap/MiniMapPainter';
 import { FACILITY_MAX_LEVEL, FACILITY_STYLES, MAX_HOUSE_LEVEL } from '../game/procedural/building/styles';
 import { DEMO_CHARACTERS, runDemoWalk } from './demoWalk';
 import styles from './MapPreview.module.css';
-import { type LoadedMap, loadMapDef, MAP_CHOICES, type MapChoice } from './mapSource';
+import { isFixtureChoice, type LoadedMap, loadMapDef, MAP_CHOICES, type MapChoice } from './mapSource';
 import { exposeRenderer } from './testHooks';
 
 const MINI_W = 220;
@@ -367,7 +367,7 @@ export default function MapPreview(): ReactNode {
         {error && (
           <div className={styles.error} role="alert" data-testid="map-error">
             {error}
-            {choice === 'taiwan' && <div>{t('dev.map.taiwanHint')}</div>}
+            {!isFixtureChoice(choice) && <div>{t('dev.map.dataHint', { id: choice })}</div>}
           </div>
         )}
       </div>

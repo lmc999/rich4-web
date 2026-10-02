@@ -21,6 +21,7 @@ import type {
 import { AnimClock } from '../anim/AnimClock';
 import { Camera, type Transformable } from '../camera/Camera';
 import { attachGestures } from '../camera/gestures';
+import { followHostSize } from '../followHost';
 import { QUALITY_PRESETS, type Quality } from '../GameRenderer';
 import type { Pt } from '../iso/projection';
 import { createLayers, type Layers } from '../layers';
@@ -115,6 +116,7 @@ export class OrigRenderer implements BoardSurface {
   private pickIndex: OrigPickIndex | null = null;
   private boatTiles: ReadonlySet<TileId> = new Set();
   private detachGestures: (() => void) | null = null;
+  private unfollowHost: (() => void) | null = null;
   private unregisterMini: (() => void) | null = null;
   private followSeat: number | null = null;
   private lastZoom = -1;
@@ -204,6 +206,8 @@ export class OrigRenderer implements BoardSurface {
         this.camera.setZoom(this.autoZoom);
       }
     });
+    // resizeTo 只跟 window 'resize'：宿主尺寸晚一步变化时画布会停在旧尺寸，另外观察宿主（见 followHost）
+    this.unfollowHost = followHostSize(app, opts.host);
     app.ticker.add((t) => {
       const dt = Math.min(100, t.deltaMS);
       if (this.ownsClock) this.clock.advance(dt);
@@ -585,6 +589,8 @@ export class OrigRenderer implements BoardSurface {
     if (typeof window !== 'undefined') window.removeEventListener('keydown', this.onKey);
     this.detachGestures?.();
     this.detachGestures = null;
+    this.unfollowHost?.();
+    this.unfollowHost = null;
     const canvas = this.app.canvas;
     if (!this.ownsClock) this.camera.follow(null);
     this.camera.dispose();

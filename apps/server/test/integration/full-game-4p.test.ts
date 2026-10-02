@@ -1,5 +1,6 @@
 import type { GameState } from '@rich4/shared/engine';
 import { canonicalJson } from '@rich4/shared/util';
+import type { GameView } from '@rich4/shared/view';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { BotClient } from '../helpers/botClient';
 import { closeAll, setupRoom, startGame } from '../helpers/scenario';
@@ -39,7 +40,7 @@ function captureInitial(t: TestServer, code: string): void {
 }
 
 describe('integration/full-game-4p', () => {
-  it('4 个 bot 自动玩到 game:over：seq 连续、public 模式终局视图一致、journal 重放一致、没有 app:error', async () => {
+  it('4 个 bot 自动玩到 game:over：seq 连续、终局视图除各自手牌外一致（联机自动私密）、journal 重放一致、没有 app:error', async () => {
     srv = await startTestServer({ rateLimitScale: 0 });
     const s = await setupRoom(srv.url, {
       humans: 4,
@@ -61,8 +62,17 @@ describe('integration/full-game-4p', () => {
     // 只有打满 30 天的对局才要求批次数 > 100
     const reason = s.bots[0]!.over!.result.reason;
     expect(s.host.batches.length).toBeGreaterThan(reason === 'timeLimit' ? 100 : 40);
-    const views = s.bots.map((b) => canonicalJson(b.view));
+    // ≥ 2 名真人的联机对局开局锁定私密手牌（net/room.ts effectiveHandVisibility）：去掉只给本人看的 cards / items 后
+    // 四人的终局视图一致；各自只看得到自己的手牌与背包
+    const strip = (v: GameView) => ({ ...v, players: v.players.map(({ cards: _c, items: _i, ...p }) => p) });
+    const views = s.bots.map((b) => canonicalJson(strip(b.view!)));
     expect(new Set(views).size).toBe(1);
+    for (const [i, b] of s.bots.entries()) {
+      for (const p of b.view!.players) {
+        expect(p.cards === null, `seat ${i} 看 ${p.seat}`).toBe(p.seat !== i);
+        expect(p.items === null, `seat ${i} 看 ${p.seat}`).toBe(p.seat !== i);
+      }
+    }
     expect(s.bots[0]!.view!.status).toBe('over');
     expect(s.bots[0]!.over!.result.reason).toMatch(/timeLimit|lastStanding|noHumansLeft/);
     expect(s.bots.every((b) => b.acts.every((a) => a.result.ok || a.result.error.code === 'STALE_DECISION'))).toBe(

@@ -69,6 +69,7 @@ import {
   type HandVisibility,
   isAutopilot,
   type PendingView,
+  projectDecisionOptions,
   projectEvent,
   projectState,
   type SeatControl,
@@ -660,7 +661,10 @@ export class GameRunner {
     }
     const seat = dr.d.seat;
     const rt = this.seatRts.get(seat);
-    const you = this.decisionFor(seat);
+    // 电脑座位看全量手牌（原版电脑与玩家同一进程、直接读内存，v3.11 出卡跳表 0x475328）；真人座位的托管与超时代打
+    // 按房间的手牌可见性降级，不替真人使用他看不到的信息
+    const handVisibility: HandVisibility = by === 'ai' ? 'public' : this.deps.settings().handVisibility;
+    const you = this.decisionFor(seat, { handVisibility });
     if (!you) return;
     let fallback = false;
     let intent: PlayerIntent = dr.d.defaultIntent;
@@ -670,7 +674,7 @@ export class GameRunner {
         decision: dr.d,
         you,
         map: this.map(),
-        handVisibility: this.deps.settings().handVisibility,
+        handVisibility,
       });
       intent = out.intent;
       fallback = out.fallback !== null;
@@ -998,8 +1002,8 @@ export class GameRunner {
       }));
   }
 
-  /** 本座位的决策（观战者永远拿不到） */
-  decisionFor(seat: SeatIndex): YourDecision | undefined {
+  /** 本座位的决策（观战者永远拿不到）；options 按手牌可见性改写（view/project.ts projectDecisionOptions） */
+  decisionFor(seat: SeatIndex, vis: { handVisibility: HandVisibility } = this.visibility()): YourDecision | undefined {
     for (const dr of this.decisions.values()) {
       if (dr.d.seat !== seat) continue;
       const out: YourDecision = {
@@ -1007,7 +1011,7 @@ export class GameRunner {
         seat,
         kind: dr.d.kind,
         timing: dr.d.timing,
-        options: dr.d.options,
+        options: projectDecisionOptions(dr.d.kind, dr.d.options, vis),
         defaultIntent: dr.d.defaultIntent,
         deadlineAt: this.displayDeadline(dr),
       };

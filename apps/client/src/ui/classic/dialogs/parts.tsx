@@ -276,6 +276,16 @@ export const ITEM_BAR = {
   frames: { cards: 0, items: 1 },
 } as const;
 
+/** 欄里的格数（5×3） */
+export const ITEM_BAR_CELLS = ITEM_BAR.cols * ITEM_BAR.rows;
+
+/**
+ * 道具欄右下角（第 15 格，格号 14）的「收起交通工具」：机车 / 汽车时画 Panel#11 图15 / 16（80×56「车 + 红色禁止圈」，
+ * 锚点左上），画在欄内 (325,117)，即格子矩形往左上各让出 1 像素。
+ * @source v2.06 fcn.00446948 0x4469a7–0x4469e7：模式 1 在 (0x145,0x75) 画图15、模式 2 画图16，再把格 14 登记为 14 号
+ */
+export const STOW_CELL = { at: ITEM_BAR_CELLS - 1, frames: { moto: 15, car: 16 } } as const;
+
 /** 道具图标（Panel#11 图2–14，帧 = 道具号 + 1） */
 export function itemIconFrame(item: ItemId): number {
   return item + 1;
@@ -290,6 +300,8 @@ export function gridCellRect(i: number): Rect {
 
 export interface GridCell {
   key: string;
+  /** 固定的格号（0..14，缺省按顺序填）：道具欄右下角的「收起交通工具」固定在第 15 格 */
+  at?: number;
   /** 读屏名称 */
   label: string;
   content: ReactNode;
@@ -313,7 +325,7 @@ export interface CardGridProps {
   testId?: string;
 }
 
-/** 卡片欄 / 道具欄：最多 15 格，按顺序填 */
+/** 卡片欄 / 道具欄：最多 15 格，按顺序填（指定了 at 的格子放在该格号） */
 export function CardGrid({ kind, x, y, cells, label, testId }: CardGridProps): ReactNode {
   useEnsureSceneSprites([ITEM_BAR_SHEET]);
   return (
@@ -326,8 +338,10 @@ export function CardGrid({ kind, x, y, cells, label, testId }: CardGridProps): R
       data-interactive="true"
     >
       <Sprite sheet={ITEM_BAR_SHEET} frame={ITEM_BAR.frames[kind]} x={0} y={0} origin="topLeft" />
-      {cells.slice(0, ITEM_BAR.cols * ITEM_BAR.rows).map((cell, i) => {
-        const r = gridCellRect(i);
+      {cells.map((cell, i) => {
+        const at = cell.at ?? i;
+        if (at >= ITEM_BAR_CELLS) return null;
+        const r = gridCellRect(at);
         return (
           <button
             key={cell.key}
@@ -365,6 +379,23 @@ export function ItemCellContent({ item, count }: { item: ItemId; count: number }
         ×{count}
       </span>
     </>
+  );
+}
+
+/** 「收起交通工具」格的内容：Panel#11 图15 / 16 盖住整格（缺素材时写文字） */
+export function StowCellContent({ vehicle, label }: { vehicle: 'moto' | 'car'; label: string }): ReactNode {
+  return (
+    <span className={d.cellIcon} style={{ width: ITEM_BAR.cw, height: ITEM_BAR.ch }} aria-hidden="true">
+      <Sprite
+        sheet={ITEM_BAR_SHEET}
+        frame={STOW_CELL.frames[vehicle]}
+        x={-1}
+        y={-1}
+        origin="topLeft"
+        testId="stow-vehicle-icon"
+        fallback={<span>{label}</span>}
+      />
+    </span>
   );
 }
 

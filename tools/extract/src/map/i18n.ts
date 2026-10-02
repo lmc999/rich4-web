@@ -35,5 +35,13 @@ export class StringTable {
   }
 }
 
-/** 地图名（我们自己的标签，不来自原版文件）。 */
-export const MAP_NAMES: Readonly<Record<string, string>> = { taiwan: '台灣' };
+/**
+ * 地图名（我们自己的标签，不来自原版文件；原版只在开局设置背景 jump#gm 的图上画出关卡名）。
+ * zh-CN 同样由 opencc 生成（中國大陸 → 中国大陆、美國 → 美国）。台湾一项不能改：它进入 dataHash。
+ */
+export const MAP_NAMES: Readonly<Record<string, string>> = {
+  taiwan: '台灣',
+  china: '中國大陸',
+  japan: '日本',
+  usa: '美國',
+};

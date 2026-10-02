@@ -28,7 +28,8 @@ export interface NameKit {
   lot(lot: LotId): string;
   tile(tile: TileId): string;
   card(id: CardId | null): string;
-  item(id: ItemId): string;
+  /** null：私密手牌模式下别人的道具种类（「道具」） */
+  item(id: ItemId | null): string;
   god(kind: GodKind): string;
   villain(kind: VillainKind): string;
   actor(a: ActorRef): string;
@@ -38,6 +39,8 @@ export interface NameKit {
   date(d: DateNum): string;
   /** 节日名（找不到文案时为「节日」） */
   holiday(key: string): string;
+  /** 当前地图的原版地图号 gm（MapDef.globalMapId：台 0 / 中 1 / 日 2 / 美 3；fixture 与未载入为 null）。命运 33–36 按图选文案用 */
+  globalMapId?(): number | null;
 }
 
 export const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'] as const;
@@ -150,7 +153,8 @@ export function makeNames(d: NameDeps): NameKit {
       id === null
         ? tf(d.t, 'events:names.hiddenCard', '1 张卡片')
         : tf(d.t, `cards:${CARD_KEYS[id]}.name`, `卡片#${id}`),
-    item: (id) => tf(d.t, `items:${ITEM_KEYS[id]}.name`, `道具#${id}`),
+    item: (id) =>
+      id === null ? tf(d.t, 'items:hidden.name', '道具') : tf(d.t, `items:${ITEM_KEYS[id]}.name`, `道具#${id}`),
     god: (k) => tf(d.t, `gods:${GOD_KEYS[k]}.name`, `神明#${k}`),
     villain,
     actor: (a) => (a.t === 'seat' ? seat(a.seat) : villain(a.kind)),
@@ -174,6 +178,7 @@ export function makeNames(d: NameDeps): NameKit {
     date: formatDate,
     holiday: (key) =>
       holidayName(d.t, d.view()?.dataRef.mapId ?? null, key) ?? tf(d.t, 'events:holiday.generic', '节日'),
+    globalMapId: () => d.map()?.def.globalMapId ?? null,
   };
   return kit;
 }

@@ -10,7 +10,7 @@ import cc from '../classic.module.css';
 import { coarsePointer, wantsWideHit } from '../common/stage';
 import { type Rect, regionStyle } from '../layout';
 import { Sprite } from '../Sprite';
-import { EXIT_FRAMES, TITLE_SHEET } from './layout';
+import { EXIT_FRAMES, SETUP_BG, setupBgKey, TITLE_SHEET } from './layout';
 import s from './screens.module.css';
 import { playScreenCue } from './uiSound';
 
@@ -99,6 +99,24 @@ export function SceneImage({
       data-image={imageKey}
       data-testid={testId}
     />
+  );
+}
+
+/**
+ * 开局设置 / 选人画面的背景（jump#gm，按地图 layout.setupBgKey）：台湾的 jump#0 垫在下面，该图的背景盖在上面——
+ * 换图时新背景下载完成之前看到的是台湾风景而不是黑底；该图的条目不可用（旧素材包、合成包没有）时只画 jump#0。
+ * testId 挂在实际显示的那一层（data-image 为其键）
+ */
+export function SetupBg({ mapId, testId }: { mapId: string | null; testId?: string }): ReactNode {
+  const key = setupBgKey(mapId);
+  // undefined = 还没登记（上层 SceneImage 挂上后登记）；null = 不可用（换素材包时整表清空、重新登记）
+  const own = useClassicAssets((st) => (key === SETUP_BG ? null : st.images[key]));
+  const top = key !== SETUP_BG && own !== null;
+  return (
+    <>
+      <SceneImage imageKey={SETUP_BG} w={640} h={480} testId={top ? undefined : testId} />
+      {top && <SceneImage imageKey={key} w={640} h={480} testId={testId} />}
+    </>
   );
 }
 

@@ -4,7 +4,8 @@
  *
  * - addHostility：被害者对加害者的敌意（AI 用）；对盟友产生正敌意时同盟当场解除（ALLIANCE_BROKEN{hostility}）。
  * - destroyVehicle：地雷、炸弹、飞弹、核弹毁车：机车 / 汽车回共享库存，工程车作废，改回步行、1 颗骰子。
- * - stowVehicle：梦游卡：机车 / 汽车退回背包（可以因此达到第 10 台），工程车作废，改回步行、1 颗骰子。
+ * - stowVehicle：梦游卡、真人收起交通工具（STOW_VEHICLE，items/vehicle.ts stowByHand）：机车 / 汽车退回背包（可以因此
+ *   达到第 10 台），工程车作废（只有梦游卡会遇到），改回步行、1 颗骰子。
  * - gainCard：得卡（满手时按 rules.handFull：autoCheapest 自动弃最便宜的一张；choose 先入手再压 DISCARD_CARD）。
  * - mutateLot / raiseLot：地产等级变化（研究所被拆到低于项目等级或清为无主时发 RESEARCH_CANCELLED）。
  * - removeObject：路面物件离开地图（路障、地雷、定时炸弹回共享库存；礼物、宝箱直接消失）。
@@ -68,9 +69,13 @@ export function destroyVehicle(ctx: Ctx, seat: SeatIndex): void {
   ctx.emit('VEHICLE_DESTROYED', { seat, vehicle: old });
 }
 
-/** 梦游：机车 / 汽车退回背包，工程车作废，改回步行、1 颗骰子 → VEHICLE（步行时只把骰子改为 1） */
-export function stowVehicle(ctx: Ctx, seat: SeatIndex): void {
+/**
+ * 梦游 / 真人收起：机车 / 汽车退回背包，工程车作废，改回步行、1 颗骰子 → VEHICLE（步行时只把骰子改为 1）。
+ * byHand：真人从回合菜单收起（stowByHand），VEHICLE 带 stowed = 收回背包的那台，客户端按原版不弹提示、不放音效
+ */
+export function stowVehicle(ctx: Ctx, seat: SeatIndex, byHand = false): void {
   const p = ctx.player(seat);
+  const old = p.vehicle;
   const item = VEHICLE_ITEM[p.vehicle];
   if (item !== null) {
     // 背包里同种交通工具最多 10 台（原版特例），满了就回共享库存
@@ -81,7 +86,9 @@ export function stowVehicle(ctx: Ctx, seat: SeatIndex): void {
   p.vehicle = 'walk';
   p.diceCount = 1;
   p.engineer = null;
-  if (changed) ctx.emit('VEHICLE', { seat, vehicle: 'walk', dice: 1 });
+  if (!changed) return;
+  if (byHand && (old === 'moto' || old === 'car')) ctx.emit('VEHICLE', { seat, vehicle: 'walk', dice: 1, stowed: old });
+  else ctx.emit('VEHICLE', { seat, vehicle: 'walk', dice: 1 });
 }
 
 // ───────────────────────── 卡片 ─────────────────────────

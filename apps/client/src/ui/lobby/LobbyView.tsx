@@ -20,6 +20,7 @@ import {
   draftFromSettings,
   draftToPatch,
   fetchMapList,
+  handPrivateNow,
   type MapListingLite,
   soloHumanNow,
   timerHintActive,
@@ -53,6 +54,8 @@ function SettingsBox({ room }: { room: RoomView }): ReactNode {
   const solo = soloHumanNow(room);
   // 此刻适用（档位不是 off）时说明换成「现在只有一名真人：开局后不计时」并高亮——文字本身不同，读屏与色弱用户也能分辨
   const untimedNow = timerHintActive(room.settings.timerPreset, solo);
+  // 开局后他人看不到本人的手牌与道具（真人 ≥ 2 时服务器锁定私密）；只有一名真人时说明「两名以上真人时…」
+  const handPrivate = handPrivateNow(room);
   // 第三项：值下方的一行小字说明（计时档位：只有一名真人时不计时，design/net.md §5.4）
   const rows: [string, string, string?][] = [
     [t('lobby:settings.map'), t(`lobby:maps.${g.mapId}`, { defaultValue: g.mapId })],
@@ -121,6 +124,9 @@ function SettingsBox({ room }: { room: RoomView }): ReactNode {
               </div>
             ))}
           </dl>
+          <p className={l.kvHint} data-testid="room-hand-hint" data-active={handPrivate ? 'true' : 'false'}>
+            {t(handPrivate ? 'lobby:settings.handHintActive' : 'lobby:settings.handHint')}
+          </p>
           {host && room.loadedSave === undefined && (
             <button
               type="button"

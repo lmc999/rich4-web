@@ -67,11 +67,11 @@ npm run check      # typecheck + lint + test + 三个守卫，提交前请跑一
 2. **核对指纹**：`npm run extract -- fingerprint`。哈希未知时工具以退出码 3 结束，确认无误后可加 `--allow-unknown` 继续。
 3. **提取并打包**：
    ```bash
-   npm run extract -- all
-   npm run extract -- pack --out rich4-data/
+   npm run extract -- all                      # map raw → map diff → exe tables → 四张图 map build（台湾、大陆、日本、美国）
+   npm run extract -- pack --out rich4-data/   # 只打最近一次 map build 为 exit 0 的图，与已有 manifest 合并（见 data-pipeline §3）
    ```
-   中间产物写到 `.cache/extract/`（含预览 `preview/taiwan.svg`），部署数据包写到 `rich4-data/`。两者都已 gitignore，`npm run check:no-original` 会拦截任何误入库。
-4. **使用台湾图**：`RICH4_DATA_DIR=./rich4-data npm run dev`。缺少数据包时服务器只提供 fixture 地图并告警。
+   中间产物写到 `.cache/extract/`（含预览 `preview/<key>.svg`，key 为 taiwan、china、japan、usa），部署数据包写到 `rich4-data/`。两者都已 gitignore，`npm run check:no-original` 会拦截任何误入库。也可以单独构建一张图：`npm run extract -- map build --map china --strict4 --preview`。
+4. **使用原版地图**：`npm run dev`。不设 `RICH4_DATA_DIR` 时服务器会自动找仓库根目录的 `rich4-data/`；要指定时写绝对路径（服务器在 `apps/server` 下运行，相对路径按那里解析）。缺少数据包时服务器只提供 fixture 地图并告警。
 
 工具只读访问 `original/`，任何写入其下的操作都会直接报错。详细步骤见 [docs/design/data-pipeline.md](docs/design/data-pipeline.md)。
 

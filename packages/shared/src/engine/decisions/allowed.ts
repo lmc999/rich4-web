@@ -11,6 +11,7 @@ export const ALLOWED_INTENTS = Object.freeze({
     'ROLL',
     'USE_CARD',
     'USE_ITEM',
+    'STOW_VEHICLE',
     'STOCK_BUY',
     'STOCK_SELL',
     'BOARD_LIST',

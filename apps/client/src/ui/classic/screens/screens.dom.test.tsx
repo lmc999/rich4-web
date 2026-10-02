@@ -35,6 +35,14 @@ import ClassicLobby from './ClassicLobby';
 import { INTRO_SEEN_KEY } from './IntroVideo';
 import { SCREEN_KEYS } from './layout';
 import { SkinHome } from './SkinRoutes';
+import { playScreenCue } from './uiSound';
+
+// 界面音：只记录播了哪一个 cue（关卡行 = click，下拉框 = move）
+vi.mock('./uiSound', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./uiSound')>()),
+  playScreenCue: vi.fn(),
+}));
+const cues = () => vi.mocked(playScreenCue).mock.calls.map((c) => c[0]);
 
 installResizeObserver();
 // 画面含懒加载模块与多步交互：机器繁忙时 5 秒缺省超时不够
@@ -98,6 +106,18 @@ function renderWith(ui: ReactElement, path = '/') {
   return { ...utils, loc, ...t };
 }
 
+/** GET /api/maps 的替身（缺省 jsdom 下 fetch 失败 → 只列 fixture） */
+function stubMapList(body: {
+  defaultMap: string;
+  maps: { id: string; mapHash: string; playable?: boolean; fixture?: boolean }[];
+}): void {
+  vi.stubGlobal('fetch', async (u: string) =>
+    u === '/api/maps'
+      ? new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+      : new Response('{}', { status: 404 }),
+  );
+}
+
 function setViewport(w: number, h: number): void {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: w });
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: h });
@@ -121,6 +141,8 @@ afterEach(async () => {
   useSettingsStore.setState({ skin: 'auto', nickname: '' });
   useAccessStore.setState({ status: null, statusError: false, required: null });
   localStorage.removeItem(INTRO_SEEN_KEY);
+  vi.unstubAllGlobals();
+  vi.mocked(playScreenCue).mockClear();
 });
 
 // ───────────────────────── 标题画面 ─────────────────────────
@@ -293,12 +315,82 @@ describe('开局设置（jump#0 + jump#4）', () => {
     ]);
   });
 
-  it('快速局：1 年 / 10 倍；关卡一（台湾）打勾，没有地图的关卡变暗', async () => {
+  it('快速局：1 年 / 10 倍；地图目录取不到时只有 fixture，四个关卡都变暗、不能点', async () => {
     renderWith(<ClassicCreate onCancel={() => {}} onCreated={() => {}} />);
     await userEvent.click(screen.getByTestId('create-quick'));
     expect(screen.getByTestId('set-time')).toHaveValue('365');
     expect(screen.getByTestId('set-win')).toHaveValue('10');
-    expect(screen.getByTestId('setup-stage-1')).toHaveAttribute('data-available', 'false');
+    await waitFor(() => expect(screen.getByTestId('set-map')).toHaveValue('test'));
+    for (let k = 0; k < 4; k++) {
+      expect(screen.getByTestId(`setup-stage-${k}`)).toHaveAttribute('data-available', 'false');
+      expect(screen.getByTestId(`setup-stage-${k}`)).toBeDisabled();
+      expect(screen.getByTestId(`setup-stage-${k}`)).toHaveAttribute('data-selected', 'false');
+    }
+  });
+
+  it('关卡行选图：缺省为服务器的 defaultMap；点关卡写入草稿的地图（与地图下拉同步）、打勾、背景换 jump#gm；不可开局的变暗', async () => {
+    stubMapList({
+      defaultMap: 'china',
+      maps: [
+        { id: 'taiwan', mapHash: 'a', playable: true },
+        { id: 'china', mapHash: 'b', playable: true },
+        { id: 'japan', mapHash: 'c', playable: true },
+        { id: 'usa', mapHash: 'd', playable: false },
+        { id: 'test', mapHash: 'e', playable: true, fixture: true },
+      ],
+    });
+    useClassicAssets.setState((st) => ({
+      images: {
+        ...st.images,
+        'title.setup.bg.china': { url: '/pack/bg1.png', w: 640, h: 480 },
+        'title.setup.bg.japan': { url: '/pack/bg2.png', w: 640, h: 480 },
+      },
+    }));
+    const { transport } = renderWith(<ClassicCreate onCancel={() => {}} onCreated={() => {}} />);
+    // 缺省地图 = 服务器的 defaultMap（不是写死的台湾）
+    await waitFor(() => expect(screen.getByTestId('set-map')).toHaveValue('china'));
+    const stage = (k: number) => screen.getByTestId(`setup-stage-${k}`);
+    expect(stage(1)).toHaveAttribute('data-selected', 'true');
+    expect(stage(1)).toHaveAttribute('aria-pressed', 'true');
+    expect(stage(1)).toHaveAccessibleName('关卡：中国大陆');
+    expect(stage(1).querySelector('[data-sprite]')).toHaveAttribute('data-sprite', 'title.setup.ui/8');
+    expect(screen.getByTestId('setup-bg')).toHaveAttribute('data-image', 'title.setup.bg.china');
+    // 美国不可开局：变暗、不能点
+    expect(stage(3)).toHaveAttribute('data-available', 'false');
+    expect(stage(3)).toBeDisabled();
+    expect(stage(3)).toHaveAccessibleName('关卡：美国（本服务器没有这张地图）');
+    // 点关卡三（日本）：草稿、地图下拉、打勾、背景一起变；播 click（exe 0x405439 = 全局 UI 音效第 1 项），不是下拉的 move
+    vi.mocked(playScreenCue).mockClear();
+    await userEvent.click(stage(2));
+    expect(cues()).toEqual(['click']);
+    expect(screen.getByTestId('set-map')).toHaveValue('japan');
+    expect(stage(2)).toHaveAttribute('data-selected', 'true');
+    expect(stage(1)).toHaveAttribute('data-selected', 'false');
+    expect(stage(1).querySelector('[data-sprite]')).toBeNull();
+    expect(screen.getByTestId('setup-bg')).toHaveAttribute('data-image', 'title.setup.bg.japan');
+    // 地图下拉改回台湾：关卡一打勾、背景 jump#0；fixture 地图：不打勾、背景 jump#0
+    vi.mocked(playScreenCue).mockClear();
+    await userEvent.selectOptions(screen.getByTestId('set-map'), 'taiwan');
+    expect(cues()).toEqual(['move']);
+    expect(stage(0)).toHaveAttribute('data-selected', 'true');
+    expect(screen.getByTestId('setup-bg')).toHaveAttribute('data-image', 'title.setup.bg');
+    await userEvent.selectOptions(screen.getByTestId('set-map'), 'test');
+    expect(screen.queryAllByRole('button', { pressed: true }).filter((b) => b.dataset.map)).toEqual([]);
+    expect(screen.getByTestId('setup-bg')).toHaveAttribute('data-image', 'title.setup.bg');
+    await userEvent.click(stage(2));
+    await userEvent.click(screen.getByTestId('create-submit'));
+    await waitFor(() => expect(transport.payloads('room:create')).toHaveLength(1));
+    expect(transport.payloads('room:create')[0]).toMatchObject({ settings: { game: { mapId: 'japan' } } });
+  });
+
+  it('背景条目不可用（旧素材包没有 jump#1–3）：回退台湾的 jump#0', async () => {
+    stubMapList({ defaultMap: 'usa', maps: [{ id: 'usa', mapHash: 'd', playable: true }] });
+    renderWith(<ClassicCreate onCancel={() => {}} onCreated={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId('set-map')).toHaveValue('usa'));
+    expect(screen.getByTestId('setup-stage-3')).toHaveAttribute('data-selected', 'true');
+    await waitFor(() => expect(screen.getByTestId('setup-bg')).toHaveAttribute('data-image', 'title.setup.bg'));
+    // 只画 jump#0 一层（没有空着的上层）
+    expect(document.querySelectorAll('img[data-image^="title.setup.bg"]')).toHaveLength(1);
   });
 
   it('手机横屏 844×390：竖栏白框只显示数值，全部设置排进两列 56 高的行', async () => {
@@ -324,6 +416,27 @@ describe('开局设置（jump#0 + jump#4）', () => {
     await userEvent.selectOptions(screen.getByTestId('set-vehicle'), 'moto');
     expect(screen.getByTestId('setup-value-vehicle')).toHaveTextContent('机车');
     expect(screen.getByTestId('classic-stage')).toHaveAttribute('data-hit', 'wide');
+  });
+
+  it('手机横屏：关卡行只读（32 高、四行紧挨，缩放后不到 44 CSS 像素），选图走两列面板里的地图下拉', async () => {
+    stubMapList({
+      defaultMap: 'taiwan',
+      maps: ['taiwan', 'china', 'japan', 'usa'].map((id) => ({ id, mapHash: id, playable: true })),
+    });
+    setViewport(844, 390);
+    renderWith(<ClassicCreate onCancel={() => {}} onCreated={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId('setup-stage-0')).toHaveAttribute('data-selected', 'true'));
+    expect(screen.getByTestId('classic-stage')).toHaveAttribute('data-hit', 'wide');
+    for (let k = 0; k < 4; k++) {
+      expect(screen.getByTestId(`setup-stage-${k}`).tagName).toBe('DIV');
+      expect(screen.getByTestId(`setup-stage-${k}`)).toHaveAttribute('data-available', 'true');
+    }
+    expect(screen.queryAllByRole('button').filter((b) => b.dataset.map)).toEqual([]);
+    const panel = screen.getByTestId('set-map').closest('fieldset')!;
+    expect(panel).toHaveAttribute('data-wide', 'true');
+    await userEvent.selectOptions(within(panel).getByTestId('set-map'), 'usa');
+    expect(screen.getByTestId('setup-stage-3')).toHaveAttribute('data-selected', 'true');
+    expect(screen.getByTestId('setup-stage-0')).toHaveAttribute('data-selected', 'false');
   });
 });
 
@@ -402,6 +515,66 @@ describe('选人大厅', () => {
     expect(screen.getByTestId('char-select')).toBeDisabled();
   });
 
+  it('关卡行：背景跟随房间地图；房主点关卡即改房间地图（room:updateSettings），其他人与读档后只读', async () => {
+    stubMapList({
+      defaultMap: 'taiwan',
+      maps: ['taiwan', 'china', 'japan', 'usa'].map((id) => ({ id, mapHash: id, playable: true })),
+    });
+    useClassicAssets.setState((st) => ({
+      images: { ...st.images, 'title.setup.bg.usa': { url: '/pack/bg3.png', w: 640, h: 480 } },
+    }));
+    const onUsa = (over: Partial<RoomView> = {}): RoomView => {
+      const r = hostRoom(over);
+      r.settings = { ...r.settings, game: { ...r.settings.game, mapId: 'usa' } };
+      return r;
+    };
+    const { transport, unmount } = renderWith(<ClassicLobby room={onUsa()} onLeave={() => {}} />);
+    expect(screen.getByTestId('setup-bg')).toHaveAttribute('data-image', 'title.setup.bg.usa');
+    expect(screen.getByTestId('setup-stage-3')).toHaveAttribute('data-selected', 'true');
+    // 目录到了才能点；点关卡行播 click（exe 0x405439）
+    await waitFor(() => expect(screen.getByTestId('setup-stage-1').tagName).toBe('BUTTON'));
+    vi.mocked(playScreenCue).mockClear();
+    await userEvent.click(screen.getByTestId('setup-stage-1'));
+    expect(cues()).toEqual(['click']);
+    expect(transport.payloads('room:updateSettings')).toEqual([{ patch: { game: { mapId: 'china' } } }]);
+    // 已选中的关卡再点：不发
+    await userEvent.click(screen.getByTestId('setup-stage-3'));
+    expect(transport.payloads('room:updateSettings')).toHaveLength(1);
+    unmount();
+
+    // 非房主：只读（不是按钮）
+    const guest = onUsa({
+      seats: [human(0, '房主', { host: true }), human(1, '我', { isYou: true }), ai(2), seat(3)],
+      you: { role: 'player', seat: 1, isHost: false },
+    });
+    const g = renderWith(<ClassicLobby room={guest} onLeave={() => {}} />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(screen.getByTestId('setup-stage-1').tagName).toBe('DIV');
+    expect(screen.getByTestId('setup-stage-3')).toHaveAttribute('data-selected', 'true');
+    g.unmount();
+
+    // 读档后：地图由存档决定
+    const loaded = onUsa({ loadedSave: { saveId: 's', name: '存档', gameDay: 3, date: 19980103, verified: true } });
+    const l = renderWith(<ClassicLobby room={loaded} onLeave={() => {}} />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(screen.getByTestId('setup-stage-0').tagName).toBe('DIV');
+    l.unmount();
+
+    // 手机横屏的房主：关卡行只读（热区不到 44 CSS 像素），改地图走左抽屉「房间设置」的地图下拉
+    setViewport(844, 390);
+    renderWith(<ClassicLobby room={onUsa()} onLeave={() => {}} />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(screen.getByTestId('classic-stage')).toHaveAttribute('data-hit', 'wide');
+    for (let k = 0; k < 4; k++) expect(screen.getByTestId(`setup-stage-${k}`).tagName).toBe('DIV');
+    expect(screen.getByTestId('setup-stage-3')).toHaveAttribute('data-selected', 'true');
+  });
+
   it('房主：OK = 开始（有人没准备时禁用）、EXIT = 离开；座位补电脑 / 踢人；房间设置直接修改', async () => {
     const onLeave = vi.fn();
     const { transport, rerender, client } = renderWith(<ClassicLobby room={hostRoom()} onLeave={onLeave} />);
@@ -453,6 +626,26 @@ describe('选人大厅', () => {
     expect(screen.getByTestId('set-timer-hint')).toHaveAttribute('data-active', 'true');
     // 文字本身也换了（不只靠颜色）
     expect(screen.getByTestId('set-timer-hint')).toHaveTextContent('现在只有一名真人：开局后不计时');
+  });
+
+  it('手牌说明：两名真人时「他人无法查看自己手牌及道具」高亮；只有一名真人时说明适用条件', () => {
+    const r = renderWith(
+      <ClassicLobby
+        room={hostRoom({ seats: [human(0, '房主', { host: true, isYou: true }), human(1, '小明'), seat(2), seat(3)] })}
+        onLeave={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('room-hand-hint')).toHaveAttribute('data-active', 'true');
+    expect(screen.getByTestId('room-hand-hint')).toHaveTextContent('他人无法查看自己手牌及道具');
+    r.unmount();
+    renderWith(
+      <ClassicLobby
+        room={hostRoom({ seats: [human(0, '房主', { host: true, isYou: true }), ai(1), seat(2), seat(3)] })}
+        onLeave={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('room-hand-hint')).toHaveAttribute('data-active', 'false');
+    expect(screen.getByTestId('room-hand-hint')).toHaveTextContent('两名以上真人时');
   });
 
   it('非房主：OK = 准备 / 取消准备（aria-pressed，打勾）；房间设置只读', async () => {

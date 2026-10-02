@@ -76,6 +76,7 @@
     "text": "等待 {{who}} {{action}}…",
     "textAi": "{{who}} 正在思考：{{action}}…",
     "secs": "{{n}} 秒",
+    "decide": "做决定",
     "kind": {
       "TURN_MENU": "行动",
       "BANK_ATM": "使用提款机",

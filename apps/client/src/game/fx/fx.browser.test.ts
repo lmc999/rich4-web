@@ -145,7 +145,8 @@ describe('M6/M7 特效与舞台（Chromium + WebGL）', () => {
     ctrl.syncView(view);
     expect(ctrl.renderer.board.roads.counts().objects).toBe(view.objects.length);
 
-    const seat = view.players.find((p) => p.placed && p.node > 0)!.seat;
+    // 挑一个没被关押的在场玩家：selfPlay 的随机序列里第一个在场的人可能正在坐牢 / 住院，z0 已含关押加成
+    const seat = view.players.find((p) => p.placed && p.node > 0 && !(p.st.jail > 0) && !(p.st.hospital > 0))!.seat;
     const actor = ctrl.renderer.board.actor(seat)!;
     ctrl.say(seat, '大家好，这是一句很长很长很长很长很长很长的聊天内容', 200);
     const speech = actor.root.children.find((c) => c.label === 'speech');

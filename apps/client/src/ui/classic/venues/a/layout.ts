@@ -320,11 +320,9 @@ export function drawBalls(n: number): [number, number] {
 // ───────────────────────── 股市（Panel#75） ─────────────────────────
 
 export const STOCK = {
-  /** 图0 绿色行情表、图1 橙色表（未用）、图2 公司详情 587×375、图3–11 行业图 80×112 */
+  /** 图0 绿色行情表、图1 橙色表（未用）、图2 公司详情 587×375、图3–11 行业图 80×112（按行业码查表，见 stockIndustryFrame） */
   table: 0,
   detail: 2,
-  industry0: 3,
-  industries: 9,
   /** 顶栏 6 格（第 6 格烘焙了 EXIT 与走出门的小人） */
   header: [
     { x: 16, y: 8, w: 108, h: 30 },
@@ -366,9 +364,35 @@ export function stockCol(k: number): { x: number; w: number } {
   return { x: c[k]!, w: c[k + 1]! - c[k]! };
 }
 
-/** 股票的行业图（没有行业数据时按序号取模，确定性） */
-export function stockIndustryFrame(idx: number): number {
-  return STOCK.industry0 + (((Math.trunc(idx) % STOCK.industries) + STOCK.industries) % STOCK.industries);
+/**
+ * 行业码 → Panel#75 行业图帧：银行 3、百货 4、保险 5、汽车 6、电子 7、石油 9、建设 10、航空 11；0 表示没有行业图。
+ * @source exe v2.06 表 0x4733b7（u8[12]，按企业记录 +0x1a 的行业码取，0x429470）
+ */
+export const STOCK_INDUSTRY_FRAMES: readonly number[] = [0, 11, 0, 7, 5, 6, 9, 3, 0, 0, 4, 10];
+
+/** 日本图（gm 2）的电子业改用帧 8（ＳＥＧＡ / ＳＯＮＹ 一类的图）。@source exe v2.06 0x42947c–0x42948a */
+const JAPAN_GM = 2;
+const ELECTRONICS_FRAME = 7;
+const JAPAN_ELECTRONICS_FRAME = 8;
+
+/** 股票下标 → 所属企业的行业码（MapDef.companies[].stockIndex 反查；原版 0x4282a1 同样按企业记录 +0x19 反查）；没有企业为 null */
+export function stockIndustryOf(
+  def: { companies: readonly { stockIndex: number; industry: number }[] } | null | undefined,
+  idx: number,
+): number | null {
+  return def?.companies.find((c) => c.stockIndex === idx)?.industry ?? null;
+}
+
+/**
+ * 股票详情的行业图帧：按所属企业的行业码查表 0x4733b7，日本图的电子业改用帧 8。
+ * 没有企业的股票原版不画行业图（0x429450：股票记录 +4 的企业号为 0 时跳过整段企业信息），返回 null；
+ * 表里为 0 或超出表长的行业码（饭店 2、未解明的 8/9、宗教 12）同样返回 null。
+ */
+export function stockIndustryFrame(industry: number | null, globalMapId: number | null): number | null {
+  if (industry === null) return null;
+  const f = STOCK_INDUSTRY_FRAMES[industry] ?? 0;
+  if (f === 0) return null;
+  return f === ELECTRONICS_FRAME && globalMapId === JAPAN_GM ? JAPAN_ELECTRONICS_FRAME : f;
 }
 
 /** 走势折线（values 为分；空或单值时画水平线）：返回 SVG points 字符串 */

@@ -253,3 +253,69 @@ export function computeClassicLayout(width: number, height: number): ClassicLayo
     right,
   };
 }
+
+// ───────────────────────── toast 落点 ─────────────────────────
+
+/** 边距条至少这么宽才把 toast 排进去（844×390 两侧各 162；667×375 只有 84，字一行放不下几个） */
+export const TOAST_GUTTER_MIN = 140;
+/** 边距条顶上留给抽屉按钮的高度：上内边距 8 + 按钮 44 + 间距 8（classic.module.css .drawerBtns / .drawerBtn） */
+export const TOAST_GUTTER_TOP = 60;
+/** toast 列表与空位边缘的距离 */
+export const TOAST_INSET = 6;
+/** 舞台右栏（资料栏 + 日历） */
+const RIGHT_COLUMN: Rect = { x: 440, y: 0, w: 200, h: 480 };
+
+/** 抽屉宽度（classic.module.css .drawer：min(320px, 86vw)） */
+export function drawerWidth(viewportW: number): number {
+  return Math.min(320, 0.86 * viewportW);
+}
+
+export type ClassicToastPlace = 'gutter-left' | 'gutter-right' | 'stage-right';
+
+export interface ClassicToastSlot extends Rect {
+  /** top：从上缘往下排（列表只有内容那么高，最高 h）；bottom：贴下缘往上长 */
+  align: 'top' | 'bottom';
+  place: ClassicToastPlace;
+}
+
+/**
+ * 原版皮肤对局画面的 toast 落点（CSS 像素，相对舞台容器）；null = 网页版的缺省位置（页面上部正中）。
+ * 只在舞台缩小（scale < 1，手机横屏）时挪：缺省位置的 toast 是固定的 CSS 像素大小，舞台缩小后正好叠在棋盘视窗上部——
+ * 原版的亮卡、神明、新闻、命运弹窗与镜头焦点都在棋盘视窗里（亮卡消息框 (123,48)–(318,181)，844×390 时出卡人那一行
+ * 被第一条 toast 盖住）。挪到棋盘视窗以外、没被抽屉盖住的第一个空位：
+ * 1. 边距条（抽屉模式且宽 ≥ TOAST_GUTTER_MIN）：抽屉按钮以下、从上往下排，先左后右；这块本来空着，什么都不挡。
+ *    哪边的抽屉开着就用另一边（两个抽屉不会同时开）；
+ * 2. 舞台右栏（资料栏 + 日历，x 440–640）：边距条太窄（667×375）或整栏模式（侧栏有内容）时，贴右栏下缘往上长，
+ *    一两条只盖住日历，多了往上伸进资料栏；抽屉盖住右栏时（窄屏开着聊天）不用；
+ * 3. 都不行：null。
+ * 桌面（scale ≥ 1）照旧：toast 相对舞台小，缺省位置一条只到工具列下缘附近。
+ */
+export function classicToastSlot(box: ClassicLayoutBox, drawer: 'left' | 'right' | null): ClassicToastSlot | null {
+  if (!(box.scale < 1)) return null;
+  if (box.rails === 'drawer') {
+    for (const side of ['left', 'right'] as const) {
+      const r = side === 'left' ? box.left : box.right;
+      if (drawer === side || r.w < TOAST_GUTTER_MIN) continue;
+      return {
+        x: r.x + TOAST_INSET,
+        y: r.y + TOAST_GUTTER_TOP,
+        w: r.w - 2 * TOAST_INSET,
+        h: r.h - TOAST_GUTTER_TOP - TOAST_INSET,
+        align: 'top',
+        place: side === 'left' ? 'gutter-left' : 'gutter-right',
+      };
+    }
+  }
+  const col = stageToScreen(box, RIGHT_COLUMN);
+  const dw = drawerWidth(box.width);
+  if (drawer === 'right' && box.width - dw < col.x + col.w) return null;
+  if (drawer === 'left' && dw > col.x) return null;
+  return {
+    x: col.x + TOAST_INSET,
+    y: col.y + TOAST_INSET,
+    w: col.w - 2 * TOAST_INSET,
+    h: col.h - 2 * TOAST_INSET,
+    align: 'bottom',
+    place: 'stage-right',
+  };
+}

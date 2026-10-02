@@ -5,7 +5,7 @@
 import { cardDef } from '../../data/tables/cards';
 import { ECON } from '../../data/tables/economy';
 import { FACILITY_CAPS } from '../../data/tables/facilities';
-import { FACILITY_TYPES, ITEM_IDS, isPoolItem, researchItemOf } from '../../data/tables/ids';
+import { FACILITY_TYPES, ITEM_IDS, type ItemId, isPoolItem, researchItemOf } from '../../data/tables/ids';
 import { itemDef } from '../../data/tables/items';
 import { mul32 } from '../../util/int32';
 import type { EngineMap } from '../core/mapCache';
@@ -199,6 +199,25 @@ export function fullDeckShelf(s: GameState): CardId[] {
   return out;
 }
 
+/** 本次进店是否已经买过这种道具（原版买后货架行清零，同一次进店不能再买；@source v2.06 0x42d9cf） */
+export function shopItemBought(trades: readonly ShopTradeRecord[], item: ItemId): boolean {
+  return trades.some((t) => t.op === 'buyItem' && t.item === item);
+}
+
+/**
+ * 这种道具进店时是否上架：进店时库存 > 0（原版 @source v2.06 0x42e018 只列 0x494080[i] != 0 的道具）。
+ * 进店后库存只随本次的买卖变化，所以进店时的库存 = 现在的库存 + 本次买走的 − 本次卖回的。
+ */
+export function shopItemListed(pool: number, trades: readonly ShopTradeRecord[], item: ItemId): boolean {
+  let atEntry = pool;
+  for (const t of trades) {
+    if (t.item !== item) continue;
+    if (t.op === 'buyItem') atEntry += t.qty;
+    else if (t.op === 'sellItem') atEntry -= t.qty;
+  }
+  return atEntry > 0;
+}
+
 export function buildShop(
   s: GameState,
   seat: SeatIndex,
@@ -218,9 +237,12 @@ export function buildShop(
     const price = itemDef(item).price;
     const own = p.items[item] ?? 0;
     const pool = s.pools.items[item] ?? 0;
-    const byPoints = price > 0 ? Math.trunc(p.points / price) : 0;
-    const maxQty = remaining > 0 ? Math.max(0, Math.min(pool, ITEM_MAX - own, byPoints)) : 0;
-    return { item, price, pool, own, maxQty };
+    const bought = shopItemBought(visit.trades, item);
+    const listed = shopItemListed(pool, visit.trades, item);
+    // 一次买 1 个、每种每次进店只能买一次（@source v2.06 0x42d869、0x42d9cf）；真人座位只能买进店时上架的
+    const can =
+      remaining > 0 && !bought && (fullDeck || listed) && pool > 0 && own < ITEM_MAX && price > 0 && p.points >= price;
+    return { item, price, pool, own, maxQty: can ? 1 : 0, listed, bought };
   });
   return {
     points: p.points,

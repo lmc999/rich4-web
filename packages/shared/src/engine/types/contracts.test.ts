@@ -35,11 +35,11 @@ import {
   type GameEventPayloads,
   type GameEventType,
   isGameEventType,
-  type RedactCardsEventType,
+  type RedactHandEventType,
   type ResetsViewEventType,
 } from './events';
 import { FRAME_KINDS, type FrameKind } from './frames';
-import type { CardId, SeatIndex } from './ids';
+import type { CardId, ItemId, SeatIndex } from './ids';
 import {
   type DebugOp,
   DebugOpSchema,
@@ -169,7 +169,7 @@ describe('PlayerIntent 与 PlayerIntentSchema', () => {
   it('INTENT_TYPES 与 schema 的选项一一对应', () => {
     const schemaTypes = PlayerIntentSchema.options.map((o) => o.shape.type.value);
     expect([...schemaTypes].sort()).toEqual([...INTENT_TYPES].sort());
-    expect(INTENT_TYPES).toHaveLength(38);
+    expect(INTENT_TYPES).toHaveLength(39);
   });
 
   it('接受合法 intent', () => {
@@ -270,10 +270,21 @@ describe('GameEvent 与 EVENT_META', () => {
     expect(resets).toEqual(['TIME_REWOUND']);
   });
 
-  it('redactCards 事件都带 seat 与可置空的 card', () => {
-    expectTypeOf<GameEventOf<RedactCardsEventType>>().toExtend<{ seat: SeatIndex; card: CardId | null }>();
-    const redacted = GAME_EVENT_TYPES.filter((t) => EVENT_META[t].privacy === 'redactCards');
-    expect(redacted.sort()).toEqual(['CARD_GAINED', 'CARD_LOST', 'CHAIRMAN_GIFT', 'SHOP_TRADE']);
+  it('redactHand 事件都带 seat；卡号、道具号可置空（逐类脱敏见 view/project HAND_REDACTORS）', () => {
+    expectTypeOf<GameEventOf<RedactHandEventType>>().toExtend<{ seat: SeatIndex }>();
+    expectTypeOf<GameEventOf<'CARD_GAINED' | 'CARD_LOST'>>().toExtend<{ card: CardId | null }>();
+    expectTypeOf<GameEventOf<'ITEM_GAINED' | 'ITEM_LOST'>['item']>().toEqualTypeOf<ItemId | null>();
+    const redacted = GAME_EVENT_TYPES.filter((t) => EVENT_META[t].privacy === 'redactHand');
+    expect(redacted.sort()).toEqual([
+      'CARD_GAINED',
+      'CARD_LOST',
+      'CARD_USED',
+      'CHAIRMAN_GIFT',
+      'ITEM_GAINED',
+      'ITEM_LOST',
+      'SHOP_OPENED',
+      'SHOP_TRADE',
+    ]);
   });
 });
 
@@ -287,9 +298,12 @@ type UndefinedPaths<T, P extends string> = undefined extends T
       : never;
 
 describe('GameState 形状', () => {
-  it('state 里没有 undefined（例外：defaultIntent 的 ROLL.dice 按 architecture §5.5 为可选字段；AUCTION_BID 的 M7 附加字段为兼容旧桩可选，引擎总会给出）', () => {
+  it('state 里没有 undefined（例外：defaultIntent 的 ROLL.dice 按 architecture §5.5 为可选字段；AUCTION_BID 的 M7 附加字段为兼容旧桩可选，引擎总会给出；TURN_MENU 的 vehicle 为兼容旧存档里挂着的决策可选，引擎总会给出）', () => {
     expectTypeOf<UndefinedPaths<GameState, 's'>>().toEqualTypeOf<
-      's.pending[].defaultIntent.dice' | 's.pending[].options.others' | 's.pending[].options.source'
+      | 's.pending[].defaultIntent.dice'
+      | 's.pending[].options.others'
+      | 's.pending[].options.source'
+      | 's.pending[].options.vehicle'
     >();
   });
 

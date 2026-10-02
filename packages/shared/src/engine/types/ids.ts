@@ -197,6 +197,8 @@ export type ReasonKey =
   | 'handFull'
   | 'itemFull'
   | 'poolEmpty'
+  /** 百货道具：本次进店已经买过这一种（原版买后货架行变灰、不能再点） */
+  | 'boughtThisVisit'
   | 'noAnchor'
   | 'humanOnly'
   | 'alreadyEquipped'

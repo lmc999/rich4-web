@@ -6,8 +6,8 @@ import type { OverflowMode } from '../../util/int32';
 import type { SeatIndex } from '../types/ids';
 import type { PlayerState, PublicWorld } from '../types/state';
 
-/** 规则只读玩家的公开字段（不含手牌，私密模式下 GameView 的 cards 为 null） */
-export type RulePlayer = Omit<PlayerState, 'cards'>;
+/** 规则只读玩家的公开字段（不含手牌与背包，私密模式下 GameView 的 cards / items 为 null） */
+export type RulePlayer = Omit<PlayerState, 'cards' | 'items'>;
 
 export interface RuleWorld {
   config: PublicWorld['config'];

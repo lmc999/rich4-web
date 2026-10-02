@@ -56,7 +56,7 @@ export function summarizePlayer(view: GameView, map: MapIndex, seat: SeatIndex):
     loan: p.loan,
     points: p.points,
     cardCount: p.cardCount,
-    itemCount: p.items.reduce((a, b) => a + b, 0),
+    itemCount: p.itemCount,
     lands: lands.length,
     facilities: facilities.length,
     houses: lands.reduce((a, l) => a + l.level, 0),

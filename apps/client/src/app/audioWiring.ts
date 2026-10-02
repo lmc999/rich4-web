@@ -7,7 +7,7 @@
 //   否则只用 ZzFX 程序化音效（无语音、无音乐）；映射表或音频文件被 401（cookie 过期、被吊销）时 notePackAccessDenied：
 //   显示门禁页，通过后 skinStore 整体重载素材包，这里随之重新 applyPack（清空失败记为 null 的音频缓存）；
 // - 场景曲：房间 / 对局 / 结算与当前场所（本人的决策，或他人公开的场所决策）、今日节日 → director.setUi；
-//   原版片头播放期间（uiStore.introPlaying）标题画面不放标题曲；
+//   原版片头播放期间（uiStore.introPlaying）标题画面不放标题曲，开局飞行动画播放期间（同一标记）对局页不放棋盘曲；
 // - 测试钩子：window.__rich4.audio（state、log、music()、clearLog()）。
 import type { PackManifestV1 } from '@rich4/shared/assets';
 import type { MapIndex } from '@rich4/shared/data';
@@ -56,7 +56,7 @@ export interface AudioUiInput {
   /** 收到 game:over */
   over: boolean;
   map: MapIndex | null;
-  /** 原版片头正在播放（标题画面上）：不放标题曲，片头结束后再放 */
+  /** 原版片头（标题画面上）或开局飞行动画（对局页上）正在播放：不放标题曲 / 棋盘曲，播完再放 */
   intro?: boolean;
 }
 
@@ -84,6 +84,7 @@ export function audioUiStateOf(i: AudioUiInput): AudioUiState {
   if (!room) return i.intro ? { screen: 'none' } : { screen: 'title' };
   if (room.phase === 'lobby') return { screen: 'lobby' };
   if (room.phase === 'ended' || i.over) return { screen: 'gameOver' };
+  if (i.intro) return { screen: 'none' };
   if (!i.view) return { screen: 'game', venue: null, holiday: null };
   return {
     screen: 'game',

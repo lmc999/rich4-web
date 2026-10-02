@@ -86,7 +86,14 @@ describe('shop', () => {
     expect(o.shelf).toHaveLength(9);
     expect(sc.event('SHOP_OPENED')).toMatchObject({ seat: 0, fullDeck: false });
     expect(o.items.map((r) => r.item)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-    expect(o.items.find((r) => r.item === 8)).toMatchObject({ price: 30, own: 1, maxQty: 8 });
+    // 一次只能买 1 个：maxQty 只有 0 / 1（原版 @source v2.06 0x42d869）；库存不显示但仍是规则数据
+    expect(o.items.find((r) => r.item === 8)).toMatchObject({
+      price: 30,
+      own: 1,
+      maxQty: 1,
+      listed: true,
+      bought: false,
+    });
     expect(o.visit).toEqual({ entryPoints: 500, trades: [], remaining: 60 });
 
     const first = o.shelf[0]!;
@@ -105,13 +112,72 @@ describe('shop', () => {
     expect(sc.state.pools.cards[first.card]).toBe(deckBefore);
 
     const pts = sc.player(0).points;
-    sc.act(0, { type: 'SHOP_BUY_ITEM', item: 8, qty: 2 });
-    expect(sc.player(0).items[8]).toBe(3);
-    sc.act(0, { type: 'SHOP_SELL_ITEM', item: 8, qty: 3 });
-    expect(sc.player(0).points).toBe(pts - 60 + 81);
+    // 按原版一次买 1 个（fcn.0042c64b 没有数量参数）：qty 2 被拒绝，state 不变
+    expect(() => sc.act(0, { type: 'SHOP_BUY_ITEM', item: 8, qty: 2 })).toThrow(/OUT_OF_RANGE/);
+    expect(sc.player(0)).toMatchObject({ points: pts });
+    sc.act(0, { type: 'SHOP_BUY_ITEM', item: 8, qty: 1 });
+    expect(sc.event('SHOP_TRADE')).toMatchObject({ seat: 0, op: 'buyItem', item: 8, qty: 1, points: 30 });
+    expect(sc.player(0).items[8]).toBe(2);
+    expect((sc.pending(0).options as ShopOptions).items.find((r) => r.item === 8)).toMatchObject({
+      own: 2,
+      maxQty: 0,
+      listed: true,
+      bought: true,
+    });
+    // 同一次进店不能再买同一种（原版买后货架行清零 0x42d9cf）
+    expect(() => sc.act(0, { type: 'SHOP_BUY_ITEM', item: 8, qty: 1 })).toThrow(/NOT_ALLOWED/);
+    // 卖道具仍接受一次多个（原版电脑整堆卖；真人界面一次卖 1 个）
+    sc.act(0, { type: 'SHOP_SELL_ITEM', item: 8, qty: 2 });
+    expect(sc.player(0).points).toBe(pts - 30 + 54);
     expect(sc.player(0).items[8]).toBe(0);
+    // 卖光后仍然不能再买这一种；别的道具照常能买
+    expect(() => sc.act(0, { type: 'SHOP_BUY_ITEM', item: 8, qty: 1 })).toThrow(/NOT_ALLOWED/);
+    const own2 = sc.player(0).items[2] ?? 0;
+    sc.act(0, { type: 'SHOP_BUY_ITEM', item: 2, qty: 1 });
+    expect(sc.player(0).items[2]).toBe(own2 + 1);
     expect(() => sc.act(0, { type: 'SHOP_BUY_ITEM', item: 9, qty: 1 })).toThrow(/INVALID_TARGET/);
     sc.act(0, { type: 'LEAVE' }).expectNoAsk(0, 'SHOP');
+  });
+
+  it('shop.items-listed：真人货架只列进店时有库存的道具，进店后卖回的不补上架；电脑按实时库存买', () => {
+    const sc = scenario({ players: ['human', 'human'] }).untilMenu(0);
+    sc.apply({ type: 'SYS_DEBUG', op: { op: 'setPoints', seat: 0, points: 500 } });
+    // 地雷（3）的库存全部发到两人手上：座位 0 拿 1 个用来卖回
+    const left = sc.state.pools.items[3]!;
+    sc.give(0, { items: [{ item: 3, qty: 1 }] }).give(1, { items: [{ item: 3, qty: left - 1 }] });
+    expect(sc.state.pools.items[3]).toBe(0);
+    sc.teleport(0, 9, 8).force('dice', 1).roll(0).expectAsk(0, 'SHOP');
+    const o = sc.pending(0).options as ShopOptions;
+    expect(o.items.find((r) => r.item === 3)).toMatchObject({ pool: 0, listed: false, bought: false, maxQty: 0 });
+    // 卖回 1 个：库存 1，但进店时没有上架（原版货架表只在进店时填写，@source v2.06 0x42e02c）
+    sc.act(0, { type: 'SHOP_SELL_ITEM', item: 3, qty: 1 });
+    const o2 = sc.pending(0).options as ShopOptions;
+    expect(o2.items.find((r) => r.item === 3)).toMatchObject({ pool: 1, listed: false, maxQty: 0 });
+    expect(() => sc.act(0, { type: 'SHOP_BUY_ITEM', item: 3, qty: 1 })).toThrow(/NOT_ALLOWED/);
+    expect(sc.state.pools.items[3]).toBe(1);
+    sc.act(0, { type: 'LEAVE' });
+
+    // 电脑座位不看 listed（原版电脑按实时库存买，@source v2.06 0x42e6aa）：卖回后可以买，但同样只能买一次
+    const ai = scenario({ players: ['human', 'ai'] }).untilMenu(1);
+    ai.apply({ type: 'SYS_DEBUG', op: { op: 'setPoints', seat: 1, points: 500 } });
+    const n = ai.state.pools.items[3]!;
+    ai.give(1, { items: [{ item: 3, qty: 1 }] }).give(0, { items: [{ item: 3, qty: n - 1 }] });
+    ai.teleport(1, 9, 8).force('dice', 1).roll(1).expectAsk(1, 'SHOP');
+    expect((ai.pending(1).options as ShopOptions).items.find((r) => r.item === 3)).toMatchObject({
+      listed: false,
+      maxQty: 0,
+    });
+    ai.act(1, { type: 'SHOP_SELL_ITEM', item: 3, qty: 1 });
+    expect((ai.pending(1).options as ShopOptions).items.find((r) => r.item === 3)).toMatchObject({
+      pool: 1,
+      listed: false,
+      maxQty: 1,
+    });
+    const own3 = ai.player(1).items[3] ?? 0;
+    ai.act(1, { type: 'SHOP_BUY_ITEM', item: 3, qty: 1 });
+    expect(ai.player(1).items[3]).toBe(own3 + 1);
+    expect(ai.state.pools.items[3]).toBe(0);
+    expect(() => ai.act(1, { type: 'SHOP_BUY_ITEM', item: 3, qty: 1 })).toThrow(/NOT_ALLOWED/);
   });
 
   it('shop：满 15 张不能买卡；点券不足不能买', () => {

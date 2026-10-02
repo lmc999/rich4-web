@@ -8,6 +8,8 @@
 // - 中止（reset / skipAll / dispose / 切到 instant）：当前 handler 与最近几个 handler 留下的不阻塞尾巴一并中止，
 //   abortEpoch +1（GameClient 据此让旧上下文失效，被中止的收尾不会再写棋盘）；
 // - instant（?anim=instant 或后台标签页）：不调 handler，只提交（并通知 onSkipEvent）；TIME_REWOUND（resetsView）直接用批尾 view；
+// - 暂缓（hold）：开局飞行动画（ui/classic/screens/FlyVideo）播放期间不开播新的批次，照常入队与计积压；解除后接着播
+//   （积压按上面的追帧规则加速或跳过）；快照（reset）照常直达；
 // - 每次调 handler 的上下文都带 at = {epoch, seq, eventIndex}（原版皮肤的语音确定性选择用）；
 // - 演出预算按房间的演出节奏（RoomSettings.pacing：original / compact）取值：批次的 animMs 由服务器按同一节奏算好，
 //   单个 handler 的超预算告警与 handler 包装的封顶经 handlers/budget 取当前房间的 EVENT_BUDGET_MS[pacing]。
@@ -162,6 +164,8 @@ export class EventPlayer {
   private baseSpeed: number;
   private pendingOverride: { seq: number; pending: PendingView[]; decision: YourDecision | null } | null = null;
   private readonly idleWaiters = new Set<() => void>();
+  /** 暂缓开播的持有者（hold 返回的解除函数各对应一个） */
+  private readonly holds = new Set<object>();
   private readonly timers: Timers;
 
   constructor(private readonly o: EventPlayerOptions) {
@@ -196,6 +200,11 @@ export class EventPlayer {
 
   get queued(): number {
     return this.queue.length + (this.current ? 1 : 0);
+  }
+
+  /** 有人暂缓开播（hold 未解除） */
+  get held(): boolean {
+    return this.holds.size > 0;
   }
 
   get instant(): boolean {
@@ -328,6 +337,19 @@ export class EventPlayer {
 
   // ───────────────────────── 控制 ─────────────────────────
 
+  /**
+   * 暂缓开播新的批次（正在播的一批照常播完）：批次照常入队、积压照常累计，快照照常直达；返回解除函数（幂等），
+   * 全部解除后接着播。开局飞行动画用它让棋盘演出等动画播完或跳过后再开始（只在本地，不影响服务器计时）
+   */
+  hold(): () => void {
+    const token = {};
+    this.holds.add(token);
+    return () => {
+      if (!this.holds.delete(token)) return;
+      if (this.holds.size === 0) void this.pump();
+    };
+  }
+
   /** 中止当前 handler、清空积压，直达最新 view */
   skipAll(): void {
     if (this.idle) return;
@@ -360,6 +382,7 @@ export class EventPlayer {
   dispose(): void {
     this.gen++;
     this.abortCurrent();
+    this.holds.clear();
     this.queue.length = 0;
     this.current = null;
     this.epoch = null;
@@ -436,10 +459,10 @@ export class EventPlayer {
   }
 
   private async pump(): Promise<void> {
-    if (this.running) return;
+    if (this.running || this.holds.size > 0) return;
     this.running = true;
     try {
-      while (this.queue.length > 0) {
+      while (this.queue.length > 0 && this.holds.size === 0) {
         const b = this.queue.shift()!;
         const gen = this.gen;
         this.current = b;

@@ -269,7 +269,7 @@ export interface RoomSettings {
   allowSpectators: boolean;                   // 默认 true
   maxSpectators: number;                      // 0..20，默认 10
   spectatorChat: 'all' | 'spectators' | 'off';// 默认 all（观战者只能看到公开信息，泄密风险低）
-  handVisibility: 'public' | 'private';       // 默认 public（还原原版同屏体验）
+  handVisibility: 'public' | 'private';       // 默认 public（还原原版同屏体验）；开局时真人座位 ≥ 2 锁定为 private（§6.1）
   timerPreset: 'fast' | 'normal' | 'slow' | 'off'; // 只有一名真人时实际不计时（RoomView.effectiveTimerPreset，§5.4）
   timeoutPolicy: 'ai' | 'default';            // 超时由 AI 代决（默认）或执行决策的 defaultIntent
   reconnectGraceSec: number;                  // 默认 15
@@ -600,8 +600,15 @@ export function viewerClassKey(v: Viewer, o: VisibilityOptions): string; // publ
 ```
 
 - **向引擎提出的契约**：所有只能留在服务端的数据集中放在 `state.secret`，包括 `rng`、各牌堆（命运、机会、新闻）的顺序、未来的小游戏种子等。这样 `projectState` 的第一步就是 `const { secret, ...pub } = state`，再把牌堆换成 `{ remaining: number }`。这种结构很难误泄露。
-- **手牌可见性**：原版是单机同屏轮流玩，「查看人物资料」能看到别人的资产和道具；抢夺卡使用时可以先看对手的道具和卡片再挑。所以默认 `public`，还原原版。房间可以设为 `private`，这时对手只看到张数。私密模式下，抢夺卡照样可用：目标的卡片列表只通过 `DecisionForYou.options` 发给使用者一个人。
-- 事件脱敏表 `privacy.ts` 示例：私密模式下，别人看到的 `CARD_GAINED{seat, cardId}` 里 `cardId` 为 null；`CARD_USED`、`DICE_ROLLED`、`STOCK_TRADED` 公开；`MINIGAME_STARTED` 对他人不带 seed。
+- **手牌可见性**：原版是单机同屏轮流玩，「查看人物资料」能看到别人的资产和道具；抢夺卡使用时可以先看对手的道具和卡片再挑。单机与「1 名真人 + 电脑」默认 `public`，还原原版。**联机（座位上真人 ≥ 2）时服务器在开局（含读档开局）的 `Room.launch` 里按 `net/room.ts effectiveHandVisibility` 把房间设置锁定为 `private`**（用户要求「联机时禁止对手查看自己手上的道具与卡片」），随房间快照与存档保存，只会从公开改为私密；重启恢复（`Room.restore`）时按座位上的真人占用（不按 control：对局中离开的真人是 `autopilot:left`）再锁定一次，私密锁定上线前开局、快照里还是 public 的联机对局恢复后也改为私密。私密模式下对手与观战者：
+  - `PlayerView.cards` / `items` 为 null，只有 `cardCount` / `itemCount`（原版资产表本来就显示「卡片 N / 道具 N」，得失数量本来公开）；正在骑的交通工具、点券照常公开；
+  - `GameView.pools` 为 null、`post.pools` 去掉：牌堆与共享道具库存每批前后的张数差能精确推出别人摸到、买到了什么；
+    本人决策里同源的数也不下发：`GameRunner.decisionFor` 经 `view/project.ts projectDecisionOptions` 把 `SHOP.items[].pool`
+    改成只有 0 / 1（有没有货），否则进店的人拿 10 减去自己的持有数与剩余数就能推出别人手上道具 1..8 的数量；
+  - 别人的 `hostility`（敌意值）只留「对观察者本人」那一项、其余为 0，观战者全为 0（`view/project.ts hideHostility`，`post.players[].set.hostility` 同样改写）：抢夺卡结算时被抢人对出卡人的敌意正好加上被抢卡片 / 道具的标价，第三方看得到增量就能按价格反推出被抢的种类。别人对本人的敌意只因本人自己的动作增加（金额本人都知道）、因公开的同盟衰减与破产清零减少，所以保留。客户端「被最敌视的对手收过路费时说『我记住你了』」（`audio/cues.ts rivalOf`）只在付钱的本人那边判定，其他人听按金额分档的台词；电脑策略只读自己的敌意，不受影响；
+  - 抢夺卡、命运「生日」照样可用：对手的卡片与道具清单只通过 `DecisionForYou.options` 发给出卡人一个人（原版真人出抢夺卡时先看清单、可以取消）。
+- 事件脱敏（`EVENT_META[type].privacy === 'redactHand'`，逐类规则在 `view/project.ts HAND_REDACTORS`）：`CARD_GAINED` / `CARD_LOST` 的 `card`、`SHOP_TRADE` / `CHAIRMAN_GIFT` 的 `card` 与 `item`、`ITEM_GAINED` / `ITEM_LOST` 的 `item` 对 seat 以外的人置 null（数量、来源保留）；`SHOP_OPENED.shelf` 只给进店的人；`CARD_USED` 公开，只有抢夺卡抢道具时 `target.take.item` 只给出卡人与被抢人。`ITEM_USED`、`PASSIVE`、`RESEARCH_DONE`、公布栏挂牌公开（原版当众发生）。`post.players[].set.cards` / `items` 按同样规则改写。泄漏扫描 `view/handLeaks.ts findHandLeaks` 供测试深度扫描 S2C 载荷（含别人的 `hostility`）。
+- 电脑：`GameRunner.aiAct` 对电脑座位（control='ai'）用 public 投影（原版电脑与玩家同一进程、直接读内存），真人座位的托管与超时代打按房间设置降级。
 - 观战者永远只能拿到 `{kind:'spectator'}` 的公开投影，看不到任何人的 `DecisionForYou`。
 - 发送分组：`RoomBroadcaster` 把 payload 按 `(viewerClassKey, 是否为决策者)` 分组，然后 `io.to(socketIds).emit(...)`。public 模式下一个 batch 只需序列化 2–5 次。
 
@@ -1073,7 +1080,7 @@ export interface PendingDecision {
 - 每个 action 产生一个 batch，内容为按观察者脱敏的 events、animMs 和应用后的完整投影 view；客户端播完动画后以 view 为准 — 符合「客户端只播事件、以服务器快照为准」的约定。客户端不跑 reducer，所以不会不同步。view 经 permessage-deflate 压缩后只有几 KB，回合制频率下成本可以忽略
 - GameRunner 设计成不做 IO 的编排层，Clock 和 Scheduler 通过注入传入；Room 负责大厅状态机，RoomBroadcaster 负责投影和发送 — 定时器、AI、托管、重连这些复杂逻辑可以用 ManualScheduler 做确定性单测；将来可以原样搬到 Web Worker 做纯离线单机；以后换传输层也只影响 net 目录
 - 截止时间 = now + 服务器估算的动画时长 + 决策超时 × 档位，再加 800ms 网络宽限；动画时长由 shared/view/pacing.ts 统一计算 — 事件驱动动画会占用时间，如果不把动画时长算进去，玩家的思考时间就被吃掉了。服务端和客户端共用同一套常量，结果一致
-- 默认卡片公开（handVisibility='public'），房间可选只显示张数；RNG 状态、牌堆顺序、未公开的小游戏种子统一放在 state.secret，永不下发 — 原版是单机同屏轮流玩，可以查看人物资料，抢夺卡也能先看对手的卡片，默认公开最贴近原版。对局真正依赖的隐藏信息是随机数和牌堆，把它们集中到 secret 里能从结构上防止泄露
+- 默认卡片公开（handVisibility='public'），房间可选只显示张数（修订：联机 ≥ 2 名真人时开局锁定 private，对手与观战者只看到卡片张数与道具总数，§6.1）；RNG 状态、牌堆顺序、未公开的小游戏种子统一放在 state.secret，永不下发 — 原版是单机同屏轮流玩，可以查看人物资料，抢夺卡也能先看对手的卡片，默认公开最贴近原版。对局真正依赖的隐藏信息是随机数和牌堆，把它们集中到 secret 里能从结构上防止泄露
 - 座位只从服务端 session 取，客户端 intent 用 decisionId 绑定，并要求 clientActionId 幂等；服务端专用 intent（MINIGAME_RESULT）不在客户端 schema 中 — 防止客户端伪造座位、重放请求、提交过期决策、自报小游戏分数；真人、AI 和超时代决都走同一条校验管线
 - 小游戏由服务器下发 seed，客户端跑 shared 里的确定性定帧整数模拟器并回传输入日志，服务器重放计分，同时做时序、频率校验和钳制；超时、托管、电脑玩家都按原版跳过得 50–70 点券 — 客户端只报分数可以被任意伪造；重放能得到精确分数。输入日志很小，60Hz 整数模拟在不同浏览器之间结果一致。跳过规则直接沿用原版电脑玩家的做法
 - AI 在服务器进程内直接调用 shared 的 AiPolicy.decide，只用公平投影视图，并通过 GameRunner.submit 提交 — 比把 AI 做成模拟 socket 客户端简单、延迟低，同时校验完全一致。AI 的决策会记入 journal，重放仍然确定。以后需要重型 AI 时可以包成 worker_threads，接口不用改

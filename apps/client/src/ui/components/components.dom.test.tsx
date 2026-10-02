@@ -47,6 +47,7 @@ const REASONS = {
   handFull: true,
   itemFull: true,
   poolEmpty: true,
+  boughtThisVisit: true,
   noAnchor: true,
   humanOnly: true,
   alreadyEquipped: true,

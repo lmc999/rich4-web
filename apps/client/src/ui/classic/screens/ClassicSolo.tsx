@@ -1,11 +1,13 @@
 // /solo 的原版画面：单机建房（私密、不限时、补 3 个电脑、开局，逻辑同 ui/screens/SoloScreen）期间显示原版 Loading；
-// 失败时在 Loading 之上给出错误与「回到首页」（testid 与程序化相同：solo-error）。
+// 失败时在 Loading 之上给出错误与「回到首页」（testid 与程序化相同：solo-error）。建房开局成功后留下记号（FlyVideo.markSoloFresh），
+// 房间页据此播这一局的飞行动画（房间页是在已开局之后才挂上的，看不到大厅 → 对局）。
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import { useClient } from '../../../app/services';
 import { useTx } from '../../../i18n/tx';
 import { ReconnectOverlay } from '../../system/ReconnectOverlay';
 import { LoadingScreen } from './ClassicLoading';
+import { markSoloFresh } from './FlyVideo';
 import { ensureScreensI18n } from './i18n';
 import s from './screens.module.css';
 
@@ -22,8 +24,10 @@ export default function ClassicSolo(): ReactNode {
     if (started.current) return;
     started.current = true;
     void client.startSolo().then((r) => {
-      if (r.ok) navigate(`/r/${r.data.code}${location.search}`, { replace: true });
-      else setError(client.errorText(r.error));
+      if (r.ok) {
+        markSoloFresh(r.data.code);
+        navigate(`/r/${r.data.code}${location.search}`, { replace: true });
+      } else setError(client.errorText(r.error));
     });
   }, [client, navigate]);
 

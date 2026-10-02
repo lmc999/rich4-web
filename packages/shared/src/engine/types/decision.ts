@@ -24,6 +24,7 @@ import type {
   ResearchProject,
   SeatIndex,
   TileId,
+  Vehicle,
   VillainKind,
 } from './ids';
 import type { PlayerIntent } from './intent';
@@ -158,6 +159,11 @@ export interface TurnMenuOptions {
   };
   cards: TurnMenuCardRow[];
   items: TurnMenuItemRow[];
+  /**
+   * 身上的交通工具，能否收起改回步行（STOW_VEHICLE：机车 / 汽车可以，步行与工程车不行）。
+   * 可选：旧存档里挂着的 TURN_MENU 没有这个字段，客户端按不能收起处理（不显示入口）
+   */
+  vehicle?: { current: Vehicle; canStow: boolean };
   stock: {
     open: boolean;
     reason: null | 'sunday' | 'holiday' | 'halted';
@@ -304,8 +310,21 @@ export interface ShopOptions {
    */
   shelf: { idx: number; card: CardId; price: number; buyable: boolean }[];
   fullDeck: boolean;
-  /** 只卖道具 1..8；maxQty = min(库存, 9 − 持有, 点券 / 单价)，为 0 表示不能买 */
-  items: { item: ItemId; price: number; pool: number; own: number; maxQty: number }[];
+  /**
+   * 只卖道具 1..8。按原版，点一行买 1 个，买过的这一种本次进店不能再买：
+   * @source v2.06 0x42d869 call fcn.0042c64b(座位, 道具)（没有数量参数）；0x42d9cf 买后把货架行 0x489070[行] 清零。
+   * maxQty 只有 0 / 1（SHOP_BUY_ITEM.qty 只能是 1）：1 = 还有交易次数、本次没买过、库存 > 0、持有 < 9、点券 ≥ 单价，
+   * 真人座位（fullDeck=false）还要 listed。
+   * listed：进店时有库存。原版货架只列库存不为 0 的道具，行号压紧，进店后卖回的也不补上架
+   * （@source v2.06 0x42e018 cmp byte [i+0x494080],0；货架表 0x489070 只在进店与买后写入）；
+   * 电脑座位不看 listed（原版电脑按实时库存买，@source v2.06 0x42e6aa）。
+   * bought：本次进店已经买过这一种。
+   * pool 是共享库存（规则数据；原版不显示，客户端不要显示）。私密手牌模式下服务器只下发 0 / 1（有没有货，
+   * view/project.ts projectDecisionOptions），客户端只能拿它判断「已卖完」。
+   * 旧存档里挂着的 SHOP 没有 listed / bought：客户端按 listed !== false、bought === true 判断
+   * （缺字段时当作上架、没买过；引擎的购买校验从 trades 推出，不依赖 options）。
+   */
+  items: { item: ItemId; price: number; pool: number; own: number; maxQty: number; listed: boolean; bought: boolean }[];
   /** value / unitValue 为卖回价 trunc(标价 × 数量 × 0.9) */
   sell: {
     cards: { slot: number; card: CardId; value: number }[];

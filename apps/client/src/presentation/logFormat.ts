@@ -85,7 +85,11 @@ export const LOG_FORMAT = {
   ITEM_GAINED: (e, n) => L(n, 'ITEM_GAINED', { who: n.seat(e.seat), item: n.item(e.item), n: e.qty }),
   ITEM_LOST: (e, n) => L(n, 'ITEM_LOST', { who: n.seat(e.seat), item: n.item(e.item), n: e.qty }),
   ITEM_USED: (e, n) => L(n, 'ITEM_USED', { who: n.seat(e.seat), item: n.item(e.item) }),
-  VEHICLE: (e, n) => L(n, 'VEHICLE', { who: n.seat(e.seat), n: e.dice }),
+  // 真人收起机车 / 汽车（stowed）：记「收起××，改为步行」，不写成换乘（handler 不弹提示，soundMap 不放音效）
+  VEHICLE: (e, n) =>
+    e.stowed
+      ? n.t('game:stow.log', { who: n.seat(e.seat), name: n.t(`game:vehicle.${e.stowed}`) })
+      : L(n, 'VEHICLE', { who: n.seat(e.seat), n: e.dice }),
   VEHICLE_DESTROYED: (e, n) => L(n, 'VEHICLE_DESTROYED', { who: n.seat(e.seat) }),
   OBJECT_PLACED: (e, n) => L(n, 'OBJECT_PLACED', { tile: n.tile(e.obj.node) }),
   OBJECT_REMOVED: (e, n) => L(n, 'OBJECT_REMOVED', { tile: n.tile(e.obj.node) }),
@@ -129,7 +133,7 @@ export const LOG_FORMAT = {
     return L(n, 'FATE', {
       who: n.seat(e.seat),
       title: fateTitle(n, e.id),
-      text: n.t(`fate:${e.id}.text`, { ...shown.params, defaultValue: '' }),
+      text: shown.text,
     });
   },
   MAGIC_CONDITION: (e, n) =>

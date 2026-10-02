@@ -152,7 +152,8 @@ export function AssetSheet({ view, map, seat: initial, onClose }: AssetSheetProp
     : [];
 
   const items: { item: ItemId; count: number }[] = [];
-  if (p) {
+  // 私密手牌模式（联机）下别人的 items 为 null：道具格与卡片格一样不画，只显示总数（itemCount）
+  if (p?.items) {
     for (let item = 1; item < p.items.length; item++) {
       const n = p.items[item] ?? 0;
       if (n > 0) items.push({ item: item as ItemId, count: n });

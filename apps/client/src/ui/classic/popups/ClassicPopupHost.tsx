@@ -5,7 +5,7 @@
 //    属于场所组）。每个弹窗按素材判定一次：
 //    所需逻辑键全部就绪（sceneKeysStatus = ready）才用原版画面，否则整个弹窗用程序化版本（legacy），不半原版半程序化；
 //    挂载时把这个判定登记给 handler（popupStore.opensClassic：原版亮卡不叠网页版的气泡、粒子与光束），正以原版画面显示的
-//    弹窗记在 popupStore.classicShown（原版亮卡期间 toast 暂缓）；亮卡照原版任意鼠标键 / 按键放开就结束（anyInputSkips）；
+//    弹窗记在 popupStore.classicShown（原版亮卡期间缺省位置的 toast 暂缓）；亮卡照原版任意鼠标键 / 按键放开就结束（anyInputSkips）；
 // 2) 事件后演出：轮盘、月结颁奖（./eventPopups，监听显示态日志）；
 // 3) 工具列打开的原版界面：资产表（工具列「查询」→ uiStore 打开 info 面板时改开原版资产表）、托管设置
 //    （openTrusteeSettings → 改开原版托管对话框）、存读档（工具列 LOAD / SAVE 经 ./screenRequests 请求 → 原版风格的 Data#479 窗）。
@@ -155,7 +155,7 @@ function PopupSwitch({ p, legacy }: { p: OpenPopup; legacy: LegacyPopup }): Reac
     // 这次来不及（素材还在加载）：先准备好，下一个同类弹窗就用原版画面
     if (keys) void prepareSceneKeys(keys, scenePackClient());
   }, [classic, p]);
-  // 登记「正以原版画面显示」（原版亮卡期间 toast 暂缓，见 popupStore.classicShown）；布局阶段登记，toast 不会与亮卡同框一帧
+  // 登记「正以原版画面显示」（原版亮卡期间缺省位置的 toast 暂缓，见 popupStore.classicShown）；布局阶段登记，toast 不会与亮卡同框一帧
   const { popupId, kind } = p;
   useLayoutEffect(() => {
     if (!classic || kind === 'lottery') return;

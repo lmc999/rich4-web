@@ -185,7 +185,8 @@ export interface PatchableWorld {
   objects: PublicWorld['objects'];
   gods: PublicWorld['gods'];
   beggars: PublicWorld['beggars'];
-  pools: PublicWorld['pools'];
+  /** 客户端 GameView 在私密手牌模式下为 null（post 里也不带 pools） */
+  pools: PublicWorld['pools'] | null;
   lottery: PublicWorld['lottery'];
   noticeBoard: PublicWorld['noticeBoard'];
 }

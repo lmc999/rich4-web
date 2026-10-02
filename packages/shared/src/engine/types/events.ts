@@ -63,10 +63,23 @@ import type {
 // ───────────────────────── PostPatch ─────────────────────────
 
 /**
- * 玩家实体的字段级 set。引擎生成时带 cards（完整手牌）；view/project 投影时：
- * public 模式补上 cardCount，private 模式对非本人把 cards 改写为 null 并给出 cardCount。
+ * 玩家实体的字段级 set。引擎生成时带 cards（完整手牌）与 items（完整背包）；view/project 投影时：
+ * public 模式补上 cardCount / itemCount，private 模式对非本人把 cards / items 改写为 null 并给出 cardCount / itemCount。
  */
-export type PlayerPatch = Partial<Omit<PlayerState, 'cards'>> & { cards?: CardId[] | null; cardCount?: number };
+export type PlayerPatch = Partial<Omit<PlayerState, 'cards' | 'items'>> & {
+  cards?: CardId[] | null;
+  cardCount?: number;
+  items?: number[] | null;
+  itemCount?: number;
+};
+
+/**
+ * 事件里的出卡目标：与 UseTarget 相同，只是抢夺卡抢道具时 take.item 可为 null
+ * （私密手牌模式下出卡人、被抢人以外的观察者看不到被抢的道具种类；UseTarget 可以直接赋给它）
+ */
+export type EventUseTarget =
+  | Exclude<UseTarget, { t: 'rob' }>
+  | { t: 'rob'; seat: SeatIndex; take: { k: 'card'; slot: number } | { k: 'item'; item: ItemId | null } };
 
 /** 事件发生后受影响实体各字段的绝对值（数组、对象字段整体替换；objects/gods/beggars 等整表替换） */
 export interface PostPatch {
@@ -226,10 +239,11 @@ export interface GameEventPayloads {
   /** delivered=false：持有已满 9 个，研发成果作废 */
   RESEARCH_DONE: { seat: SeatIndex; lot: FacilityLotId; project: ResearchProject; item: ItemId; delivered: boolean };
   RESEARCH_CANCELLED: { seat: SeatIndex; lot: FacilityLotId; project: ResearchProject };
-  // card（CARD_GAINED / CARD_LOST / SHOP_TRADE / CHAIRMAN_GIFT 为 redactCards：私密模式下对非本人 card 置 null）
+  // card / item 里 privacy='redactHand' 的事件（见 EVENT_META）：私密手牌模式下对无权看的观察者把卡号 / 道具号置 null
   CARD_GAINED: { seat: SeatIndex; card: CardId | null; source: CardSource };
   CARD_LOST: { seat: SeatIndex; card: CardId | null; cause: CardLossCause };
-  CARD_USED: { seat: SeatIndex; card: CardId; target: UseTarget };
+  /** 出卡是公开动作（原版亮卡）；只有抢夺卡抢道具时 target.take.item 对出卡人、被抢人以外的观察者置 null */
+  CARD_USED: { seat: SeatIndex; card: CardId; target: EventUseTarget };
   CARD_NO_EFFECT: { seat: SeatIndex; card: CardId };
   /**
    * 被动卡生效（免罪 21 / 嫁祸 19 / 复仇 18 / 免费 20）。other = 对方：原版持卡人亮卡、说完卡片台词之后，接一句反应台词
@@ -238,6 +252,7 @@ export interface GameEventPayloads {
    * 一句）、企业消费（0x41a796 传 -1）与罚款没有对方，为 null
    */
   PASSIVE: { seat: SeatIndex; card: CardId; context: PassiveContext; other: SeatIndex | null };
+  /** shelf 只给进店的人（私密手牌模式下其他观察者为空数组：货架 + 点券变化可以缩小成交的范围） */
   SHOP_OPENED: { seat: SeatIndex; shelf: CardId[]; fullDeck: boolean };
   SHOP_TRADE: {
     seat: SeatIndex;
@@ -249,10 +264,16 @@ export interface GameEventPayloads {
   };
   CHAIRMAN_GIFT: { seat: SeatIndex; card: CardId | null; item: ItemId | null };
   // item
-  ITEM_GAINED: { seat: SeatIndex; item: ItemId; qty: number; source: ItemChangeSource };
-  ITEM_LOST: { seat: SeatIndex; item: ItemId; qty: number; cause: ItemChangeSource };
+  /** item 为 null：私密手牌模式下别人的道具种类（数量与来源仍公开） */
+  ITEM_GAINED: { seat: SeatIndex; item: ItemId | null; qty: number; source: ItemChangeSource };
+  ITEM_LOST: { seat: SeatIndex; item: ItemId | null; qty: number; cause: ItemChangeSource };
   ITEM_USED: { seat: SeatIndex; item: ItemId; target: UseTarget };
-  VEHICLE: { seat: SeatIndex; vehicle: Vehicle; dice: DiceCount };
+  /**
+   * 换了交通工具（vehicle = 换后的座驾）。stowed 只在真人从回合菜单收起机车 / 汽车（STOW_VEHICLE）时出现，值为收回背包的
+   * 那台：原版收起只刷新外观、重画（0x4467b1 调 0x40b425、0x41cc56），不说台词，客户端据此不弹「换乘」提示、不放音效。
+   * 梦游卡、工程车到期、魔法屋卖光道具等其他改回步行没有这个字段
+   */
+  VEHICLE: { seat: SeatIndex; vehicle: Vehicle; dice: DiceCount; stowed?: 'moto' | 'car' };
   VEHICLE_DESTROYED: { seat: SeatIndex; vehicle: Vehicle };
   OBJECT_PLACED: { obj: RoadObject };
   OBJECT_REMOVED: { obj: RoadObject; cause: Cause };
@@ -398,10 +419,11 @@ export type EventCat =
   | 'system';
 
 /**
- * public：所有观察者看到同一份载荷（post 仍按私密模式改写 cards）；
- * redactCards：载荷含 seat 与 card: CardId|null，私密模式下对 seat 以外的观察者把 card 置为 null。
+ * public：所有观察者看到同一份载荷（post 仍按私密模式改写 cards / items、去掉 pools）；
+ * redactHand：载荷含 seat 与卡号 / 道具号（或货架、抢夺目标），私密手牌模式下由 view/project 的 HAND_REDACTORS
+ * 按事件类型逐项置 null（对 seat 以外的观察者；抢夺卡另外对被抢人可见）。
  */
-export type EventPrivacy = 'public' | 'redactCards';
+export type EventPrivacy = 'public' | 'redactHand';
 
 export interface EventMeta {
   readonly cat: EventCat;
@@ -411,7 +433,7 @@ export interface EventMeta {
 }
 
 const pub = <C extends EventCat>(cat: C) => ({ cat, privacy: 'public' }) as const;
-const redact = <C extends EventCat>(cat: C) => ({ cat, privacy: 'redactCards' }) as const;
+const redact = <C extends EventCat>(cat: C) => ({ cat, privacy: 'redactHand' }) as const;
 
 /** 脱敏与重置的唯一依据（对 GameEventType 穷举） */
 export const EVENT_META = Object.freeze({
@@ -457,14 +479,14 @@ export const EVENT_META = Object.freeze({
   RESEARCH_CANCELLED: pub('property'),
   CARD_GAINED: redact('card'),
   CARD_LOST: redact('card'),
-  CARD_USED: pub('card'),
+  CARD_USED: redact('card'),
   CARD_NO_EFFECT: pub('card'),
   PASSIVE: pub('card'),
-  SHOP_OPENED: pub('card'),
+  SHOP_OPENED: redact('card'),
   SHOP_TRADE: redact('card'),
   CHAIRMAN_GIFT: redact('card'),
-  ITEM_GAINED: pub('item'),
-  ITEM_LOST: pub('item'),
+  ITEM_GAINED: redact('item'),
+  ITEM_LOST: redact('item'),
   ITEM_USED: pub('item'),
   VEHICLE: pub('item'),
   VEHICLE_DESTROYED: pub('item'),
@@ -541,9 +563,9 @@ export const EVENT_META = Object.freeze({
 /** 全部事件类型（顺序同 EVENT_META） */
 export const GAME_EVENT_TYPES: readonly GameEventType[] = Object.freeze(Object.keys(EVENT_META) as GameEventType[]);
 
-/** privacy='redactCards' 的事件类型 */
-export type RedactCardsEventType = {
-  [T in GameEventType]: (typeof EVENT_META)[T]['privacy'] extends 'redactCards' ? T : never;
+/** privacy='redactHand' 的事件类型（view/project 的 HAND_REDACTORS 对它穷举） */
+export type RedactHandEventType = {
+  [T in GameEventType]: (typeof EVENT_META)[T]['privacy'] extends 'redactHand' ? T : never;
 }[GameEventType];
 
 /** resetsView 的事件类型 */

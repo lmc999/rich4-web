@@ -15,6 +15,7 @@ import {
   shopRowRect,
   stockCol,
   stockIndustryFrame,
+  stockIndustryOf,
   stockRowRect,
   trendPoints,
 } from './layout';
@@ -104,18 +105,57 @@ describe('百货货架（Panel#10）', () => {
 });
 
 describe('股市（Panel#75）', () => {
-  it('13 行（栏名 + 12 支）从 48 起、行高 32，最后一行到 464；6 列覆盖表格宽度；行业图按序号取模', () => {
+  it('13 行（栏名 + 12 支）从 48 起、行高 32，最后一行到 464；6 列覆盖表格宽度', () => {
     expect(stockRowRect(0)).toEqual({ x: 15, y: 48, w: 609, h: 32 });
     const last = stockRowRect(STOCK.rows.count - 1);
     expect(last.y + last.h).toBe(464);
     const widths = Array.from({ length: 6 }, (_, k) => stockCol(k).w);
     expect(widths.reduce((a, b) => a + b, 0)).toBe(609);
-    expect(stockIndustryFrame(0)).toBe(3);
-    expect(stockIndustryFrame(9)).toBe(3);
-    expect(stockIndustryFrame(11)).toBe(5);
     // 详情框在舞台之内
     const P = STOCK.panel;
     expect(inside({ x: P.x, y: P.y, w: P.w, h: P.h }, { x: 0, y: 0, w: 640, h: 480 })).toBe(true);
+  });
+
+  it('行业图按所属企业的行业码查 exe 表 0x4733b7；日本电子业帧 8；没有企业的股票不画', () => {
+    // 行业码 1 航空 / 3 电子 / 4 保险 / 5 汽车 / 6 石油 / 7 银行 / 10 百货 / 11 建设
+    const want: [number, number][] = [
+      [1, 11],
+      [3, 7],
+      [4, 5],
+      [5, 6],
+      [6, 9],
+      [7, 3],
+      [10, 4],
+      [11, 10],
+    ];
+    for (const [industry, frame] of want) {
+      for (const gm of [0, 1, 3, null]) expect(stockIndustryFrame(industry, gm), `${industry}@${gm}`).toBe(frame);
+    }
+    expect(stockIndustryFrame(3, 2)).toBe(8);
+    for (const [industry, frame] of want.filter(([i]) => i !== 3)) expect(stockIndustryFrame(industry, 2)).toBe(frame);
+    // 没有企业、表中为 0、超出表长：不画
+    for (const industry of [null, 0, 2, 8, 9, 12]) expect(stockIndustryFrame(industry, 0)).toBeNull();
+    // 帧都在 Panel#75 的行业图 3–11 之内
+    for (const [industry] of want) {
+      for (const gm of [0, 2]) {
+        const f = stockIndustryFrame(industry, gm)!;
+        expect(f).toBeGreaterThanOrEqual(3);
+        expect(f).toBeLessThanOrEqual(11);
+      }
+    }
+  });
+
+  it('stockIndustryOf：按 companies[].stockIndex 反查行业码（台湾：中國信託 0 银行、臺灣人壽 1 保险、大宇百貨 2 百货）', () => {
+    const taiwan = {
+      companies: [
+        { stockIndex: 1, industry: 4 },
+        { stockIndex: 2, industry: 10 },
+        { stockIndex: 0, industry: 7 },
+      ],
+    };
+    expect([0, 1, 2, 3].map((i) => stockIndustryOf(taiwan, i))).toEqual([7, 4, 10, null]);
+    expect([0, 1, 2].map((i) => stockIndustryFrame(stockIndustryOf(taiwan, i), 0))).toEqual([3, 5, 4]);
+    expect(stockIndustryOf(null, 0)).toBeNull();
   });
 
   it('走势折线：空为空串，单值画在中线，多值铺满宽度且最高点在上', () => {

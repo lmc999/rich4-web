@@ -265,12 +265,32 @@ describe('SHOP', { timeout: 20_000 }, () => {
     expect(within(again).getByTestId('shop-points')).toHaveAttribute('data-value', String(left));
     await m.user.click(within(again).getByTestId('shop-page-item'));
     expect(again).toHaveAttribute('data-page', 'item');
+    // 按原版：货架只写名称与价格，不显示库存；没有数量钮
+    expect(within(again).getByTestId('shop-shelf')).not.toHaveTextContent(/库存|庫存/);
     await m.user.click(within(again).getByTestId('shop-item-8'));
+    expect(within(again).queryByTestId('shop-qty')).toBeNull();
+    expect(within(again).queryByTestId('shop-qty-inc')).toBeNull();
+    expect(within(again).queryByRole('spinbutton')).toBeNull();
+    expect(within(again).getByTestId('shop-price')).toHaveAttribute('data-value', '30');
     await m.user.click(within(again).getByTestId('shop-buy-item'));
     expect(commit(sc, 0, m)).toEqual({ type: 'SHOP_BUY_ITEM', item: 8, qty: 1 });
     expect(sc.player(0).points).toBe(left - 30);
 
     const third = await m.rerender();
+    // 买过的这一行变灰、不能再选，详情区收起（原版 0x42d89c 灰色重画、0x42d9cf 货架行清零）；下拉框里也禁用
+    const row8 = within(third).getByTestId('shop-item-8');
+    expect(row8).toBeDisabled();
+    expect(row8).toHaveAttribute('title', '这次进店已经买过了');
+    expect(within(third).queryByTestId('shop-detail')).toBeNull();
+    expect(within(third).queryByTestId('shop-buy-item')).toBeNull();
+    const picker = within(third).getByTestId('shop-picker') as HTMLSelectElement;
+    expect((picker.querySelector('option[value="item-8"]') as HTMLOptionElement).disabled).toBe(true);
+    // 服务器（引擎）同样拒绝：再买一次、一次买 2 个
+    expect(() => sc.act(0, { type: 'SHOP_BUY_ITEM', item: 8, qty: 1 })).toThrow(/NOT_ALLOWED/);
+    expect(() => sc.act(0, { type: 'SHOP_BUY_ITEM', item: 2, qty: 2 })).toThrow(/OUT_OF_RANGE/);
+    // 别的道具照常能买
+    await m.user.click(within(third).getByTestId('shop-item-2'));
+    expect(within(third).getByTestId('shop-buy-item')).toBeEnabled();
     // 卖道具页签：刚买的道具 8 在列表里，卖回价按公式
     await m.user.click(within(third).getByRole('tab', { name: '卖道具' }));
     expect(within(third).getByTestId('shop-sell-item-8')).toBeInTheDocument();
@@ -320,6 +340,62 @@ describe('SHOP', { timeout: 20_000 }, () => {
     await m.user.click(within(m.root).getByTestId('shop-sell-item-13'));
     await m.user.click(within(m.root).getByTestId('shop-sell-item'));
     expect(commit(sc, 0, m)).toEqual({ type: 'SHOP_SELL_ITEM', item: 13, qty: 1 });
+  });
+
+  it('道具店按原版：进店时卖完的道具不上架（行压紧）；卖道具一次 1 个、可以连着卖', async () => {
+    const sc = scenario({ players: ['human', 'human'] }).untilMenu(0);
+    sc.apply({ type: 'SYS_DEBUG', op: { op: 'setPoints', seat: 0, points: 500 } });
+    // 地雷（3）的库存全部发到两人手上；座位 0 另有 2 个路障（2）
+    const left = sc.state.pools.items[3]!;
+    sc.give(0, { items: [{ item: 3 as ItemId, qty: 1 }] }).give(1, { items: [{ item: 3 as ItemId, qty: left - 1 }] });
+    sc.give(0, { items: [{ item: 2 as ItemId, qty: 2 }] });
+    sc.teleport(0, 9, 8).force('dice', 1).roll(0);
+    const m = await mount(sc, 0, 'SHOP', ShopScene);
+    await m.user.click(within(m.root).getByTestId('shop-page-item'));
+    expect(within(m.root).queryByTestId('shop-item-3')).toBeNull();
+    // 行压紧：地雷不占行，道具 4 紧接在道具 2 之后
+    const ids = within(m.root)
+      .getAllByTestId(/^shop-item-\d+$/)
+      .map((el) => el.getAttribute('data-testid'));
+    expect(ids).toEqual([
+      'shop-item-1',
+      'shop-item-2',
+      'shop-item-4',
+      'shop-item-5',
+      'shop-item-6',
+      'shop-item-7',
+      'shop-item-8',
+    ]);
+    // 货架行只写名称与价格（@source v2.06 0x42e030..0x42e0a6 每行两次 0x44e2e3：名称、"$%d"）：
+    // 不显示库存，也不显示持有数（座位 0 持有 ≥ 2 个路障；货架上的「×n」容易被看成「剩 n 个」）
+    expect(sc.player(0).items[2]).toBeGreaterThanOrEqual(2);
+    expect(within(m.root).getByTestId('shop-shelf')).not.toHaveTextContent('×');
+    expect(within(m.root).getByTestId('shop-shelf')).not.toHaveTextContent(/库存|庫存/);
+
+    // 卖路障：一次 1 个，卖回价 trunc(30 × 0.9) = 27；卖完 1 个后还能接着卖
+    await m.user.click(within(m.root).getByRole('tab', { name: '卖道具' }));
+    // 卖道具页写持有数
+    expect(within(m.root).getByTestId('shop-shelf')).toHaveTextContent(`×${sc.player(0).items[2]}`);
+    await m.user.click(within(m.root).getByTestId('shop-sell-item-2'));
+    expect(within(m.root).queryByRole('spinbutton')).toBeNull();
+    expect(within(m.root).getByTestId('shop-price')).toHaveAttribute('data-value', '27');
+    const own2 = sc.player(0).items[2]!;
+    await m.user.click(within(m.root).getByTestId('shop-sell-item'));
+    expect(commit(sc, 0, m)).toEqual({ type: 'SHOP_SELL_ITEM', item: 2, qty: 1 });
+    const again = await m.rerender();
+    await m.user.click(within(again).getByTestId('shop-sell-item'));
+    expect(commit(sc, 0, m)).toEqual({ type: 'SHOP_SELL_ITEM', item: 2, qty: 1 });
+    expect(sc.player(0).items[2]).toBe(own2 - 2);
+    // 卖回 1 个地雷：库存有了，但原版货架只在进店时填写，不补上架
+    const third = await m.rerender();
+    await m.user.click(within(third).getByTestId('shop-sell-item-3'));
+    await m.user.click(within(third).getByTestId('shop-sell-item'));
+    expect(commit(sc, 0, m)).toEqual({ type: 'SHOP_SELL_ITEM', item: 3, qty: 1 });
+    expect(sc.state.pools.items[3]).toBe(1);
+    const fourth = await m.rerender();
+    await m.user.click(within(fourth).getByRole('tab', { name: '买道具' }));
+    expect(within(fourth).getByTestId('shop-item-2')).toBeInTheDocument();
+    expect(within(fourth).queryByTestId('shop-item-3')).toBeNull();
   });
 });
 
@@ -429,6 +505,8 @@ describe('TURN_MENU 股票子页 → 原版股市', { timeout: 20_000 }, () => {
     expect(within(m.root).getByTestId('stock-deposit')).toHaveAttribute('data-value', '100000');
     await m.user.click(within(m.root).getByTestId('stock-pick-0'));
     const trade = within(m.root).getByTestId('stock-trade');
+    // 行业图按所属企业的行业码（exe 表 0x4733b7）：test 图股票 0 = C1 测试银行（行业 7）→ 帧 3
+    expect(within(trade).getByTestId('stock-industry')).toHaveAttribute('data-sprite', 'venue.stock.screen/3');
     await m.user.click(within(trade).getByTestId('stock-side-buy'));
     const qty = within(trade).getByRole('spinbutton', { name: '股数' });
     await m.user.clear(qty);
@@ -460,6 +538,26 @@ describe('TURN_MENU 股票子页 → 原版股市', { timeout: 20_000 }, () => {
     await m.user.click(screen.getByTestId('stock-exit'));
     expect(ctl.collapse).toHaveBeenCalled();
     expect(screen.queryByTestId('turn-stock-sheet')).toBeNull();
+  });
+
+  it('公司详情的行业图：有企业的股票按行业码取帧（股票 2 = C2 测试百货，行业 10 → 帧 4）；没有企业的股票不画', async () => {
+    const sc = scenario({ players: ['human', 'human'] }).untilMenu(0);
+    const ctl = sheetCtl('stock');
+    const m = await mount(sc, 0, 'TURN_MENU', WithProgrammatic, {
+      testId: 'turn-stock-sheet',
+      wrap: (el) => (
+        <SheetHost initial="stock" onConsume={ctl.consume} onCollapse={ctl.collapse}>
+          {el}
+        </SheetHost>
+      ),
+    });
+    await m.user.click(within(m.root).getByTestId('stock-pick-2'));
+    const dept = within(m.root).getByTestId('stock-trade');
+    expect(within(dept).getByTestId('stock-industry')).toHaveAttribute('data-sprite', 'venue.stock.screen/4');
+    await m.user.click(within(dept).getByTestId('stock-back'));
+    await m.user.click(within(m.root).getByTestId('stock-pick-1'));
+    const none = within(m.root).getByTestId('stock-trade');
+    expect(within(none).queryByTestId('stock-industry')).toBeNull();
   });
 
   it('回合菜单里的「股票」钮也打开原版股市；EXIT 回到回合菜单（不收起）；其他子页请求照常转给程序化菜单', async () => {

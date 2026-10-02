@@ -149,7 +149,7 @@ export function AuctionRoom({
   const tx = useTx();
   const text = useGameText(view, map);
   const st = lotStatus(view, lot);
-  const art = lotArtFrame(st, level, mapStyleIndex(map?.def.id));
+  const art = lotArtFrame(st, level, mapStyleIndex(map?.def.globalMapId));
   const noBid = leader === null;
 
   // 价格或领先者变化：拍卖官举手喊价 1.2 秒（首帧不算）

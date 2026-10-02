@@ -30,7 +30,7 @@ import {
   safeParseVoiceMap,
 } from '@rich4/shared/assets';
 import { type FlcFile, parseFlc } from '../flic/FlcDecoder';
-import { checkEntry, type EntryRejection } from '../resolve';
+import { checkEntry, type EntryRejection, SHARED_BOARD_GROUPS } from '../resolve';
 import type { MapCheck, PackState } from '../types';
 import { defaultFetch, type FetchLike, HttpError, isJsonResponse, readErrorCode, withTimeout } from './http';
 
@@ -256,6 +256,10 @@ export class PackClient {
     const mismatches = checkMapSkinBinding({ mapId: map.id, binding: mp.binding }, map);
     if (mismatches.length > 0) return { mapId: map.id, status: 'mismatch', mismatches, group: mp.group };
     if (!Object.hasOwn(m.groups, mp.group) || this.failed.has(mp.group)) {
+      return { mapId: map.id, status: 'group-missing', mismatches: [], group: mp.group };
+    }
+    // 共用棋盘组（board.landmarks）：素材包里有而加载失败，同样缺精灵
+    if (SHARED_BOARD_GROUPS.some((g) => Object.hasOwn(m.groups, g) && this.failed.has(g))) {
       return { mapId: map.id, status: 'group-missing', mismatches: [], group: mp.group };
     }
     return { mapId: map.id, status: 'ok', mismatches: [], group: mp.group };

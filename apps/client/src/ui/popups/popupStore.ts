@@ -159,7 +159,7 @@ export interface PopupState {
   auction: AuctionBannerState | null;
   /**
    * 当前以原版画面显示的弹窗（ui/classic/popups/ClassicPopupHost 登记，程序化弹窗为 null）：原版亮卡期间网页版的
-   * toast 暂缓显示（hud/Overlays 的 Toasts），免得盖住棋盘视窗上部的亮卡消息框
+   * toast 在缺省位置（页面上部正中）时暂缓显示（hud/Overlays 的 Toasts），免得盖住棋盘视窗上部的亮卡消息框
    */
   classicShown: ClassicShown | null;
   setClassicShown(v: ClassicShown | null): void;

@@ -4,8 +4,10 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import i18next from 'i18next';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { type PackManifestV1, withPackId } from '../../../../packages/shared/src/assets/pack';
 import {
   syntheticManifest,
+  syntheticManifestDraft,
   syntheticMap,
   syntheticMapSkin,
 } from '../../../../packages/shared/src/assets/testing/synthetic';
@@ -35,8 +37,22 @@ const json = (body: unknown, status = 200): Response =>
 
 type Access = { mode: 'off' | 'passcode'; granted: boolean };
 
+/** 合成包加上共用棋盘组 board.landmarks 与另一张图的组 map.other（空组：只测预取哪些组） */
+function manifestWithSharedGroups(): PackManifestV1 {
+  const d = syntheticManifestDraft();
+  const empty = (): PackManifestV1['groups'][string] => ({
+    category: 'board',
+    provenance: 'synthetic',
+    files: [],
+    bytes: 0,
+  });
+  return withPackId({ ...d, groups: { ...d.groups, 'board.landmarks': empty(), 'map.other': empty() } });
+}
+
 function setup(o: {
   access: Access | null;
+  /** 缺省合成包 */
+  manifest?: PackManifestV1;
   manifestStatus?: number;
   /** 地图皮肤文件的状态码（缺省 200） */
   fileStatus?: () => number;
@@ -54,7 +70,9 @@ function setup(o: {
   const packFetch: FetchLike = async (url) => {
     urls.push(url);
     if (url === '/pack/manifest.json') {
-      return o.manifestStatus && o.manifestStatus !== 200 ? json({ ok: false }, o.manifestStatus) : json(manifest);
+      return o.manifestStatus && o.manifestStatus !== 200
+        ? json({ ok: false }, o.manifestStatus)
+        : json(o.manifest ?? manifest);
     }
     if (url === `/pack/${manifest.files['maps/test.skin.json']!.path}`) {
       const st = o.fileStatus?.() ?? 200;
@@ -142,6 +160,22 @@ describe('素材包发现', () => {
     useSkinStore.getState().setActiveMap(syntheticMap());
     await waitFor(() => expect(useSkinStore.getState().resolution.reason).toBe('group-missing'));
     expect(useSkinStore.getState().failedGroups).toEqual(['map.test']);
+    warn.mockRestore();
+  });
+
+  it('预取当前地图组与共用棋盘组 board.landmarks，不预取其他地图的组；共用组失败同样回退（group-missing）', async () => {
+    const { client } = setup({ access: { mode: 'passcode', granted: true }, manifest: manifestWithSharedGroups() });
+    const loadGroup = vi.spyOn(client, 'loadGroup').mockImplementation(async (g) => {
+      if (g === 'board.landmarks') throw new Error('404');
+      return {} as never;
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await useSkinStore.getState().ensurePack();
+    useSkinStore.getState().setActiveMap(syntheticMap());
+    expect(loadGroup.mock.calls.map((c) => c[0])).toEqual(['map.test', 'board.landmarks']);
+    await waitFor(() => expect(useSkinStore.getState().resolution.reason).toBe('group-missing'));
+    expect(useSkinStore.getState().failedGroups).toEqual(['board.landmarks']);
+    expect(loadGroup.mock.calls.map((c) => c[0])).not.toContain('map.other');
     warn.mockRestore();
   });
 

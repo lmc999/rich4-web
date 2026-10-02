@@ -1,0 +1,42 @@
+{
+  "$schema": "./overrides.schema.json",
+  "mapKey": "usa",
+  "source": {
+    "id": "v206-mapdat",
+    "expectResourceSha256": "edb87f9b6e6d9218ec0093fe3ff538fbfbdbaa48c459ee4eba4980cb8a941326"
+  },
+  "lattice": { "tile": 48, "origin": [34, 6], "transform": "identity" },
+  "compact": false,
+  "nodeCell": {
+    "32": [22, 35],
+    "36": [28, 35],
+    "48": [37, 31],
+    "53": [33, 27],
+    "66": [43, 16],
+    "89": [23, 21]
+  },
+  "edgeRoute": {
+    "1-2": [[9, 19]]
+  },
+  "lot": {
+    "C2": { "rect": [7, 17, 2, 2] }
+  },
+  "landmark": {},
+  "terrain": { "margin": 4 },
+  "expect": { "nodes": 118, "lands": 55, "facilities": 8, "companies": 6, "landscapes": 16 },
+  "notes": [
+    "坐标为格点坐标：(世界坐标 − origin) / tile 四舍五入、再做 transform 之后，平移到原点之前（与 taiwan.overrides.json 相同）。",
+    "基线 source.id = v206-mapdat（MapDat.MKF#3）：v2.06 exe 先读 MapDat.MKF[gm]、失败才回退 map.mkf（tools/extract/src/map/sources.ts 的 RAW_SOURCES 顺序）。本图 MapDat.MKF#3 与 v2.06 map.mkf#7 逐字节相同，与 v3.11 map.mkf#7 只有表现相关差异（map diff exit 0）。",
+    "expectResourceSha256 锁定 MapDat.MKF#3 的资源字节；输入变化时本文件整体作废（exit 5），需重新审阅。",
+    "lattice：T=32 覆盖率只有 7.6%；自动检测得到 T=48、原点 (34,6)（0 个节点同格），此处固定下来。transform 暂用 identity，尚未与原版截图核对。",
+    "terrain.margin 4：与台湾相同，四周多留两格让外海与海岸显示出来。",
+    "nodeCell 66：底特律街（68–71，住宅地在西北侧）的 L1（前沿 68）原来只能放到东南侧，66 (42,15) 还与不相连的 68 (41,15) 相邻（W_TILES_TOUCH 66/68）；66 下移、右移一格后 L1 回到 68 北侧，66/68 不再相邻。",
+    "nodeCell 89：丹佛街（86–89，住宅地在东北侧）的 L14（前沿 88）原来只能放到南侧，89 (23,22) 还与不相连的 91 (22,22) 相邻（W_TILES_TOUCH 89/91）；89 上移一格后 L14 回到 88 北侧，89/91 不再相邻。",
+    "nodeCell 32：休斯頓街（28–32，住宅地在东北侧）的 L33（前沿 31）原来只能放到西侧；32 (22,36) 上移一格后（拐角翻转随之把 31 移到 (22,34)）L33 回到 31 北侧。",
+    "nodeCell 36：新紐奧良街（35–39，住宅地在西北侧）的 L37（前沿 37）原来只能放到东侧；36 右移一格后 L37 回到 37 西侧。",
+    "nodeCell 48：亞特蘭大街（48–51，住宅地在东北侧）的 L40（前沿 48）原来只能放到西侧；48 右移一格后 L40 回到 48 北侧。",
+    "nodeCell 53：華盛頓街（53–56，住宅地在西北侧）的 L45（前沿 54）原来只能放到东侧；53 (34,27) 左移一格后 L45 回到 54 西侧。",
+    "edgeRoute 1-2 + lot.C2：C2 聯合航空的前沿格 1 (9,18)、2 (8,19) 是一对斜向格，默认连接格 (8,18) 在西北侧，企业只能挤成 1×1 放到东南侧；连接格改走 (9,19)，企业 2×2 放到西北侧（世界坐标所在一侧）的 (7..8, 17..18)，原来在那里的 L16 自动改放到 3 的西侧。",
+    "剩下的告警都是原版结构，不处理：W_COMPANY_REMOTE_FRONT C5 環球百貨的前沿格 40 与 72 相距过远；W_NAME_EMPTY 景观 14–16 原版名称为空。本图是单一环路，没有封路与死路。"
+  ]
+}

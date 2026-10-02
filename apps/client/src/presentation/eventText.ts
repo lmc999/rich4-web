@@ -136,12 +136,37 @@ const TONE: Readonly<Record<FateEffect, FateTone>> = {
 
 export type FateTone = 'good' | 'bad' | 'neutral';
 
+/** 第 33 条起的命运（4 条坐牢）在原版按当前地图换处理函数、标题、语音与插图 */
+export const FATE_BY_MAP_FROM = 33;
+const FATE_BY_MAP_TO = 36;
+
+/**
+ * 命运在原版处理函数表里的下标：第 33–36 条在大陆 / 日本 / 美国图（gm 1–3）换成表项 k + 4·gm（37–48），其余为 k。
+ * 同一下标也用于标题（exe 字符串 0x463cfb–0x463e07）、语音（fate.<下标> = voice 0222–0233）与插图表 0x473dd8。
+ * 天数与效果不变（引擎 FATE 事件照旧给 id 33–36）。
+ * @source exe v2.06 0x44c537–0x44c5c7、0x44c686–0x44c6a0：k ≥ 0x21 时 call [0x473d14 + 16·gm + 4k]，插图 [0x473dd8 + 8·gm + 2k]
+ */
+export function fateVariantSlot(id: FateId, globalMapId: number | null | undefined): number {
+  const gm = globalMapId ?? 0;
+  if (id < FATE_BY_MAP_FROM || id > FATE_BY_MAP_TO || !Number.isInteger(gm) || gm < 1 || gm > 3) return id;
+  return id + 4 * gm;
+}
+
+/** 命运文案的键前缀：按图变体为 fate:<id>.byMap.<gm>，其余为 fate:<id> */
+function fateKeyBase(n: NameKit, id: FateId): { base: string; variant: string | null } {
+  const gm = n.globalMapId?.() ?? null;
+  const variant = fateVariantSlot(id, gm) !== id ? `fate:${id}.byMap.${gm}` : null;
+  return { base: `fate:${id}`, variant };
+}
+
 export interface FateShown {
   tone: FateTone;
   /** 加持类别（null：这张命运不查加持） */
   category: BlessingClass | null;
   /** 文案参数：who / amount / days / pct（已格式化） */
   params: Record<string, unknown>;
+  /** 正文（按当前地图选变体，缺变体时回退通用文案；都没有为空串） */
+  text: string;
   /** 金额行（没有金额时 null）与颜色 */
   amountText: string | null;
   amountTone: 'gain' | 'loss' | 'neutral';
@@ -183,11 +208,17 @@ export function fateShown(
   let tone = TONE[def.effect];
   if (escaped) tone = 'neutral';
   if (voided) tone = 'neutral';
-  return { tone, category, params, amountText, amountTone };
+  const k = fateKeyBase(n, e.id);
+  const common = n.t(`${k.base}.text`, { ...params, defaultValue: '' });
+  const text = k.variant ? n.t(`${k.variant}.text`, { ...params, defaultValue: common }) : common;
+  return { tone, category, params, text, amountText, amountTone };
 }
 
+/** 命运标题（按当前地图选变体，缺变体时回退通用标题，再缺时为「命运 #n」） */
 export function fateTitle(n: NameKit, id: FateId): string {
-  return n.t(`fate:${id}.title`, { defaultValue: n.t('events:popup.fateNo', { n: id + 1 }) });
+  const k = fateKeyBase(n, id);
+  const common = n.t(`${k.base}.title`, { defaultValue: n.t('events:popup.fateNo', { n: id + 1 }) });
+  return k.variant ? n.t(`${k.variant}.title`, { defaultValue: common }) : common;
 }
 
 // ───────────────────────── 魔法屋、恶人 ─────────────────────────

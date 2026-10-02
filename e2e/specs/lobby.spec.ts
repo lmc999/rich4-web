@@ -1,10 +1,26 @@
-// 大厅（design/client.md §12.2 用例 1）：建房、邀请链接加入、角色互斥、准备、开始；
-// 满员后第 5 人自动成为观战者；房主踢人（被踢者回到首页并看到提示）。
+// 大厅（design/client.md §12.2 用例 1）：建房（表单的缺省地图取服务器地图目录的 defaultMap）、邀请链接加入、角色互斥、
+// 准备、开始；满员后第 5 人自动成为观战者；房主踢人（被踢者回到首页并看到提示）。
 import { E2E_PASSCODE } from '../fixtures/access';
-import { createRoom, expect, joinRoom, pickCharacter, setReady, startGame, test, zh } from '../fixtures/room';
+import {
+  createRoom,
+  expect,
+  joinRoom,
+  pickCharacter,
+  SKIN_ORIGINAL,
+  setReady,
+  startGame,
+  test,
+  zh,
+} from '../fixtures/room';
 
 test('建房、加入、角色互斥、准备、满员转观战、踢人、开始', async ({ fourPlayers, spectator }) => {
   const [p1, p2, p3, p4] = fourPlayers;
+  // 建房表单的缺省地图 = GET /api/maps 的 defaultMap（不写死台湾；E2E 服务器没有原版数据包时回退为 test）
+  const list = (await (await p1!.page.request.get('/api/maps')).json()) as { defaultMap: string };
+  await p1!.page.getByTestId('home-create').click();
+  await expect(p1!.page.getByTestId('set-map')).toHaveValue(list.defaultMap);
+  // 回到首页：程序化皮肤再点一次「建房」收起表单；原版皮肤的开局设置是单独的画面，按 EXIT（create-cancel）回标题
+  await p1!.page.getByTestId(SKIN_ORIGINAL ? 'create-cancel' : 'home-create').click();
   const code = await createRoom(p1!.page, { map: 'test', timer: 'off' });
   await expect(p1!.page.getByTestId('room-code')).toHaveText(code);
   // 门禁开启（RICH4_E2E_PASSCODE）时邀请框是带授权片段的链接（#g=<token>），否则是普通链接

@@ -6,7 +6,13 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildFixtureMaps, FIXTURE_FILES, fixtureJson, validateMap } from '@rich4/shared/data';
+import {
+  buildFixtureMaps,
+  buildTestOnlyFixtureMaps,
+  FIXTURE_FILES,
+  fixtureJson,
+  validateMap,
+} from '@rich4/shared/data';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = join(root, 'packages/shared/src/data/maps/fixtures');
@@ -21,7 +27,8 @@ function readOrNull(path: string): string | null {
 }
 
 let stale = 0;
-for (const def of buildFixtureMaps()) {
+// 服务器注册的 fixture 与只给测试用的 fixture（test-industries）一并写出
+for (const def of [...buildFixtureMaps(), ...buildTestOnlyFixtureMaps()]) {
   const res = validateMap(def, { strict4: true });
   if (!res.ok) {
     const errors = res.issues.filter((i) => i.severity === 'error');

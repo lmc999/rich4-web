@@ -7,7 +7,9 @@ import {
   defaultDraft,
   draftFromSettings,
   draftToPatch,
+  FALLBACK_MAP_ID,
   fetchMapList,
+  mapAfterList,
 } from '../ui/lobby/settingsDraft';
 import { useChatStore } from './chatStore';
 import { currentSeat, playerOf, useGameStore } from './gameStore';
@@ -234,5 +236,31 @@ describe('建房草稿', () => {
       }),
     }));
     expect(on).toEqual({ defaultMap: 'taiwan', maps: [{ id: 'taiwan', mapHash: 'a', playable: true }] });
+    // 服务器的 defaultMap 不可开局（或不在目录里）：取第一张可开局的
+    const off2 = await fetchMapList(async () => ({
+      ok: true,
+      json: async () => ({
+        defaultMap: 'usa',
+        maps: [
+          { id: 'usa', mapHash: 'u', playable: false },
+          { id: 'china', mapHash: 'c', playable: true },
+        ],
+      }),
+    }));
+    expect(off2.defaultMap).toBe('china');
+  });
+
+  it('目录到达后草稿的地图：手选过且在目录里 → 保留；否则用服务器的 defaultMap（占位地图在目录里也换）', () => {
+    const list = {
+      defaultMap: 'china',
+      maps: [
+        { id: 'taiwan', mapHash: 'a' },
+        { id: 'china', mapHash: 'b' },
+      ],
+    };
+    expect(defaultDraft().mapId).toBe(FALLBACK_MAP_ID);
+    expect(mapAfterList(FALLBACK_MAP_ID, false, list)).toBe('china');
+    expect(mapAfterList('taiwan', true, list)).toBe('taiwan');
+    expect(mapAfterList('japan', true, list)).toBe('china');
   });
 });

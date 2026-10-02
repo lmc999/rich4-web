@@ -142,6 +142,8 @@ function fakeSurface(): BoardSurface & { calls: string[] } {
 interface RenderOpts {
   packId?: string | null;
   view?: GameView;
+  /** 缺省 fixture 测试图（globalMapId null）；原版地图的节日插画要用带 globalMapId 的图 */
+  map?: MapIndex;
   room?: typeof room;
   size?: { w: number; h: number };
   surface?: BoardSurface | null;
@@ -161,7 +163,7 @@ function renderClassic(o: RenderOpts = {}) {
         <ClassicLayout
           room={r}
           view={v}
-          map={map}
+          map={o.map ?? map}
           board={<div data-testid="board-host">board</div>}
           surface={o.surface ?? null}
           rotation={0}
@@ -659,6 +661,11 @@ describe('日历', () => {
     expect(cal).toHaveAttribute('data-mode', 'month');
   });
 
+  /** 带原版地图号的测试图（节日插画按 globalMapId 取基址） */
+  function origMap(id: string, gm: number): MapIndex {
+    return buildMapIndex({ ...buildTestMap(), id, globalMapId: gm });
+  }
+
   it('台湾图节日：换成 illustration.holiday.<slot> 插画；日历页图就绪时贴 Panel#2 季节帧', async () => {
     const base = sp.batches[10]!.view;
     resetClassicAssetsForTest({
@@ -666,7 +673,7 @@ describe('日历', () => {
       images: { 'illustration.holiday.0': { url: '/pack/images/data/4.png', w: 200, h: 200 } },
     });
     load(withClock(base, { date: 19980701, weekday: 3, holiday: null }, 'taiwan'));
-    renderClassic({ view: base });
+    renderClassic({ view: base, map: origMap('taiwan', 0) });
     const cal = screen.getByTestId('classic-calendar');
     expect(screen.getByTestId('classic-cal-bg')).toHaveAttribute('data-bg', 'ui.calendar/5');
     await userEvent.click(screen.getByTestId('classic-cal-sun'));
@@ -677,6 +684,25 @@ describe('日历', () => {
     );
     expect(screen.getByTestId('classic-cal-bg').style.backgroundImage).toContain('/pack/images/data/4.png');
     expect(cal).toHaveAttribute('data-mode', 'day');
+  });
+
+  it('其他三张图的节日：插画按原版地图号偏移（日本 h18 → #65 = illustration.holiday.61）；缺插画时写该图的节日名', async () => {
+    const base = sp.batches[10]!.view;
+    resetClassicAssetsForTest({
+      sprites: { 'ui.calendar': fakeSheet('ui.calendar', 12) },
+      images: { 'illustration.holiday.61': { url: '/pack/images/data/65.png', w: 200, h: 200 } },
+    });
+    load(withClock(base, { date: 19981225, weekday: 5, holiday: 'h18' }, 'japan'));
+    const r = renderClassic({ view: base, map: origMap('japan', 2) });
+    await waitFor(() =>
+      expect(screen.getByTestId('classic-cal-bg')).toHaveAttribute('data-bg', 'illustration.holiday.61'),
+    );
+    r.unmount();
+    // 美国 h17（感恩节，素材包没有这张插画）：回退画法写美国图的节日名
+    load(withClock(base, { date: 19981129, weekday: 0, holiday: 'h17' }, 'usa'));
+    renderClassic({ view: base, map: origMap('usa', 3) });
+    await waitFor(() => expect(screen.getByTestId('classic-cal-bg')).toHaveAttribute('data-bg', 'holiday-fallback'));
+    expect(screen.getByTestId('classic-cal-bg')).toHaveTextContent('感恩节');
   });
 
   it('右上角切到缩小地图（带旋转钮），再切回日历', async () => {

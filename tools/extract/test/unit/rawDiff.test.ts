@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { ExitCode } from '../../src/context';
 import { parseMapRaw } from '../../src/map/parseRaw';
-import { bucketOf, diffExitCode, diffRaw } from '../../src/map/rawDiff';
+import {
+  ACCEPTED_RULE_DIFFS,
+  acceptRuleDiffs,
+  bucketOf,
+  diffExitCode,
+  diffRaw,
+  ruleDiffKey,
+} from '../../src/map/rawDiff';
 import type { MapDataRaw, RawSourceId } from '../../src/map/rawTypes';
 import { buildMapResource, type MapSpec, smallMapSpec } from '../helpers/buildMapResource';
 
@@ -100,5 +107,49 @@ describe('rawDiff 分类', () => {
 
   it('来源不足 2 个时报错', () => {
     expect(() => diffRaw([rawOf('v206-mapdat', smallMapSpec())])).toThrow(/E_DIFF_SOURCES/);
+  });
+});
+
+describe('已知规则差异清单（all 子命令放行 map diff exit 4 的条件）', () => {
+  const item = (table: string, id: number | null, field: string) =>
+    ({ table, id, field }) as Parameters<typeof ruleDiffKey>[0];
+  const diffOf = (gm: number, ...rule: ReturnType<typeof item>[]) => ({
+    globalMapId: gm,
+    rule: rule as unknown as Parameters<typeof acceptRuleDiffs>[0]['rule'],
+  });
+
+  it('清单只有大陆 companies#4.name、日本 lands#17.rent，基线都是 v206-mapdat', () => {
+    expect(Object.keys(ACCEPTED_RULE_DIFFS)).toEqual(['1', '2']);
+    expect(ACCEPTED_RULE_DIFFS[1]).toMatchObject({ baseline: 'v206-mapdat', keys: ['companies#4.name'] });
+    expect(ACCEPTED_RULE_DIFFS[2]).toMatchObject({ baseline: 'v206-mapdat', keys: ['lands#17.rent'] });
+    expect(ruleDiffKey(item('header', null, 'lands.count'))).toBe('header#-.lands.count');
+  });
+
+  it('规则差异正好等于清单、基线一致 → 放行；多一处、少一处、没有清单、基线不符 → 不放行', () => {
+    const china = item('companies', 4, 'name');
+    expect(acceptRuleDiffs(diffOf(1, china), 'v206-mapdat')).toEqual({
+      ok: true,
+      unexpected: [],
+      missing: [],
+      baselineProblem: null,
+    });
+    // 同一处差异在两个来源里各出现一次（按键去重）
+    expect(acceptRuleDiffs(diffOf(1, china, china), 'v206-mapdat').ok).toBe(true);
+    const extra = acceptRuleDiffs(diffOf(1, china, item('lands', 3, 'rent')), 'v206-mapdat');
+    expect(extra).toMatchObject({ ok: false, unexpected: ['lands#3.rent'] });
+    expect(acceptRuleDiffs(diffOf(2, item('lands', 3, 'rent')), 'v206-mapdat')).toMatchObject({
+      ok: false,
+      unexpected: ['lands#3.rent'],
+      missing: ['lands#17.rent'],
+    });
+    // 美国、台湾没有清单：任何规则差异都不放行
+    expect(acceptRuleDiffs(diffOf(3, item('lands', 17, 'rent')), 'v206-mapdat')).toMatchObject({
+      ok: false,
+      baselineProblem: 'gm 3 没有已知规则差异清单',
+    });
+    expect(acceptRuleDiffs(diffOf(0, item('lands', 17, 'rent')), 'v206-mapdat').ok).toBe(false);
+    // 基线：没选、选的不是 v206-mapdat
+    expect(acceptRuleDiffs(diffOf(1, china), null).baselineProblem).toContain('没有选定基线');
+    expect(acceptRuleDiffs(diffOf(1, china), 'v206-mapmkf').baselineProblem).toContain('v206-mapmkf');
   });
 });

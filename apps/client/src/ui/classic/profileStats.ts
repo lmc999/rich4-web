@@ -3,7 +3,7 @@
 //   資金：现金 · 存款 · 总资产（shared netWorth，与引擎同算法）
 //   地產：土地块数 · 房屋栋数 · 地产价值（总资产扣掉现金、存款、股票，加回贷款）
 //   股票：股票市值 · 持股总数 · 持股损益（市值 − 累计成本）
-//   其他：点券 · 贷款 · 卡片 / 道具数
+//   其他：点券 · 贷款 · 卡片 / 道具数（张数与总数，私密手牌模式下别人也照常显示）
 import type { MapIndex } from '@rich4/shared/data';
 import { netWorth, type SeatIndex } from '@rich4/shared/engine';
 import type { GameView } from '@rich4/shared/view';
@@ -74,7 +74,8 @@ export function profileNumbers(view: GameView, map: MapIndex | null, seat: SeatI
     shares: st.shares,
     stockProfit: st.value - st.cost,
     cards: p.cardCount,
-    items: p.items.reduce((a, b) => a + b, 0),
+    // 道具总数公开（私密手牌模式下别人的 items 为 null，itemCount 照常下发）
+    items: p.itemCount,
   };
 }
 

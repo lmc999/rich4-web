@@ -1,0 +1,1261 @@
+{
+  "schemaVersion": 1,
+  "id": "test-industries",
+  "globalMapId": null,
+  "nameKey": "map.test-industries.name",
+  "grid": {
+    "w": 13,
+    "h": 10
+  },
+  "terrain": [
+    "ggggggggggggg",
+    "ggggggggggggg",
+    "ggggggggggggg",
+    "ggggggggggggg",
+    "ggggwwwgggggg",
+    "ggggggggggggg",
+    "ggggggggggggg",
+    "ggggggggggggg",
+    "ggggggggggggg",
+    "ggggggggggggg"
+  ],
+  "tiles": [
+    {
+      "id": 1,
+      "cell": {
+        "x": 2,
+        "y": 2
+      },
+      "world": {
+        "x": 64,
+        "y": 64
+      },
+      "kind": "fate",
+      "landingCode": 3,
+      "links": [
+        {
+          "to": 2,
+          "slot": 1,
+          "blocked": false
+        },
+        {
+          "to": 24,
+          "slot": 2,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 2,
+      "cell": {
+        "x": 3,
+        "y": 2
+      },
+      "world": {
+        "x": 96,
+        "y": 64
+      },
+      "kind": "property",
+      "landingCode": 0,
+      "ref": {
+        "lot": "L1"
+      },
+      "links": [
+        {
+          "to": 3,
+          "slot": 1,
+          "blocked": false
+        },
+        {
+          "to": 1,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 3,
+      "cell": {
+        "x": 4,
+        "y": 2
+      },
+      "world": {
+        "x": 128,
+        "y": 64
+      },
+      "kind": "property",
+      "landingCode": 0,
+      "ref": {
+        "lot": "L2"
+      },
+      "links": [
+        {
+          "to": 4,
+          "slot": 1,
+          "blocked": false
+        },
+        {
+          "to": 2,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 4,
+      "cell": {
+        "x": 5,
+        "y": 2
+      },
+      "world": {
+        "x": 160,
+        "y": 64
+      },
+      "kind": "property",
+      "landingCode": 0,
+      "ref": {
+        "lot": "L3"
+      },
+      "links": [
+        {
+          "to": 5,
+          "slot": 1,
+          "blocked": false
+        },
+        {
+          "to": 3,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 5,
+      "cell": {
+        "x": 6,
+        "y": 2
+      },
+      "world": {
+        "x": 192,
+        "y": 64
+      },
+      "kind": "card",
+      "landingCode": 13,
+      "links": [
+        {
+          "to": 6,
+          "slot": 1,
+          "blocked": false
+        },
+        {
+          "to": 4,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 6,
+      "cell": {
+        "x": 7,
+        "y": 2
+      },
+      "world": {
+        "x": 224,
+        "y": 64
+      },
+      "kind": "property",
+      "landingCode": 0,
+      "ref": {
+        "lot": "C1"
+      },
+      "links": [
+        {
+          "to": 7,
+          "slot": 1,
+          "blocked": false
+        },
+        {
+          "to": 5,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 7,
+      "cell": {
+        "x": 8,
+        "y": 2
+      },
+      "world": {
+        "x": 256,
+        "y": 64
+      },
+      "kind": "property",
+      "landingCode": 0,
+      "ref": {
+        "lot": "C1"
+      },
+      "links": [
+        {
+          "to": 8,
+          "slot": 1,
+          "blocked": false
+        },
+        {
+          "to": 6,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 8,
+      "cell": {
+        "x": 9,
+        "y": 2
+      },
+      "world": {
+        "x": 288,
+        "y": 64
+      },
+      "kind": "news",
+      "landingCode": 2,
+      "links": [
+        {
+          "to": 9,
+          "slot": 1,
+          "blocked": false
+        },
+        {
+          "to": 7,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 9,
+      "cell": {
+        "x": 10,
+        "y": 2
+      },
+      "world": {
+        "x": 320,
+        "y": 64
+      },
+      "kind": "points30",
+      "landingCode": 11,
+      "links": [
+        {
+          "to": 10,
+          "slot": 2,
+          "blocked": false
+        },
+        {
+          "to": 8,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 10,
+      "cell": {
+        "x": 10,
+        "y": 3
+      },
+      "world": {
+        "x": 320,
+        "y": 96
+      },
+      "kind": "property",
+      "landingCode": 0,
+      "ref": {
+        "lot": "C2"
+      },
+      "links": [
+        {
+          "to": 9,
+          "slot": 0,
+          "blocked": false
+        },
+        {
+          "to": 11,
+          "slot": 2,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 11,
+      "cell": {
+        "x": 10,
+        "y": 4
+      },
+      "world": {
+        "x": 320,
+        "y": 128
+      },
+      "kind": "property",
+      "landingCode": 0,
+      "ref": {
+        "lot": "C2"
+      },
+      "links": [
+        {
+          "to": 10,
+          "slot": 0,
+          "blocked": false
+        },
+        {
+          "to": 12,
+          "slot": 2,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 12,
+      "cell": {
+        "x": 10,
+        "y": 5
+      },
+      "world": {
+        "x": 320,
+        "y": 160
+      },
+      "kind": "park",
+      "landingCode": 1,
+      "links": [
+        {
+          "to": 11,
+          "slot": 0,
+          "blocked": false
+        },
+        {
+          "to": 13,
+          "slot": 2,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 13,
+      "cell": {
+        "x": 10,
+        "y": 6
+      },
+      "world": {
+        "x": 320,
+        "y": 192
+      },
+      "kind": "fate",
+      "landingCode": 3,
+      "links": [
+        {
+          "to": 12,
+          "slot": 0,
+          "blocked": false
+        },
+        {
+          "to": 14,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 14,
+      "cell": {
+        "x": 9,
+        "y": 6
+      },
+      "world": {
+        "x": 288,
+        "y": 192
+      },
+      "kind": "property",
+      "landingCode": 0,
+      "ref": {
+        "lot": "C3"
+      },
+      "links": [
+        {
+          "to": 13,
+          "slot": 1,
+          "blocked": false
+        },
+        {
+          "to": 15,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 15,
+      "cell": {
+        "x": 8,
+        "y": 6
+      },
+      "world": {
+        "x": 256,
+        "y": 192
+      },
+      "kind": "property",
+      "landingCode": 0,
+      "ref": {
+        "lot": "C3"
+      },
+      "links": [
+        {
+          "to": 14,
+          "slot": 1,
+          "blocked": false
+        },
+        {
+          "to": 16,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 16,
+      "cell": {
+        "x": 7,
+        "y": 6
+      },
+      "world": {
+        "x": 224,
+        "y": 192
+      },
+      "kind": "jail",
+      "landingCode": 4,
+      "links": [
+        {
+          "to": 15,
+          "slot": 1,
+          "blocked": false
+        },
+        {
+          "to": 25,
+          "slot": 2,
+          "blocked": true
+        },
+        {
+          "to": 17,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 17,
+      "cell": {
+        "x": 6,
+        "y": 6
+      },
+      "world": {
+        "x": 192,
+        "y": 192
+      },
+      "kind": "property",
+      "landingCode": 0,
+      "ref": {
+        "lot": "C4"
+      },
+      "links": [
+        {
+          "to": 16,
+          "slot": 1,
+          "blocked": false
+        },
+        {
+          "to": 18,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 18,
+      "cell": {
+        "x": 5,
+        "y": 6
+      },
+      "world": {
+        "x": 160,
+        "y": 192
+      },
+      "kind": "property",
+      "landingCode": 0,
+      "ref": {
+        "lot": "C4"
+      },
+      "links": [
+        {
+          "to": 17,
+          "slot": 1,
+          "blocked": false
+        },
+        {
+          "to": 19,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 19,
+      "cell": {
+        "x": 4,
+        "y": 6
+      },
+      "world": {
+        "x": 128,
+        "y": 192
+      },
+      "kind": "property",
+      "landingCode": 0,
+      "ref": {
+        "lot": "L4"
+      },
+      "links": [
+        {
+          "to": 18,
+          "slot": 1,
+          "blocked": false
+        },
+        {
+          "to": 20,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 20,
+      "cell": {
+        "x": 3,
+        "y": 6
+      },
+      "world": {
+        "x": 96,
+        "y": 192
+      },
+      "kind": "hospital",
+      "landingCode": 5,
+      "ref": {
+        "landmark": "1"
+      },
+      "links": [
+        {
+          "to": 19,
+          "slot": 1,
+          "blocked": false
+        },
+        {
+          "to": 21,
+          "slot": 3,
+          "blocked": false
+        }
+      ],
+      "noItems": false,
+      "holdFor": "hospital"
+    },
+    {
+      "id": 21,
+      "cell": {
+        "x": 2,
+        "y": 6
+      },
+      "world": {
+        "x": 64,
+        "y": 192
+      },
+      "kind": "news",
+      "landingCode": 2,
+      "links": [
+        {
+          "to": 22,
+          "slot": 0,
+          "blocked": false
+        },
+        {
+          "to": 20,
+          "slot": 1,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 22,
+      "cell": {
+        "x": 2,
+        "y": 5
+      },
+      "world": {
+        "x": 64,
+        "y": 160
+      },
+      "kind": "property",
+      "landingCode": 0,
+      "ref": {
+        "lot": "C5"
+      },
+      "links": [
+        {
+          "to": 23,
+          "slot": 0,
+          "blocked": false
+        },
+        {
+          "to": 21,
+          "slot": 2,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 23,
+      "cell": {
+        "x": 2,
+        "y": 4
+      },
+      "world": {
+        "x": 64,
+        "y": 128
+      },
+      "kind": "property",
+      "landingCode": 0,
+      "ref": {
+        "lot": "C5"
+      },
+      "links": [
+        {
+          "to": 24,
+          "slot": 0,
+          "blocked": false
+        },
+        {
+          "to": 22,
+          "slot": 2,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 24,
+      "cell": {
+        "x": 2,
+        "y": 3
+      },
+      "world": {
+        "x": 64,
+        "y": 96
+      },
+      "kind": "points50",
+      "landingCode": 10,
+      "links": [
+        {
+          "to": 1,
+          "slot": 0,
+          "blocked": false
+        },
+        {
+          "to": 23,
+          "slot": 2,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 25,
+      "cell": {
+        "x": 7,
+        "y": 7
+      },
+      "world": {
+        "x": 224,
+        "y": 224
+      },
+      "kind": "points10",
+      "landingCode": 12,
+      "links": [
+        {
+          "to": 16,
+          "slot": 0,
+          "blocked": false
+        },
+        {
+          "to": 26,
+          "slot": 2,
+          "blocked": false
+        }
+      ],
+      "noItems": false
+    },
+    {
+      "id": 26,
+      "cell": {
+        "x": 7,
+        "y": 8
+      },
+      "world": {
+        "x": 224,
+        "y": 256
+      },
+      "kind": "plain",
+      "landingCode": 0,
+      "ref": {
+        "landmark": "2"
+      },
+      "links": [
+        {
+          "to": 25,
+          "slot": 0,
+          "blocked": false
+        }
+      ],
+      "noItems": true,
+      "holdFor": "jail"
+    }
+  ],
+  "roadCells": [],
+  "lots": [
+    {
+      "id": "L1",
+      "world": {
+        "x": 96,
+        "y": 32
+      },
+      "rect": {
+        "x": 3,
+        "y": 1,
+        "w": 1,
+        "h": 1
+      },
+      "frontTiles": [
+        2
+      ],
+      "nameKey": "map.test-industries.lot.L1",
+      "kind": "land",
+      "streetId": "S01",
+      "landPrice": 1500,
+      "housePrice": 400,
+      "rent": [
+        300,
+        750,
+        1900,
+        4500,
+        9000,
+        18000
+      ]
+    },
+    {
+      "id": "L2",
+      "world": {
+        "x": 128,
+        "y": 32
+      },
+      "rect": {
+        "x": 4,
+        "y": 1,
+        "w": 1,
+        "h": 1
+      },
+      "frontTiles": [
+        3
+      ],
+      "nameKey": "map.test-industries.lot.L2",
+      "kind": "land",
+      "streetId": "S01",
+      "landPrice": 1500,
+      "housePrice": 400,
+      "rent": [
+        300,
+        750,
+        1900,
+        4500,
+        9000,
+        18000
+      ]
+    },
+    {
+      "id": "L3",
+      "world": {
+        "x": 160,
+        "y": 32
+      },
+      "rect": {
+        "x": 5,
+        "y": 1,
+        "w": 1,
+        "h": 1
+      },
+      "frontTiles": [
+        4
+      ],
+      "nameKey": "map.test-industries.lot.L3",
+      "kind": "land",
+      "streetId": "S01",
+      "landPrice": 1500,
+      "housePrice": 400,
+      "rent": [
+        300,
+        750,
+        1900,
+        4500,
+        9000,
+        18000
+      ]
+    },
+    {
+      "id": "L4",
+      "world": {
+        "x": 128,
+        "y": 224
+      },
+      "rect": {
+        "x": 4,
+        "y": 7,
+        "w": 1,
+        "h": 1
+      },
+      "frontTiles": [
+        19
+      ],
+      "nameKey": "map.test-industries.lot.L4",
+      "kind": "land",
+      "streetId": "S02",
+      "landPrice": 1200,
+      "housePrice": 300,
+      "rent": [
+        240,
+        600,
+        1500,
+        3600,
+        7200,
+        12000
+      ]
+    }
+  ],
+  "companies": [
+    {
+      "id": "C1",
+      "world": {
+        "x": 240,
+        "y": 32
+      },
+      "rect": {
+        "x": 7,
+        "y": 1,
+        "w": 2,
+        "h": 1
+      },
+      "frontTiles": [
+        6,
+        7
+      ],
+      "nameKey": "map.test-industries.company.C1",
+      "kind": "company",
+      "industry": 1,
+      "industryKey": "airline",
+      "stockIndex": 0,
+      "tollBase": 500,
+      "assetValue": 600000
+    },
+    {
+      "id": "C2",
+      "world": {
+        "x": 352,
+        "y": 112
+      },
+      "rect": {
+        "x": 11,
+        "y": 3,
+        "w": 1,
+        "h": 2
+      },
+      "frontTiles": [
+        10,
+        11
+      ],
+      "nameKey": "map.test-industries.company.C2",
+      "kind": "company",
+      "industry": 3,
+      "industryKey": "electronics",
+      "stockIndex": 1,
+      "tollBase": 300,
+      "assetValue": 500000
+    },
+    {
+      "id": "C3",
+      "world": {
+        "x": 272,
+        "y": 224
+      },
+      "rect": {
+        "x": 8,
+        "y": 7,
+        "w": 2,
+        "h": 1
+      },
+      "frontTiles": [
+        14,
+        15
+      ],
+      "nameKey": "map.test-industries.company.C3",
+      "kind": "company",
+      "industry": 5,
+      "industryKey": "auto",
+      "stockIndex": 2,
+      "tollBase": 400,
+      "assetValue": 700000
+    },
+    {
+      "id": "C4",
+      "world": {
+        "x": 176,
+        "y": 224
+      },
+      "rect": {
+        "x": 5,
+        "y": 7,
+        "w": 2,
+        "h": 1
+      },
+      "frontTiles": [
+        17,
+        18
+      ],
+      "nameKey": "map.test-industries.company.C4",
+      "kind": "company",
+      "industry": 6,
+      "industryKey": "oil",
+      "stockIndex": 3,
+      "tollBase": 400,
+      "assetValue": 650000
+    },
+    {
+      "id": "C5",
+      "world": {
+        "x": 32,
+        "y": 144
+      },
+      "rect": {
+        "x": 1,
+        "y": 4,
+        "w": 1,
+        "h": 2
+      },
+      "frontTiles": [
+        22,
+        23
+      ],
+      "nameKey": "map.test-industries.company.C5",
+      "kind": "company",
+      "industry": 11,
+      "industryKey": "construction",
+      "stockIndex": 4,
+      "tollBase": 5000,
+      "assetValue": 550000
+    }
+  ],
+  "landmarks": [
+    {
+      "id": "1",
+      "kind": "hospital",
+      "rect": {
+        "x": 2,
+        "y": 7,
+        "w": 2,
+        "h": 2
+      },
+      "nameKey": "map.test-industries.landmark.1",
+      "holdTile": 20
+    },
+    {
+      "id": "2",
+      "kind": "jail",
+      "rect": {
+        "x": 6,
+        "y": 8,
+        "w": 1,
+        "h": 2
+      },
+      "nameKey": "map.test-industries.landmark.2",
+      "holdTile": 26
+    }
+  ],
+  "streets": [
+    {
+      "id": "S01",
+      "nameKey": "map.test-industries.street.S01",
+      "lots": [
+        "L1",
+        "L2",
+        "L3"
+      ]
+    },
+    {
+      "id": "S02",
+      "nameKey": "map.test-industries.street.S02",
+      "lots": [
+        "L4"
+      ]
+    }
+  ],
+  "stocks": [
+    {
+      "index": 0,
+      "nameKey": "map.test-industries.stock.0",
+      "hasCompany": true,
+      "float": 8000,
+      "initPriceCents": 6000,
+      "volatility": 1.2,
+      "volatilityF32": "3f99999a"
+    },
+    {
+      "index": 1,
+      "nameKey": "map.test-industries.stock.1",
+      "hasCompany": true,
+      "float": 8000,
+      "initPriceCents": 12000,
+      "volatility": 1.7,
+      "volatilityF32": "3fd9999a"
+    },
+    {
+      "index": 2,
+      "nameKey": "map.test-industries.stock.2",
+      "hasCompany": true,
+      "float": 9000,
+      "initPriceCents": 5500,
+      "volatility": 1.5,
+      "volatilityF32": "3fc00000"
+    },
+    {
+      "index": 3,
+      "nameKey": "map.test-industries.stock.3",
+      "hasCompany": true,
+      "float": 0,
+      "initPriceCents": 9000,
+      "volatility": 1,
+      "volatilityF32": "3f800000"
+    },
+    {
+      "index": 4,
+      "nameKey": "map.test-industries.stock.4",
+      "hasCompany": true,
+      "float": 7000,
+      "initPriceCents": 4000,
+      "volatility": 1.1,
+      "volatilityF32": "3f8ccccd"
+    },
+    {
+      "index": 5,
+      "nameKey": "map.test-industries.stock.5",
+      "hasCompany": false,
+      "float": 10000,
+      "initPriceCents": 4500,
+      "volatility": 1.2,
+      "volatilityF32": "3f99999a"
+    },
+    {
+      "index": 6,
+      "nameKey": "map.test-industries.stock.6",
+      "hasCompany": false,
+      "float": 7000,
+      "initPriceCents": 2000,
+      "volatility": 0.8,
+      "volatilityF32": "3f4ccccd"
+    },
+    {
+      "index": 7,
+      "nameKey": "map.test-industries.stock.7",
+      "hasCompany": false,
+      "float": 10000,
+      "initPriceCents": 24000,
+      "volatility": 0.6,
+      "volatilityF32": "3f19999a"
+    },
+    {
+      "index": 8,
+      "nameKey": "map.test-industries.stock.8",
+      "hasCompany": false,
+      "float": 5000,
+      "initPriceCents": 6500,
+      "volatility": 1,
+      "volatilityF32": "3f800000"
+    },
+    {
+      "index": 9,
+      "nameKey": "map.test-industries.stock.9",
+      "hasCompany": false,
+      "float": 6000,
+      "initPriceCents": 15000,
+      "volatility": 1.25,
+      "volatilityF32": "3fa00000"
+    },
+    {
+      "index": 10,
+      "nameKey": "map.test-industries.stock.10",
+      "hasCompany": false,
+      "float": 8000,
+      "initPriceCents": 21000,
+      "volatility": 0.75,
+      "volatilityF32": "3f400000"
+    },
+    {
+      "index": 11,
+      "nameKey": "map.test-industries.stock.11",
+      "hasCompany": false,
+      "float": 6000,
+      "initPriceCents": 7500,
+      "volatility": 0.9,
+      "volatilityF32": "3f666666"
+    }
+  ],
+  "holidays": [
+    {
+      "slot": 0,
+      "month": 1,
+      "day": 1,
+      "kind": 0,
+      "flagsRaw": 1,
+      "closed": true
+    },
+    {
+      "slot": 1,
+      "month": 12,
+      "day": 25,
+      "kind": 0,
+      "flagsRaw": 2,
+      "giveCard": true
+    }
+  ],
+  "decorations": [
+    {
+      "kind": "tree",
+      "cell": {
+        "x": 0,
+        "y": 0
+      },
+      "variant": 0
+    },
+    {
+      "kind": "flower",
+      "cell": {
+        "x": 4,
+        "y": 3
+      },
+      "variant": 0
+    },
+    {
+      "kind": "rock",
+      "cell": {
+        "x": 12,
+        "y": 9
+      },
+      "variant": 0
+    }
+  ],
+  "strings": {
+    "zh-TW": {
+      "map.test-industries.name": "測試地圖（行業）",
+      "map.test-industries.street.S01": "示例大道",
+      "map.test-industries.street.S02": "示例小巷",
+      "map.test-industries.lot.L1": "示例大道",
+      "map.test-industries.lot.L2": "示例大道",
+      "map.test-industries.lot.L3": "示例大道",
+      "map.test-industries.lot.L4": "示例小巷",
+      "map.test-industries.company.C1": "示例航空",
+      "map.test-industries.company.C2": "示例電子",
+      "map.test-industries.company.C3": "示例汽車",
+      "map.test-industries.company.C4": "示例石油",
+      "map.test-industries.company.C5": "示例建設",
+      "map.test-industries.landmark.1": "示例醫院",
+      "map.test-industries.landmark.2": "示例監獄",
+      "map.test-industries.stock.0": "示例航空",
+      "map.test-industries.stock.1": "示例電子",
+      "map.test-industries.stock.2": "示例汽車",
+      "map.test-industries.stock.3": "示例石油",
+      "map.test-industries.stock.4": "示例建設",
+      "map.test-industries.stock.5": "示例塑膠",
+      "map.test-industries.stock.6": "示例紡織",
+      "map.test-industries.stock.7": "示例超商",
+      "map.test-industries.stock.8": "示例商行",
+      "map.test-industries.stock.9": "示例便利",
+      "map.test-industries.stock.10": "示例日報",
+      "map.test-industries.stock.11": "示例資訊"
+    },
+    "zh-CN": {
+      "map.test-industries.name": "测试地图（行业）",
+      "map.test-industries.street.S01": "示例大道",
+      "map.test-industries.street.S02": "示例小巷",
+      "map.test-industries.lot.L1": "示例大道",
+      "map.test-industries.lot.L2": "示例大道",
+      "map.test-industries.lot.L3": "示例大道",
+      "map.test-industries.lot.L4": "示例小巷",
+      "map.test-industries.company.C1": "示例航空",
+      "map.test-industries.company.C2": "示例电子",
+      "map.test-industries.company.C3": "示例汽车",
+      "map.test-industries.company.C4": "示例石油",
+      "map.test-industries.company.C5": "示例建设",
+      "map.test-industries.landmark.1": "示例医院",
+      "map.test-industries.landmark.2": "示例监狱",
+      "map.test-industries.stock.0": "示例航空",
+      "map.test-industries.stock.1": "示例电子",
+      "map.test-industries.stock.2": "示例汽车",
+      "map.test-industries.stock.3": "示例石油",
+      "map.test-industries.stock.4": "示例建设",
+      "map.test-industries.stock.5": "示例塑胶",
+      "map.test-industries.stock.6": "示例纺织",
+      "map.test-industries.stock.7": "示例超商",
+      "map.test-industries.stock.8": "示例商行",
+      "map.test-industries.stock.9": "示例便利",
+      "map.test-industries.stock.10": "示例日报",
+      "map.test-industries.stock.11": "示例资讯"
+    }
+  },
+  "meta": {
+    "source": {
+      "fixture": true
+    },
+    "counts": {
+      "nodes": 26,
+      "lands": 4,
+      "facilities": 0,
+      "companies": 5,
+      "landscapes": 2
+    },
+    "dataHash": "c5d05173f358d0d1bed99fbf4d364c44578516a53a4817f2153e537e2fc6a046",
+    "generator": "rich4-shared/ascii@1"
+  }
+}

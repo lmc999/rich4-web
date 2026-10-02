@@ -2,7 +2,7 @@
 // fold(applyPostPatch, 上一批的 view, 本批事件) ≡ 本批的 view（= projectState）。客户端 viewReducer 就是 shared 的 applyPostPatch。
 // 另外让同样的批次流过 EventPlayer（instant 模式、开发对账开启），断言没有对账告警、最终显示态等于最后一批的 view。
 import type { GameView } from '@rich4/shared/view';
-import { applyPostPatch } from '@rich4/shared/view';
+import { applyPostPatch, findHandLeaks } from '@rich4/shared/view';
 import { describe, expect, it } from 'vitest';
 import { AnimClock } from '../game/anim/AnimClock';
 import { selfPlay } from '../test/selfPlay';
@@ -38,22 +38,45 @@ describe('viewFold：fold(applyPostPatch) == projectState', () => {
     expect(events).toBeGreaterThan(batches);
   });
 
-  it('私密手牌：座位视角与观战视角都能折叠一致（cards 改写为 null + cardCount）', { timeout: 60_000 }, () => {
+  it('私密手牌：座位视角与观战视角都能折叠一致（cards / items 改写为 null + 张数与总数，pools 为 null），且逐批没有泄漏', {
+    timeout: 60_000,
+  }, () => {
+    const redacted = new Set<string>();
     for (const viewer of [{ kind: 'seat', seat: 1 } as const, { kind: 'spectator' } as const]) {
+      const own = viewer.kind === 'seat' ? viewer.seat : null;
       for (let seed = 0; seed < 4; seed++) {
         const sp = selfPlay({ seed, steps: 200, viewer, handVisibility: 'private' });
         let view = sp.initial.view;
+        expect(findHandLeaks({ view }, own)).toEqual([]);
         for (const b of sp.batches) {
           expect(fold(view, b.events), `${viewer.kind} seed ${seed} seq ${b.seq}`).toEqual(b.view);
+          // 深度扫描这一批下发的视图与事件：别人手牌的卡号、道具号、牌堆张数一律不出现
+          expect(
+            findHandLeaks({ view: b.view, events: b.events }, own),
+            `${viewer.kind} seed ${seed} seq ${b.seq}`,
+          ).toEqual([]);
+          for (const e of b.events) {
+            if ((e.type === 'ITEM_GAINED' || e.type === 'ITEM_LOST') && e.item === null) redacted.add(e.type);
+            if ((e.type === 'CARD_GAINED' || e.type === 'CARD_LOST') && e.card === null) redacted.add(e.type);
+          }
           view = b.view;
         }
-        // 私密模式下对手的手牌不可见
+        // 私密模式下对手的卡片与道具不可见，张数与总数照常
+        expect(view.pools).toBeNull();
         for (const p of view.players) {
-          if (viewer.kind === 'seat' && p.seat === viewer.seat) expect(p.cards).not.toBeNull();
-          else expect(p.cards).toBeNull();
+          if (p.seat === own) {
+            expect(p.cards).not.toBeNull();
+            expect(p.items).not.toBeNull();
+          } else {
+            expect(p.cards).toBeNull();
+            expect(p.items).toBeNull();
+          }
+          expect(typeof p.itemCount).toBe('number');
         }
       }
     }
+    // 自对弈里确实出现过被脱敏的得失事件（否则这条测试没有覆盖到事件脱敏）
+    expect([...redacted].sort()).toEqual(expect.arrayContaining(['CARD_GAINED']));
   });
 
   it('同样的批次流过 EventPlayer（instant）：没有批尾对账告警，显示态等于最后一批的 view', async () => {

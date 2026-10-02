@@ -1,8 +1,9 @@
 // 背包变化、百货公司进店、小游戏（M8 前端接手前的最简演出）与系统事件。
 // M6/M7 的卡片、道具、神明、状态、新闻命运等演出见 cards / items / gods / status / events / endgame。
+import type { GameEvent } from '@rich4/shared/engine';
 import { formatEvent } from '../logFormat';
 import type { EventHandler } from '../types';
-import { brief, silent } from './common';
+import { brief, silent, syncFromPost } from './common';
 import { stageOf } from './stage';
 
 // card
@@ -16,9 +17,17 @@ export const CARD_GAINED: EventHandler<'CARD_GAINED'> = async (e, ctx) => {
 export const CARD_LOST = brief<'CARD_LOST'>(300);
 export const SHOP_OPENED = brief<'SHOP_OPENED'>(300, false);
 
-// item
-export const ITEM_GAINED = brief<'ITEM_GAINED'>(400);
-export const ITEM_LOST = brief<'ITEM_LOST'>(300);
+// item：私密手牌模式（联机）下别人的道具种类为 null，与 CARD_GAINED 一样不弹提示（日志照记「获得 道具 ×N」）
+function itemChange<T extends 'ITEM_GAINED' | 'ITEM_LOST'>(ms: number): EventHandler<T> {
+  return async (e, ctx) => {
+    const line = formatEvent(e as GameEvent, ctx.names);
+    if (line && (e.seat === ctx.me || e.item !== null)) ctx.ui.toast(line);
+    syncFromPost(ctx, e.post);
+    await ctx.wait(ms);
+  };
+}
+export const ITEM_GAINED = itemChange<'ITEM_GAINED'>(400);
+export const ITEM_LOST = itemChange<'ITEM_LOST'>(300);
 
 // minigame（M8 的小游戏容器接手演出）
 export const MINIGAME_STARTED = brief<'MINIGAME_STARTED'>(500);

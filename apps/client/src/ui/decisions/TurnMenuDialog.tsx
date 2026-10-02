@@ -1,5 +1,5 @@
 // TURN_MENU（掷骰前的行动面板，architecture §5.4：ActionPad + InventoryPanel / StockPanel / 公布栏 + TargetPicker）：
-// 选骰子数并掷骰；用卡 / 用道具（背包 → 选目标 → 提交）；买卖股票；公布栏；投降。
+// 选骰子数并掷骰；用卡 / 用道具（背包 → 选目标 → 提交）；收起机车 / 汽车改回步行（道具页）；买卖股票；公布栏；投降。
 // 除 ROLL / SURRENDER 外都是非终结操作：服务器处理后以新 decisionId 重发 TURN_MENU，面板与已打开的弹窗保持不变。
 import type { DiceCount, TurnMenuCardRow, TurnMenuItemRow, UseTarget } from '@rich4/shared/engine';
 import { ToggleGroup } from 'radix-ui';
@@ -225,6 +225,9 @@ export default function TurnMenuDialog(props: DecisionProps<'TURN_MENU'>): React
             onTabChange={(tab) => setSheet({ k: 'inventory', tab })}
             onUseCard={(row) => setTargeting({ source: { kind: 'card', card: row.card, slot: row.slot }, row })}
             onUseItem={(row) => setTargeting({ source: { kind: 'item', item: row.item }, row })}
+            onStowVehicle={() => {
+              if (ctl.send({ type: 'STOW_VEHICLE' })) closeSheet();
+            }}
           />
         )}
       </Modal>

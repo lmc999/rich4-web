@@ -5,7 +5,8 @@
  *
  * 选项：
  *   --engine-only          只跑引擎（目前唯一支持的模式；不加时同样按 engine-only 运行并提示）
- *   --map <id>             test | test-allkinds（fixture，默认 test）；taiwan 等需要 RICH4_DATA_DIR（或 --data-dir）
+ *   --map <id>             test | test-allkinds（fixture，默认 test）；原版四张图 taiwan | china | japan | usa
+ *                          需要 RICH4_DATA_DIR（或 --data-dir）指向含该图的数据包
  *   --data-dir <dir>       本机数据包目录（manifest.json + maps/*.map.json），缺省读环境变量 RICH4_DATA_DIR
  *   --games <n>            局数（默认 20）
  *   --policy <p>           random（从 options 均匀抽合法 intent）| basic（BasicAiPolicy，默认）| original（OriginalAiPolicy）
@@ -19,6 +20,8 @@
  *   --max-years <n>        单局游戏内年数上限（默认：无限局 20 年，限时局不设；到达即记为 unfinished）
  *   --min-finish <pct>     结束率门槛（默认：限时局 100，无限局 95）；达到门槛且没有错误、没有 reject 时退出码为 0
  *   --workers <n>          worker_threads 并发数（默认 1；结果按局号汇总，finalHash 与并发数无关）
+ *   --stats                另外统计事件与决策次数（不影响 finalHash / journalHash）：各事件类型、COMPANY_FEE 按行业码、
+ *                          CONFINED 按「地点/起因」、各决策种类；文本模式多输出一行 stats=…，--json 时并入汇总
  *   --json                 输出 JSON 汇总
  * 输出一行汇总：finished=… rejects=… invariantErrors=… errors=… finishRate=… finalHash=… journalHash=…；
  * finalHash 为各局终局状态哈希，journalHash 为各局 action 序列哈希（同 seed 两次运行两者都应相同）。
@@ -46,6 +49,7 @@ import {
   foldPosts,
   type GameAction,
   type GameConfig,
+  type GameEvent,
   type GameState,
   internal,
   isIntentAllowed,
@@ -88,6 +92,7 @@ interface Options {
   /** 结束率门槛（百分比） */
   minFinish: number | null;
   workers: number;
+  stats: boolean;
   json: boolean;
 }
 
@@ -108,6 +113,7 @@ function parseArgs(argv: readonly string[]): Options {
     maxYears: null,
     minFinish: null,
     workers: 1,
+    stats: false,
     json: false,
   };
   const need = (i: number, flag: string): string => {
@@ -178,6 +184,9 @@ function parseArgs(argv: readonly string[]): Options {
       case '--workers':
         o.workers = int(need(i++, a), a, 1, 64);
         break;
+      case '--stats':
+        o.stats = true;
+        break;
       case '--json':
         o.json = true;
         break;
@@ -234,6 +243,40 @@ const POLICIES: Record<Exclude<PolicyName, 'random'>, AiPolicy> = {
   original: OriginalAiPolicy,
 };
 
+/** --stats 的计数（按局统计，汇总时相加） */
+interface GameStats {
+  /** 各事件类型的次数 */
+  events: Record<string, number>;
+  /** COMPANY_FEE 按行业码（data/tables/facilities INDUSTRY） */
+  companyFee: Record<string, number>;
+  /** CONFINED 按「where/cause.k」（例如 away/fee 为航空出国） */
+  confined: Record<string, number>;
+  /** 各决策种类出现的次数（按 action 计：pending[0].kind） */
+  decisions: Record<string, number>;
+}
+
+function bump(rec: Record<string, number>, key: string, n = 1): void {
+  rec[key] = (rec[key] ?? 0) + n;
+}
+
+function countEvents(st: GameStats, events: readonly GameEvent[]): void {
+  for (const e of events) {
+    bump(st.events, e.type);
+    if (e.type === 'COMPANY_FEE') bump(st.companyFee, String(e.industry));
+    else if (e.type === 'CONFINED') bump(st.confined, `${e.where}/${e.cause.k}`);
+  }
+}
+
+function mergeStats(into: GameStats, from: GameStats): void {
+  for (const k of ['events', 'companyFee', 'confined', 'decisions'] as const) {
+    for (const [key, n] of Object.entries(from[k])) bump(into[k], key, n);
+  }
+}
+
+function sortedRecord(rec: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(Object.entries(rec).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+}
+
 interface GameOutcome {
   finished: boolean;
   actions: number;
@@ -245,6 +288,8 @@ interface GameOutcome {
   hash: string;
   /** action 序列的 FNV-1a 64 */
   journal: string;
+  /** --stats 时的计数，否则 null */
+  stats: GameStats | null;
 }
 
 function playGame(o: Options, reg: DataRegistry, gameIdx: number): GameOutcome {
@@ -267,6 +312,7 @@ function playGame(o: Options, reg: DataRegistry, gameIdx: number): GameOutcome {
     error: null,
     hash: '',
     journal: '',
+    stats: o.stats ? { events: {}, companyFee: {}, confined: {}, decisions: {} } : null,
   };
   const maxDays = o.maxYears === null ? Number.POSITIVE_INFINITY : o.maxYears * 365;
   let journal = '';
@@ -281,6 +327,7 @@ function playGame(o: Options, reg: DataRegistry, gameIdx: number): GameOutcome {
     while (s.status === 'playing' && out.actions < o.maxActions && s.clock.elapsedDays < maxDays) {
       let action: GameAction;
       let fallback: GameAction | null = null;
+      if (out.stats) bump(out.stats.decisions, s.pending[0]?.kind ?? 'none');
       if (o.policy === 'random') action = randomAction(s, rng)!;
       else {
         const d = s.pending[0]!;
@@ -316,6 +363,7 @@ function playGame(o: Options, reg: DataRegistry, gameIdx: number): GameOutcome {
         }
       }
       out.actions++;
+      if (out.stats) countEvents(out.stats, events);
       if (before) {
         if (events.some((e) => e.type === 'SYNC')) out.invariantErrors.push(`action ${out.actions}: SYNC emitted`);
         const folded = JSON.stringify(foldPosts(before, events));
@@ -418,6 +466,7 @@ async function main(): Promise<void> {
   const hashes: string[] = [];
   const journals: string[] = [];
   const samples: string[] = [];
+  const stats: GameStats | null = o.stats ? { events: {}, companyFee: {}, confined: {}, decisions: {} } : null;
   const outcomes = await runAll(o, reg, argv);
   for (let g = 0; g < o.games; g++) {
     const r = outcomes[g]!;
@@ -430,6 +479,7 @@ async function main(): Promise<void> {
     if (r.error) errors++;
     reasons[r.reason] = (reasons[r.reason] ?? 0) + 1;
     hashes.push(r.hash);
+    if (stats && r.stats) mergeStats(stats, r.stats);
     if ((r.error || r.invariantErrors.length > 0) && samples.length < 30) {
       samples.push(`game ${g}: ${r.error ?? r.invariantErrors[0]}`);
     }
@@ -453,6 +503,17 @@ async function main(): Promise<void> {
     maxYears: o.maxYears,
     workers: o.workers,
     seconds: Math.trunc(seconds * 100) / 100,
+    ...(stats
+      ? {
+          stats: {
+            avgActions: Math.trunc((actions / o.games) * 10) / 10,
+            events: sortedRecord(stats.events),
+            companyFee: sortedRecord(stats.companyFee),
+            confined: sortedRecord(stats.confined),
+            decisions: sortedRecord(stats.decisions),
+          },
+        }
+      : {}),
   };
   const minFinish = o.minFinish ?? (o.timeLimit === 0 ? 95 : 100);
   if (o.json) console.log(JSON.stringify(summary));
@@ -463,6 +524,7 @@ async function main(): Promise<void> {
         `avgDays=${summary.avgDays} reasons=${JSON.stringify(reasons)} finalHash=${summary.finalHash} ` +
         `journalHash=${summary.journalHash} seconds=${summary.seconds}`,
     );
+    if (summary.stats) console.log(`stats=${JSON.stringify(summary.stats)}`);
   }
   for (const line of samples) console.error(line);
   const finishOk = finished * 100 >= minFinish * o.games;

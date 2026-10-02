@@ -19,7 +19,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { requireAccess, useAccessStore } from '../ui/access/accessStore';
 import { hasBoardFactory, onBoardFactoriesChanged } from './boardRegistry';
 import type { PackClient } from './pack/PackClient';
-import { resolveSkin } from './resolve';
+import { mapWarmGroups, resolveSkin } from './resolve';
 import type { MapCheck, PackState, SkinKind, SkinResolution } from './types';
 
 // ───────────────────────── PackClient 单例 ─────────────────────────
@@ -150,21 +150,23 @@ function transientPack(s: PackState): boolean {
 }
 
 /**
- * 原版皮肤就绪后预取当前地图的组（图集与地图皮肤 JSON，逐个校验）：组缺失或加载失败 → 记为失败组，
- * 判定随之回退程序化棋盘（修正 6：CI 的合成素材包也走这条路径）。判定每次变化（素材包、地图、设置）后都调用。
+ * 原版皮肤就绪后预取当前地图的组与共用棋盘组（resolve.mapWarmGroups：map.<id> + board.landmarks；图集与地图皮肤 JSON，
+ * 逐个校验；其他地图的组、地面位图都不预取）：组缺失或加载失败 → 记为失败组，判定随之回退程序化棋盘（修正 6：CI 的
+ * 合成素材包也走这条路径）。判定每次变化（素材包、地图、设置）后都调用。
  */
 function warmUp(): void {
   const { resolution, mapCheck } = useSkinStore.getState();
   const client = currentPackClient();
   if (!client || resolution.skin !== 'original' || mapCheck?.status !== 'ok' || !mapCheck.group) return;
-  const group = mapCheck.group;
-  const key = `${resolution.packId}|${group}`;
-  if (warmed.has(key)) return;
-  warmed.add(key);
-  client.loadGroup(group).catch((e: unknown) => {
-    console.warn(`[skin] 素材组 ${group} 加载失败，回退程序化棋盘`, e);
-    useSkinStore.getState().markGroupFailed(group);
-  });
+  for (const group of mapWarmGroups(client.manifest, mapCheck.group)) {
+    const key = `${resolution.packId}|${group}`;
+    if (warmed.has(key)) continue;
+    warmed.add(key);
+    client.loadGroup(group).catch((e: unknown) => {
+      console.warn(`[skin] 素材组 ${group} 加载失败，回退程序化棋盘`, e);
+      useSkinStore.getState().markGroupFailed(group);
+    });
+  }
 }
 
 export const useSkinStore = create<SkinState>()((set, get) => {

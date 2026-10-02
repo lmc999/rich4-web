@@ -67,6 +67,8 @@ describe('audioUiStateOf / venueOf', () => {
     // 原版片头播放期间标题画面不放曲子
     expect(audioUiStateOf({ ...base, room: null, intro: true })).toEqual({ screen: 'none' });
     expect(audioUiStateOf({ ...base, room: roomView({ phase: 'lobby' }), intro: true })).toEqual({ screen: 'lobby' });
+    // 开局飞行动画播放期间：对局页不放棋盘曲（播完再从第 0 首开始）
+    expect(audioUiStateOf({ ...base, room: roomView({ phase: 'playing' }), intro: true })).toEqual({ screen: 'none' });
     expect(audioUiStateOf({ ...base, room: roomView({ phase: 'lobby' }) })).toEqual({ screen: 'lobby' });
     expect(audioUiStateOf({ ...base, room: roomView({ phase: 'ended' }) })).toEqual({ screen: 'gameOver' });
     expect(audioUiStateOf({ ...base, room: roomView({ phase: 'playing' }), over: true }).screen).toBe('gameOver');

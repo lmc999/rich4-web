@@ -138,12 +138,14 @@ export function sellRows(
         draft: { t: 'card', card: c } as Draft,
       }));
     }
-    case 'item':
-      return ITEM_IDS.filter((i) => (p.items[i] ?? 0) > 0).map((i) => ({
+    case 'item': {
+      const items = p.items ?? [];
+      return ITEM_IDS.filter((i) => (items[i] ?? 0) > 0).map((i) => ({
         key: String(i),
-        cells: [text.item(i), `× ${p.items[i] ?? 0}`, ''],
-        draft: { t: 'item', item: i, held: p.items[i] ?? 0 } as Draft,
+        cells: [text.item(i), `× ${items[i] ?? 0}`, ''],
+        draft: { t: 'item', item: i, held: items[i] ?? 0 } as Draft,
       }));
+    }
   }
 }
 

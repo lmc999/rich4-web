@@ -6,7 +6,7 @@ import type { SampleResult } from '../verify/samples';
 import { ICON } from './table';
 
 /**
- * docs/research/provenance-summary.md（入库，data-pipeline.md §10.2）：
+ * docs/research/provenance-summary.md（台湾）与 provenance-<key>.md（其他图）（入库，data-pipeline.md §10.2）：
  * 只写输入指纹、样本 ✅/❌、几何统计与未决项；不含整图数据、原始字节、时间戳，重复生成字节一致。
  */
 
@@ -44,6 +44,9 @@ export interface ProvenanceInput {
 const code = (s: string | number) => `\`${s}\``;
 const row = (cells: readonly (string | number)[]) => `| ${cells.map(String).join(' | ')} |`;
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
+
+/** 企业 ↔ 股票核对：KNOWN 为原版已知名称不一致（exe/mapData.ts KNOWN_NAME_MISMATCHES），不算失败 */
+const STATUS_ICON: Record<CompanyStockCheck['status'], string> = { OK: ICON.pass, KNOWN: ICON.warn, BAD: ICON.fail };
 
 const CLASS_LABEL: Record<IssueClass, string> = {
   error: '错误',
@@ -115,9 +118,7 @@ export function renderProvenance(p: ProvenanceInput): string {
     const cs = p.companyStocks ?? [];
     if (cs.length > 0) {
       L.push('');
-      L.push(
-        `企业 ↔ 股票（企业 +0x19 行号）：${cs.map((c) => `${c.ok ? ICON.pass : ICON.fail} ${c.detail}`).join('；')}。`,
-      );
+      L.push(`企业 ↔ 股票（企业 +0x19 行号）：${cs.map((c) => `${STATUS_ICON[c.status]} ${c.detail}`).join('；')}。`);
     }
   } else {
     L.push('（没有 exe 表：stocks/holidays 为空，见 §6 未决项）');
@@ -187,7 +188,7 @@ export function renderProvenance(p: ProvenanceInput): string {
     ['override 条数', String(g.overrides)],
     ['strict4', p.strict4 ? '已启用' : '未启用'],
     ['MapDef dataHash', code(build.def.meta.dataHash)],
-    ['taiwan.map.json sha256', code(p.mapFileSha256)],
+    [`${p.mapKey}.map.json sha256`, code(p.mapFileSha256)],
   ];
   for (const [k, v] of items) L.push(row([k, v]));
   L.push('');
@@ -231,7 +232,7 @@ export function renderProvenance(p: ProvenanceInput): string {
   }
   if (lat.mode === 'fitted') {
     open.push(
-      `格点为拟合模式（T=${lat.tile}），与「32 单位一格」的假设不符，请对照原版截图人工审阅 ${code('.cache/extract/preview/taiwan.svg')}。`,
+      `格点为拟合模式（T=${lat.tile}），与「32 单位一格」的假设不符，请对照原版截图人工审阅 ${code(`.cache/extract/preview/${p.mapKey}.svg`)}。`,
     );
   }
   if (g.landsOffSide.length > 0)

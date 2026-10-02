@@ -1,24 +1,33 @@
 // 原版标题 / 开局 / 选人画面的纯函数（client-unit）：皮肤判定矩阵、条目检查、几何（按钮热区、下拉框、头像格、手机横屏
-// 触控目标）、走动预览、设置草稿的字段转换、片头地址、工具列紧凑排法的阈值。
+// 触控目标、关卡行与打勾按 exe）、关卡 → 地图 / 背景 / 飞行动画、走动预览、设置草稿的字段转换、片头与飞行动画地址、
+// 飞行动画的播放条件、工具列紧凑排法的阈值。
 import type { AssetEntry } from '@rich4/shared/assets';
 import { describe, expect, it } from 'vitest';
 import { defaultDraft } from '../../lobby/settingsDraft';
 import { hitMinLogical } from '../common/stage';
 import type { Rect } from '../layout';
 import { COMPACT_TOOLS, COMPACT_W, compactToolbar, MORE_ROW_H, MORE_TOOLS, TOOLS } from '../Toolbar';
-import { introUrl } from './IntroVideo';
+import { FLY_MAX_MS, FLY_SLACK_MS, type FlyDecisionInput, flyMedia, shouldPlayFly } from './FlyVideo';
+import { introUrl, videoUrl } from './IntroVideo';
 import {
   COLUMN,
   COLUMN_EXIT,
   COLUMN_OK,
+  FLY_VIDEO,
   fieldLabelRect,
   fieldRect,
+  flyVideoKey,
   GRID,
   gridCell,
   PREVIEW,
   SCREEN_KEYS,
+  SETUP_BG,
   SETUP_FIELDS,
+  STAGE_MAPS,
+  setupBgKey,
   sidewalkKey,
+  stageCheck,
+  stageOf,
   stageRow,
   TITLE_BAND,
   TITLE_BUTTONS,
@@ -122,7 +131,7 @@ describe('几何', () => {
   });
 
   it('竖栏：贴在右侧；关卡行、OK / EXIT、6 个下拉框都在竖栏内且互不重叠；OK / EXIT 热区高 ≥ 手机 44px', () => {
-    expect(COLUMN.x + COLUMN.w).toBe(640);
+    expect(COLUMN.x + COLUMN.w).toBeLessThanOrEqual(640);
     const col: Rect = { x: COLUMN.x, y: COLUMN.y, w: COLUMN.w, h: COLUMN.h };
     const rects: Rect[] = [
       ...[0, 1, 2, 3].map(stageRow),
@@ -152,6 +161,65 @@ describe('几何', () => {
       'timeLimitDays',
       'winMultiple',
     ]);
+  });
+
+  it('竖栏按 exe 贴在整屏 (445,10)（0x404f71）；OK / EXIT / 下拉箭头与 exe 点击区表 0x46aac4 相差不超过 1 像素', () => {
+    expect({ x: COLUMN.x, y: COLUMN.y }).toEqual({ x: 445, y: 10 });
+    expect(COLUMN.x + COLUMN.w).toBe(637);
+    // exe 点击区表（整屏，两端含）：1 OK、2 EXIT、3–8 六个下拉箭头
+    const exeOk = [456, 176, 535, 215];
+    const exeExit = [544, 176, 623, 215];
+    const exeArrow = (k: number) => [602, 226 + 36 * k, 625, 250 + 36 * k];
+    const near = (a: readonly number[], b: readonly number[]) => a.every((v, i) => Math.abs(v - b[i]!) <= 1);
+    // OK / EXIT：烘焙按钮图（77 宽）在 exe 点击区之内（命中矩形上下另补到 56 高）
+    for (const [r, e] of [
+      [COLUMN_OK, exeOk],
+      [COLUMN_EXIT, exeExit],
+    ] as const) {
+      expect(r.x).toBeGreaterThanOrEqual(e[0]!);
+      expect(r.x + r.w - 1).toBeLessThanOrEqual(e[2]!);
+      expect(r.y).toBeLessThanOrEqual(e[1]!);
+      expect(r.y + r.h - 1).toBeGreaterThanOrEqual(e[3]!);
+    }
+    // 下拉框右侧 25 宽的箭头
+    SETUP_FIELDS.forEach((f, k) => {
+      const r = fieldRect(f.box);
+      const arrow = [COLUMN.x + f.box.x + f.box.w, r.y, r.x + r.w - 1, r.y + r.h - 1];
+      expect(near(arrow, exeArrow(k)), `${f.field} ${JSON.stringify(arrow)}`).toBe(true);
+    });
+  });
+
+  it('关卡行与打勾按 exe：点击区 (457,31+32k)–(625,62+32k)（0x46aac4 第 9–12 项），勾在竖栏内 (150,20+32k)（0x46ab2c）', () => {
+    expect([0, 1, 2, 3].map(stageRow)).toEqual([
+      { x: 457, y: 31, w: 169, h: 32 },
+      { x: 457, y: 63, w: 169, h: 32 },
+      { x: 457, y: 95, w: 169, h: 32 },
+      { x: 457, y: 127, w: 169, h: 32 },
+    ]);
+    // 两端含：右下角 (625, 62+32k) 在矩形里、下一格不在
+    for (let k = 0; k < 4; k++) {
+      const r = stageRow(k);
+      expect([r.x + r.w - 1, r.y + r.h - 1]).toEqual([625, 62 + 32 * k]);
+    }
+    expect([0, 1, 2, 3].map((k) => stageCheck(k).y - COLUMN.y)).toEqual([20, 52, 84, 116]);
+    expect(stageCheck(2).x - COLUMN.x).toBe(150);
+    // 整屏：勾在 (595, 30+32k)；点击区与勾都按竖栏坐标推算（竖栏图画在 COLUMN，行色带与点击区对齐）
+    expect([0, 1, 2, 3].map(stageCheck)).toEqual([
+      { x: 595, y: 30 },
+      { x: 595, y: 62 },
+      { x: 595, y: 94 },
+      { x: 595, y: 126 },
+    ]);
+    expect(stageRow(0).x - COLUMN.x).toBe(12);
+    expect(stageRow(0).y - COLUMN.y).toBe(21);
+    // 勾（jump#4 图8，27×25，锚点 (0,0)）落在所在行里（顶上多出 1 像素）且不越过竖栏
+    for (let k = 0; k < 4; k++) {
+      const c = stageCheck(k);
+      const r = stageRow(k);
+      expect(c.x).toBeGreaterThanOrEqual(r.x);
+      expect(c.x + 27).toBeLessThanOrEqual(COLUMN.x + COLUMN.w);
+      expect(c.y + 25).toBeLessThanOrEqual(r.y + r.h);
+    }
   });
 
   it('头像格：12 格 6×2、间距 72、在头像格帧与画面之内、不与竖栏重叠；每格 ≥ 手机 44px', () => {
@@ -271,6 +339,89 @@ describe('片头', () => {
     expect(introUrl(client(entry({ webm: 'video/start.webm' })), () => '')).toBe('/pack/video/start.webm');
     expect(introUrl(client(null))).toBeNull();
     expect(introUrl(null)).toBeNull();
+  });
+});
+
+describe('关卡 → 地图、开局设置背景、飞行动画', () => {
+  it('关卡顺序即原版地图号 gm（exe 0x4070e1）；不是原版四张图为 null', () => {
+    expect(STAGE_MAPS).toEqual(['taiwan', 'china', 'japan', 'usa']);
+    expect(STAGE_MAPS.map(stageOf)).toEqual([0, 1, 2, 3]);
+    expect(stageOf('test')).toBeNull();
+    expect(stageOf(null)).toBeNull();
+  });
+
+  it('背景 jump#gm：台湾沿用 title.setup.bg，其他图 title.setup.bg.<id>，fixture 用台湾的；条目检查只要求 jump#0', () => {
+    expect(STAGE_MAPS.map(setupBgKey)).toEqual([
+      'title.setup.bg',
+      'title.setup.bg.china',
+      'title.setup.bg.japan',
+      'title.setup.bg.usa',
+    ]);
+    expect(setupBgKey('test')).toBe(SETUP_BG);
+    expect(setupBgKey(null)).toBe(SETUP_BG);
+    expect(SCREEN_KEYS.filter((k) => k.startsWith('title.setup.bg'))).toEqual(['title.setup.bg']);
+  });
+
+  it('飞行动画条目（exe 0x472f78：FLYTW / FLYCHINA / FLYJP / FLYUS）', () => {
+    expect(STAGE_MAPS.map(flyVideoKey)).toEqual(['video.flytw', 'video.flychina', 'video.flyjp', 'video.flyus']);
+    expect(Object.keys(FLY_VIDEO)).toEqual([...STAGE_MAPS]);
+    expect(flyVideoKey('test')).toBeNull();
+    expect(flyVideoKey(null)).toBeNull();
+    expect(flyVideoKey('toString')).toBeNull();
+  });
+
+  const video = (durationMs: number) =>
+    ({
+      type: 'video',
+      group: 'video',
+      confidence: 'exe',
+      src: [],
+      files: { mp4: 'video/flyjp.mp4' },
+      w: 640,
+      h: 480,
+      durationMs,
+    }) as AssetEntry;
+  const pack = (e: AssetEntry | null) => ({
+    usableEntry: (k: string) => (k === 'video.flyjp' ? e : null),
+    fileUrl: (lp: string) => `/pack/${lp}`,
+  });
+
+  it('飞行动画的地址与时长上限（条目时长 + 余量；没有时长用上限）；条目不可用或不是原版地图为 null', () => {
+    const mp4 = (m: string) => (m === 'video/mp4' ? 'probably' : '');
+    expect(flyMedia(pack(video(6688)), 'japan', mp4)).toEqual({
+      url: '/pack/video/flyjp.mp4',
+      maxMs: 6688 + FLY_SLACK_MS,
+    });
+    expect(flyMedia(pack(video(0)), 'japan', mp4)?.maxMs).toBe(FLY_MAX_MS);
+    expect(flyMedia(pack(null), 'japan')).toBeNull();
+    expect(flyMedia(pack(video(6688)), 'china')).toBeNull();
+    expect(flyMedia(pack(video(6688)), 'test')).toBeNull();
+    expect(flyMedia(null, 'japan')).toBeNull();
+    expect(videoUrl(pack(video(1)), 'video.flyjp', mp4)).toBe('/pack/video/flyjp.mp4');
+  });
+
+  it('播放条件：只在本页看到新局开始（大厅 → 对局、单机刚开局）时播；读档、刷新 / 重连、观战、instant、缺条目、已播过不播', () => {
+    const base: FlyDecisionInput = {
+      instant: false,
+      spectator: false,
+      url: '/pack/video/flytw.mp4',
+      seen: false,
+      start: 'lobby',
+      fromSave: false,
+      elapsedDays: 0,
+    };
+    expect(shouldPlayFly(base)).toBe(true);
+    expect(shouldPlayFly({ ...base, start: 'solo' })).toBe(true);
+    // 快照还没到：照播
+    expect(shouldPlayFly({ ...base, elapsedDays: null })).toBe(true);
+    expect(shouldPlayFly({ ...base, start: null })).toBe(false);
+    expect(shouldPlayFly({ ...base, fromSave: true })).toBe(false);
+    expect(shouldPlayFly({ ...base, spectator: true })).toBe(false);
+    expect(shouldPlayFly({ ...base, instant: true })).toBe(false);
+    expect(shouldPlayFly({ ...base, url: null })).toBe(false);
+    expect(shouldPlayFly({ ...base, seen: true })).toBe(false);
+    // 对局已经过了几天（不是开局日）
+    expect(shouldPlayFly({ ...base, elapsedDays: 3 })).toBe(false);
   });
 });
 

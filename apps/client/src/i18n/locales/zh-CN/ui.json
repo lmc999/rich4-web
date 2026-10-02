@@ -568,7 +568,7 @@
       "none": "点击棋盘上的格子查看详情",
       "loading": "正在加载地图…",
       "loadFailed": "地图加载失败：{{reason}}",
-      "taiwanHint": "台湾图需要本机数据包：启动服务端（RICH4_DATA_DIR=./rich4-data npm run dev:server），或在 rich4-data/maps/ 下放置 taiwan.map.json 供开发服务器直读。",
+      "dataHint": "原版地图需要本机数据包：启动服务端（RICH4_DATA_DIR=./rich4-data npm run dev:server），或在 rich4-data/maps/ 下放置 {{id}}.map.json 供开发服务器直读。",
       "issues": "校验：{{errors}} 个错误，{{warns}} 个警告",
       "stats": "{{tiles}} 格 · {{lots}} 地块 · {{companies}} 企业 · {{landmarks}} 地标 · {{via}} 连接格",
       "cell": "网格",

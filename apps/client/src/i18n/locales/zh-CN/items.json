@@ -12,6 +12,7 @@
   "teleporter": { "name": "传送机", "desc": "把人、神明、路面物件或房屋传送到空路或空地上。" },
   "engineeringVehicle": { "name": "工程车", "desc": "开 7 回合，停在别人的建筑上就把它拆平。" },
   "nuke": { "name": "核子飞弹", "desc": "大范围轰炸任意地点：地产清为无主，人员住院。" },
+  "hidden": { "name": "道具", "panel": "道具不公开（{{n}} 个）" },
   "object": {
     "roadblock": "路障",
     "mine": "地雷",

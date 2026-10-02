@@ -81,13 +81,14 @@ export function bidderSlots(n: number): number[] {
   return Array.from({ length: n }, (_, i) => Math.round(mid + (i - (n - 1) / 2) * step));
 }
 
-/** 地图 id → 住宅缩图的地图序号（台 0 / 中 1 / 日 2 / 美 3；其他按台湾） */
-export function mapStyleIndex(mapId: string | null | undefined): number {
-  const id = (mapId ?? '').toLowerCase();
-  if (id.includes('china')) return 1;
-  if (id.includes('japan')) return 2;
-  if (id.includes('usa') || id.includes('america')) return 3;
-  return 0;
+/**
+ * 原版地图号 gm（MapDef.globalMapId：台 0 / 中 1 / 日 2 / 美 3）→ 住宅缩图的地图序号；fixture 等没有 gm 的图按台湾。
+ * @source exe v2.06 0x43ad6e：拍卖缩图 Panel#26 帧 = 29 + 5·gm + L
+ */
+export function mapStyleIndex(globalMapId: number | null | undefined): number {
+  return typeof globalMapId === 'number' && Number.isInteger(globalMapId) && globalMapId >= 0 && globalMapId <= 3
+    ? globalMapId
+    : 0;
 }
 
 const FACILITY_BASE: Readonly<Record<Exclude<FacilityType, 'park'>, number>> = {

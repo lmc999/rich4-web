@@ -523,7 +523,9 @@ ROOT.step:
 ### 7.3 行动阶段（`TURN.stage='menu'`）
 
 - 发出 `TURN_MENU` 决策，options 见 §9.3。
-- 非终结 intent（USE_CARD、USE_ITEM、STOCK_*、BOARD_*、SET_DICE）执行完后回到 menu，重新发出新 id 的 TURN_MENU。
+- 非终结 intent（USE_CARD、USE_ITEM、STOW_VEHICLE、STOCK_*、BOARD_*、SET_DICE）执行完后回到 menu，重新发出新 id 的 TURN_MENU。
+- STOW_VEHICLE：真人收起身上的机车 / 汽车、改回步行（车退回背包，1 颗骰子；不扣道具、不限次数；工程车不能收起；
+  原版道具欄右下角那一格 = 道具函数表第 14 项 v2.06 0x4467b1，电脑从不收起）。
 - 终结 intent：`ROLL`、遥控骰子（选点即掷）、对自己用传送机（本回合视为已掷骰）、`SURRENDER`。
 
 ### 7.4 掷骰（ROLL）
@@ -682,7 +684,7 @@ export interface PendingDecision<K extends DecisionKind = DecisionKind> {
 
 | DecisionKind | 触发 | options（节选） | allowedIntents | defaultIntent |
 |---|---|---|---|---|
-| TURN_MENU | 回合行动阶段 | 见 9.3 | ROLL, SET_DICE, USE_CARD, USE_ITEM, STOCK_BUY, STOCK_SELL, BOARD_LIST, BOARD_DELIST, BOARD_BUY, SURRENDER | ROLL |
+| TURN_MENU | 回合行动阶段 | 见 9.3 | ROLL, SET_DICE, USE_CARD, USE_ITEM, STOW_VEHICLE, STOCK_BUY, STOCK_SELL, BOARD_LIST, BOARD_DELIST, BOARD_BUY, SURRENDER | ROLL |
 | BANK_ATM | 路过或停在银行 | mode, cash, deposit, canWithdraw（挤兑时为 false）, reserveShortfallPayer | ATM{op,amount}, SKIP | SKIP |
 | BANK_COUNTER | 停在银行，ATM 之后 | loanLimit=netWorth−loan, loanBlocked(挤兑/拒绝往来), dueDate预览, repayMax, financeLimit(董事长才有，=其他在场玩家存款和) | LOAN, REPAY, FINANCE, SKIP | SKIP |
 | BUY_LAND | 无主住宅 | price, cash, level, street:{lots,owners}, tollAfter, fortuneBonus | CONFIRM, DECLINE | DECLINE |
@@ -692,7 +694,7 @@ export interface PendingDecision<K extends DecisionKind = DecisionKind> {
 | UPGRADE_FACILITY | 自己的设施 | cost, from/to, cap | CONFIRM, DECLINE | DECLINE |
 | FACILITY_TYPE | 免费首建（天使显灵、魔法屋加盖） | types | CHOOSE_FACILITY_TYPE | {type:'park'} |
 | RESEARCH | 自己的研究所 | level, current:{project,days}, projects:[1..level] | RESEARCH{project}, SKIP | 最高档 |
-| SHOP | 百货公司 | points, handCount, shelf:[{idx,cardId,price}], items:[{id,price,pool,own,maxQty}], sell:{cards[{slot,cardId,value}], items[{id,count,unitValue}]} | SHOP_BUY_CARD, SHOP_BUY_ITEM, SHOP_SELL_CARD, SHOP_SELL_ITEM, LEAVE | LEAVE |
+| SHOP | 百货公司 | points, handCount, shelf:[{idx,cardId,price}], items:[{id,price,pool,own,maxQty(0/1),listed,bought}], sell:{cards[{slot,cardId,value}], items[{id,count,unitValue}]} | SHOP_BUY_CARD, SHOP_BUY_ITEM, SHOP_SELL_CARD, SHOP_SELL_ITEM, LEAVE | LEAVE |
 | LOTTERY | 乐透格 | cash, price:1000, sold:(seat\|null)[36], pool | LOTTERY_BUY{number}, SKIP | SKIP |
 | BAIL | 监狱或医院格 | points, inmates:[{seat,remaining}], villains:[{kind,available}], costs:{bail:30,hire:300} | BAIL{seat}, HIRE{villain}, SKIP | SKIP |
 | MINIGAME | 小游戏格（真人座位） | minigameId, maxScore | 仅服务器：MINIGAME_RESULT, MINIGAME_SKIP | MINIGAME_SKIP |
@@ -715,6 +717,7 @@ interface TurnMenuOptions {
   dice: { allowed: (1|2|3)[]; current: number; locked: null | 'stay' | 'tortoise' | 'sleepwalk' };
   cards: { slot: number; card: CardId; usable: boolean; reason?: ReasonKey; targets: TargetCandidates }[];
   items: { item: ItemId; count: number; usable: boolean; reason?: ReasonKey; targets: TargetCandidates }[];
+  vehicle?: { current: Vehicle; canStow: boolean };   // 能否 STOW_VEHICLE；旧存档里挂着的决策没有这个字段
   stock: { open: boolean; reason?: 'sunday' | 'holiday' | 'halted';
            rows: { idx: number; priceCents: number; changePct10: number; quota: number; float: number;
                    limitUp: boolean; limitDown: boolean; suspended: boolean; shares: number; costCents: number;
@@ -742,6 +745,7 @@ export type PlayerIntent =
   | { type: 'ROLL' } | { type: 'SET_DICE'; count: 1 | 2 | 3 }
   | { type: 'USE_CARD'; slot: number; card: CardId; target: CardTarget }
   | { type: 'USE_ITEM'; item: ItemId; target: ItemTarget }
+  | { type: 'STOW_VEHICLE' }
   | { type: 'STOCK_BUY' | 'STOCK_SELL'; stock: number; shares: number }
   | { type: 'BOARD_LIST'; asset: Listing['asset']; price: number } | { type: 'BOARD_DELIST' | 'BOARD_BUY'; listingId: number }
   | { type: 'SURRENDER' } | { type: 'CONFIRM' } | { type: 'DECLINE' } | { type: 'SKIP' } | { type: 'LEAVE' }
@@ -871,7 +875,7 @@ export const CARD_EFFECTS = { 1: equalWealth, /* … */ 30: tortoise } satisfies
 | 12 | 工程车 | 无 | 保存原交通工具（机车或汽车退回背包），骰子 1 颗，持续 7 个自己的回合；停在别人已有建筑的地产上 → 夷平到 0（PROGRAM） |
 | 13 | 核子飞弹 | 任意节点 | 半宽 220：地产 mode 1（清为无主）；窗内人员车毁、住院 3 天；物件和神明清除（施放者也在判定范围内） |
 
-商店只卖 1..8（池 > 0 的才上架）；卖出得 `divTrunc(单价×数量×9,10)` 点券，1..8 回池，9..13 直接消失；百货公司盈余 += 点券价×10。
+商店只卖 1..8（进店时池 > 0 的才上架，进店后卖回的不补上；不显示库存）；买道具一次 1 个、每种每次进店只能买一次（SHOP_BUY_ITEM.qty 必须为 1，v2.06 0x42d869 / 0x42d9cf；真人还要 listed，电脑按实时库存）；卖出得 `divTrunc(单价×数量×9,10)` 点券，1..8 回池，9..13 直接消失；百货公司盈余 += 点券价×10。
 
 ### 10.5 神明（data/gods.ts：好坏、搭档、天数、三项运势、过路费修正、发威、显灵）
 
@@ -1134,7 +1138,7 @@ export function applyPostPatch<V extends PublicWorldLike>(view: V, p: PostPatch)
 
 ### 12.2 分类、脱敏与事件清单
 
-`EVENT_META: { [T in GameEvent['type']]: { cat: EventCat; privacy: 'public' | 'redactCards'; resetsView?: true } }`
+`EVENT_META: { [T in GameEvent['type']]: { cat: EventCat; privacy: 'public' | 'redactHand'; resetsView?: true } }`（redactHand：卡片 / 道具得失、交易、赠礼、货架、抢夺目标，私密手牌模式下按 view/project.ts HAND_REDACTORS 逐类脱敏，见 net.md §6.1）
 
 - 所有事件都公开；`post.players[].set.cards` 在私密模式下，对非本人统一改写为 `cardCount`。
 - 小游戏 seed 只放在决策里，不进入事件。
@@ -1145,7 +1149,7 @@ export function applyPostPatch<V extends PublicWorldLike>(view: V, p: PostPatch)
 | move | DICE_SET{seat,count}、DICE_ROLLED{seat,dice,steps,forced}、MOVE_SEGMENT{actor,path,remaining}、ROADBLOCK_HIT{actor,node}、REVERSED{actor}、LANDED{actor,node} |
 | money | MONEY{from,to,amount,paid,reason,ref}、LOAN{seat,amount,due}、REPAY、LOAN_REMINDER{seat,daysLeft}、LOAN_FORCED、ATM{seat,op,amount}、FINANCE、RESERVE_SHORTFALL{chairman,amount}、INSURANCE_PAYOUT |
 | property | LAND_BOUGHT{seat,lot,price}、LOT_LEVEL{lot,from,to,cause}、FACILITY_BUILT{lot,type}、LOT_MUTATED{lot,mode,cause}、TOLL_PAID{payer,owner,ally,amount,allyAmount,lots,mods}、TOLL_EXEMPT{payer,lot,reason}、FEE_PAID{payer,lot,feeKind,wheel,amount}、HOTEL_STAY{seat,days}、COMPANY_FEE{seat,company,industry,amount,wheel}、SUBSCRIBED{seat,stock,shares,unit}、INVEST_BLOCKED{seat,god}、CANNOT_AFFORD、MARK_SET/MARK_EXPIRED{lots,kind}、TENURE_EXPIRED{lots}、RESEARCH_STARTED/DONE/CANCELLED |
-| card/item | CARD_GAINED{seat,card,source}、CARD_LOST{seat,card,cause}、CARD_USED{seat,card,target}、CARD_NO_EFFECT、PASSIVE{seat,card,context,other}（other = 接反应台词的对方，没有为 null）、ITEM_GAINED/LOST/USED、VEHICLE{seat,vehicle,dice}、VEHICLE_DESTROYED、OBJECT_PLACED/REMOVED{obj,cause}、DOLL_WALK{path,cleared}、BOMB_ATTACHED/TRANSFERRED/EXPLODED、STRIKE{center,half,kind,lots,actors}、TELEPORTED、TIME_REWOUND{bySeat,toTurnNo}（resetsView）、SHOP_OPENED{shelf}、SHOP_TRADE、CHAIRMAN_GIFT |
+| card/item | CARD_GAINED{seat,card,source}、CARD_LOST{seat,card,cause}、CARD_USED{seat,card,target}、CARD_NO_EFFECT、PASSIVE{seat,card,context,other}（other = 接反应台词的对方，没有为 null）、ITEM_GAINED/LOST/USED、VEHICLE{seat,vehicle,dice,stowed?}（stowed 只在真人 STOW_VEHICLE 收起时出现：收回背包的那台，客户端不弹提示、不放音效）、VEHICLE_DESTROYED、OBJECT_PLACED/REMOVED{obj,cause}、DOLL_WALK{path,cleared}、BOMB_ATTACHED/TRANSFERRED/EXPLODED、STRIKE{center,half,kind,lots,actors}、TELEPORTED、TIME_REWOUND{bySeat,toTurnNo}（resetsView）、SHOP_OPENED{shelf}、SHOP_TRADE、CHAIRMAN_GIFT |
 | god | GOD_ATTACHED{seat,kind,displaced}、GOD_POWER{seat,kind,slot:{digits,value},transfers}、GOD_LEFT{seat,kind,reason}、GOD_SPAWNED{kind,node}、GOD_MANIFEST{seat,kind,lot,effect}、DOG_BITE、DOG_KNOCKED、DEATH_GOD_SUMMONED |
 | status | CONFINED{actor,where,days,total,cause}、BLESSING{seat,category,result}、STATUS_SET{actor,status,value}、ALLIANCE_FORMED/BROKEN/EXPIRED、BANK_REJECTED |
 | event | NEWS{id,params,affected}、FATE{seat,id,amount,blessing}、MAGIC_CONDITION{cond,targets}、MAGIC_CAST{caster,effect}、LOTTERY_TICKET{seat,number}、LOTTERY_DRAW{number,winner,prize}、MINIGAME_STARTED{seat,minigameId}、MINIGAME_RESULT{seat,score,points,skipped}、BAIL{by,seat}、VILLAIN_HIRED{by,kind}、VILLAIN_ACTION{kind,victim,what,amount}、VILLAIN_HOME、BEGGAR_ALMS{payer,beggar,amount,newNode} |

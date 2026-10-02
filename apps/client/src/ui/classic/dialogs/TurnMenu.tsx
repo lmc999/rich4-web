@@ -3,6 +3,8 @@
 // - 卡片欄（Panel#11 图0 青绿）/ 道具欄（图1 砖红）5×3 格：卡片格只写卡名、道具格画图标与持有数；可用的格点下去即进入
 //   目标选择，不可用的置灰（点它只看说明与原因）。悬停 / 焦点的卡在资料栏位置亮出插画（Data#530–559），日历位置的
 //   消息框写名称、说明与不可用原因；
+// - 道具欄右下角（第 15 格）：骑机车 / 坐汽车时画「车 + 禁止圈」（Panel#11 图15 / 16），点一下直接收起、改回步行
+//   （STOW_VEHICLE，不用确认、不选目标），随即收起回合菜单；步行、工程车时这一格空着（原版道具函数表第 14 项）；
 // - 欄上方一排木框文字钮：卡片 / 道具（切欄）、股市、公布栏、投降（没有原版图的次要操作）；工具列的卡片 / 道具钮同样切欄；
 //   手机热区只往上补（正下方紧贴卡片欄，居中补的下半截会被欄盖住）；
 // - 目标选择：见 TargetPanel（棋盘视窗里原版光标 + 高亮，右侧 DOM 候选列表）；确认 → USE_CARD / USE_ITEM；
@@ -11,7 +13,7 @@
 //   testid 与程序化回合菜单相同（turn-stock-sheet、turn-board-sheet）。
 // 用卡 / 用道具之后收起整个回合菜单回到棋盘（与经典外壳的快捷入口一致）；Esc / 关闭钮同样收起。
 // 状态与提交沿用 useDecision；各 testid 与程序化的 TurnMenuDialog / InventoryPanel / TargetPicker 相同（inv-card-<卡槽>、
-// inv-item-<道具>、turn-cards、turn-items、turn-stock、turn-board、turn-surrender、surrender-confirm…）。
+// inv-item-<道具>、inv-stow-vehicle、turn-cards、turn-items、turn-stock、turn-board、turn-surrender、surrender-confirm…）。
 import { cardDef, type ItemId, type TurnMenuCardRow, type TurnMenuItemRow, type UseTarget } from '@rich4/shared/engine';
 import { type ReactNode, useContext, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -42,6 +44,8 @@ import {
   ItemCellContent,
   MessageBox,
   PlateButton,
+  STOW_CELL,
+  StowCellContent,
 } from './parts';
 import { TargetPanel } from './TargetPanel';
 
@@ -69,7 +73,11 @@ interface Targeting {
   row: TurnMenuCardRow | TurnMenuItemRow;
 }
 
-type Focus = { k: 'card'; row: TurnMenuCardRow } | { k: 'item'; row: TurnMenuItemRow } | null;
+type Focus =
+  | { k: 'card'; row: TurnMenuCardRow }
+  | { k: 'item'; row: TurnMenuItemRow }
+  | { k: 'stow'; vehicle: 'moto' | 'car' }
+  | null;
 
 export default function TurnMenuScene(props: DecisionProps<'TURN_MENU'>): ReactNode {
   const { t } = useTranslation();
@@ -147,6 +155,26 @@ export default function TurnMenuScene(props: DecisionProps<'TURN_MENU'>): ReactN
     onClick: () => setTargeting({ source: { kind: 'item', item: row.item as ItemId }, row }),
     onHover: (on) => setFocus((f) => (on ? { k: 'item', row } : f?.k === 'item' && f.row.item === row.item ? null : f)),
   }));
+  // 收起交通工具：机车 / 汽车时固定在右下角那一格，点下去直接提交（旧存档里的决策没有 vehicle 字段：不显示）
+  const v = o.vehicle;
+  const stowVehicle = v?.canStow && (v.current === 'moto' || v.current === 'car') ? v.current : null;
+  if (stowVehicle !== null) {
+    const name = text.t('game:stow.label', { name: text.vehicle(stowVehicle) });
+    itemCells.push({
+      key: 'stow',
+      at: STOW_CELL.at,
+      label: name,
+      content: <StowCellContent vehicle={stowVehicle} label={name} />,
+      usable: true,
+      disabled: locked,
+      selected: focus?.k === 'stow',
+      testId: 'inv-stow-vehicle',
+      onClick: () => {
+        if (ctl.send({ type: 'STOW_VEHICLE' })) collapse();
+      },
+      onHover: (on) => setFocus((f) => (on ? { k: 'stow', vehicle: stowVehicle } : f?.k === 'stow' ? null : f)),
+    });
+  }
 
   const info: ReactNode =
     focus?.k === 'card' ? (
@@ -165,6 +193,11 @@ export default function TurnMenuScene(props: DecisionProps<'TURN_MENU'>): ReactN
         </p>
         <p>{text.itemDesc(focus.row.item)}</p>
         {!focus.row.usable && <p style={TEXT.warn}>{text.reason(focus.row.reason ?? 'noTarget')}</p>}
+      </>
+    ) : focus?.k === 'stow' && stowVehicle !== null ? (
+      <>
+        <p style={TEXT.title}>{text.t('game:stow.label', { name: text.vehicle(focus.vehicle) })}</p>
+        <p>{text.t('game:stow.desc', { name: text.vehicle(focus.vehicle) })}</p>
       </>
     ) : (
       <>

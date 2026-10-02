@@ -1,11 +1,14 @@
 /**
  * `rich4-extract assets …` 子命令（docs/design/original-skin.md §5 A2；design-draft §2.1）：
  *   assets build   [--out rich4-assets/] [--only board,ui,fx,minigame,audio,music,video] [--video]
- *                  [--audio opus,m4a] [--media <Steam Media 目录>] [--map-data <taiwan.map.json>] [--jobs 4] [--allow-unknown]
+ *                  [--audio opus,m4a] [--media <Steam Media 目录>] [--map-data <目录或文件>] [--strict] [--jobs 4]
+ *                  [--allow-unknown]
  *   assets verify  [--out rich4-assets/] [--full] [--json]
  *   assets ls      [--out rich4-assets/] [--group board.common] [--json]
- *   assets preview [--pack rich4-assets/] [--out .cache/assets-preview/] [--group …] [--map-data …]
+ *   assets preview [--pack rich4-assets/] [--out .cache/assets-preview/] [--group …] [--map-data <目录或文件>]
  *   assets synth   [--out .cache/synthetic-pack/]      fixture 地图的合成素材包（CI 用，不入库）
+ * --map-data：MapDef 目录（每张图读 <目录>/<mapId>.map.json，默认 rich4-data/maps/）；给单个文件时只作为台湾的 MapDef
+ * （旧用法），其他图仍从默认目录读。build 缺某张图的 MapDef 时只跳过它的原版皮肤并告警，--strict 时失败（exit 2）。
  * 素材包仅供私人与朋友游玩：只写入已被 git 忽略的目录（rich4-assets/ 或 .cache/），拒绝任何位置的 apps/*\/public/**；
  * build / preview / synth 输出到仓库外须显式 --allow-outside-repo（其他 git 工作树里仍按同样规则判定）。
  */
@@ -13,14 +16,14 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { type PackManifestV1, safeParsePackManifest } from '@rich4/shared/assets';
 import { AUDIO_FORMATS, type AudioFormat } from '../assets/audio';
-import { buildPack, parseParts } from '../assets/build';
+import { buildPack, type MapDataLocation, parseParts } from '../assets/build';
 import { catalogV206 } from '../assets/catalog.v206';
 import { DEFAULT_PACK_DIR, MANIFEST_FILE } from '../assets/manifest';
 import { buildPreview, DEFAULT_PREVIEW_DIR } from '../assets/preview';
 import { buildSyntheticPack, DEFAULT_SYNTH_DIR } from '../assets/synthetic';
 import { verifyPack } from '../assets/verify';
 import { ExitCode, type ExtractContext, ExtractError } from '../context';
-import { isFile } from '../io/readOnly';
+import { isDirectory, isFile } from '../io/readOnly';
 import { ICON, renderTable } from '../report/table';
 
 export interface AssetsArgs {
@@ -31,6 +34,7 @@ export interface AssetsArgs {
   audio?: string | undefined;
   media?: string | undefined;
   'map-data'?: string | undefined;
+  strict?: boolean | undefined;
   jobs?: string | undefined;
   'allow-unknown'?: boolean | undefined;
   'allow-outside-repo'?: boolean | undefined;
@@ -61,6 +65,15 @@ function parseFormats(v: string | undefined): AudioFormat[] | undefined {
 
 const mb = (n: number) => `${(n / 1048576).toFixed(2)} MB`;
 
+/** --map-data：目录 → 各图 <目录>/<mapId>.map.json；文件 → 只作为台湾的 MapDef（旧用法） */
+export async function mapDataOption(ctx: ExtractContext, v: string | undefined): Promise<MapDataLocation> {
+  if (v === undefined) return {};
+  const p = ctx.resolveUserPath(v);
+  if (await isDirectory(p)) return { mapDataDir: p };
+  if (await isFile(p)) return { mapData: p };
+  throw new ExtractError('E_ARGS', `--map-data 既不是目录也不是文件：${ctx.displayPath(p)}`, ExitCode.MISSING_INPUT);
+}
+
 export async function cmdAssetsBuild(ctx: ExtractContext, v: AssetsArgs): Promise<number> {
   const only = parseParts(v.only, v.video === true);
   const jobs = parseJobs(v.jobs);
@@ -72,7 +85,8 @@ export async function cmdAssetsBuild(ctx: ExtractContext, v: AssetsArgs): Promis
     ...(jobs ? { jobs } : {}),
     ...(formats ? { formats } : {}),
     ...(v.media ? { mediaDir: ctx.resolveUserPath(v.media) } : {}),
-    ...(v['map-data'] ? { mapData: ctx.resolveUserPath(v['map-data']) } : {}),
+    ...(await mapDataOption(ctx, v['map-data'])),
+    strict: v.strict === true,
     allowUnknown: v['allow-unknown'] === true,
     allowOutsideRepo: v['allow-outside-repo'] === true,
   });
@@ -86,6 +100,8 @@ export async function cmdAssetsBuild(ctx: ExtractContext, v: AssetsArgs): Promis
           totalBytes: r.totalBytes,
           groups: r.groupBytes,
           coverage: r.coverage.totals,
+          maps: Object.fromEntries(Object.entries(r.manifest.maps).map(([id, mp]) => [id, mp.binding.counts])),
+          mapsSkipped: r.mapsSkipped,
           warnings: r.warnings,
         },
         null,
@@ -109,6 +125,11 @@ export async function cmdAssetsBuild(ctx: ExtractContext, v: AssetsArgs): Promis
         `（另 ${c.audio.sfx.empty} 个空资源）、音乐 ${c.audio.music.built}/${c.audio.music.total}`,
     );
   }
+  for (const [id, mp] of Object.entries(r.manifest.maps)) {
+    const c = mp.binding.counts;
+    ctx.log.out(`地图皮肤 ${id}：企业 ${c.companies} / 地块 ${c.lots} / 节点 ${c.tiles}（分组 ${mp.group}）`);
+  }
+  if (r.mapsSkipped.length > 0) ctx.log.out(`${ICON.warn} 缺 MapDef、未生成皮肤的地图：${r.mapsSkipped.join(', ')}`);
   for (const f of r.reportFiles) ctx.log.out(`报告：${ctx.displayPath(f)}`);
   for (const w of r.warnings) ctx.log.out(`${ICON.warn} ${w}`);
   ctx.log.out(
@@ -214,7 +235,7 @@ export async function cmdAssetsPreview(ctx: ExtractContext, v: AssetsArgs): Prom
     outDir: path.resolve(ctx.cwd, v.out ?? path.join(ctx.root, DEFAULT_PREVIEW_DIR)),
     allowOutsideRepo: v['allow-outside-repo'] === true,
     ...(v.group ? { group: v.group } : {}),
-    ...(v['map-data'] ? { mapData: ctx.resolveUserPath(v['map-data']) } : {}),
+    ...(await mapDataOption(ctx, v['map-data'])),
   });
   ctx.log.out(`${ICON.pass} 预览：${ctx.displayPath(r.index)}（本机浏览，勿上传）`);
   return ExitCode.OK;

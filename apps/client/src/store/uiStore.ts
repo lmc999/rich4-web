@@ -96,7 +96,7 @@ export interface UiState {
   diceChoiceScope: DiceChoiceScope | null;
   /** 展开回合菜单时要直接打开的子页（TurnMenuDialog 打开后清空） */
   menuSheet: MenuSheet | null;
-  /** 原版片头正在播放（音频导演层期间不放标题曲） */
+  /** 原版片头或开局飞行动画正在播放（音频导演层期间不放标题曲 / 棋盘曲） */
   introPlaying: boolean;
   openPanel(p: PanelId | null): void;
   /** 展开回合菜单并直接打开某个子页 */

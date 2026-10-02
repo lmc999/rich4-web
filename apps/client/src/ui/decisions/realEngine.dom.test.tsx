@@ -116,17 +116,17 @@ describe('真实引擎 options → 对话框 → intent → 引擎', () => {
     expect(sc.player(0)).toMatchObject({ points: 500 - first.price, cards: [first.card] });
     const left = 500 - first.price;
 
-    // 道具 8（价格 30、已有 1 个）→ 默认数量 1
+    // 道具 8（价格 30、已有 1 个）→ 按原版一次买 1 个；买后这一种置灰，本次进店不能再买
     const again = await m.rerender();
     expect(within(again).getByTestId('shop-points')).toHaveTextContent(String(left));
     await m.user.click(within(again).getByRole('tab', { name: '买道具' }));
     await m.user.click(within(again).getByTestId('shop-item-8'));
     await m.user.click(within(again).getByTestId('shop-buy-item'));
-    const bought = commit(sc, 0, m) as { type: string; item: number; qty: number };
-    expect(bought).toMatchObject({ type: 'SHOP_BUY_ITEM', item: 8 });
-    expect(sc.player(0).points).toBe(left - 30 * bought.qty);
+    expect(commit(sc, 0, m)).toEqual({ type: 'SHOP_BUY_ITEM', item: 8, qty: 1 });
+    expect(sc.player(0).points).toBe(left - 30);
     const third = await m.rerender();
-    expect(within(third).getByTestId('shop-points')).toHaveTextContent(String(left - 30 * bought.qty));
+    expect(within(third).getByTestId('shop-points')).toHaveTextContent(String(left - 30));
+    expect(within(third).getByTestId('shop-item-8')).toBeDisabled();
     await m.user.click(within(third).getByTestId('shop-leave'));
     expect(commit(sc, 0, m)).toEqual({ type: 'LEAVE' });
     sc.expectNoAsk(0, 'SHOP');

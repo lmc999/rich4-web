@@ -4,7 +4,8 @@
 // - 抽屉模式下，侧栏里的倒计时与等待条（status）改叠在棋盘视窗左上角，抽屉关着也看得到；
 // - 舞台随 transform 缩小（scale < 1）或粗指针设备：data-hit="wide"，舞台钮按 44 CSS 像素补透明热区（design-draft §4.5）；
 // - 舞台里的钮被鼠标 / 触摸点过后不留焦点（键盘触发的保留），空格始终是「前进」；
-// - 安全区（刘海、home 指示条）由 .frame 的 inset 让出，舞台与抽屉都在安全区内计算。
+// - 安全区（刘海、home 指示条）由 .frame 的 inset 让出，舞台与抽屉都在安全区内计算；
+// - 对局画面（toasts）在舞台缩小时把 toast 的落点登记给 hud 的 Toasts：挪到棋盘视窗以外的空位（layout.classicToastSlot）。
 import clsx from 'clsx';
 import {
   type CSSProperties,
@@ -18,8 +19,16 @@ import {
   useState,
 } from 'react';
 import { useTx } from '../../i18n/tx';
+import { useToastSlot } from '../hud/toastSlot';
 import c from './classic.module.css';
-import { type ClassicLayoutBox, computeClassicLayout, REGION, type Rect, stageToScreen } from './layout';
+import {
+  type ClassicLayoutBox,
+  classicToastSlot,
+  computeClassicLayout,
+  REGION,
+  type Rect,
+  stageToScreen,
+} from './layout';
 
 const BoxContext = createContext<ClassicLayoutBox | null>(null);
 
@@ -60,6 +69,8 @@ export interface ClassicStageProps {
   rightBadge?: number;
   /** 测试：固定容器尺寸（否则量容器） */
   size?: { w: number; h: number };
+  /** 对局画面：舞台缩小时把 toast 挪到棋盘视窗以外的空位（layout.classicToastSlot；其他画面用缺省位置） */
+  toasts?: boolean;
   className?: string;
 }
 
@@ -110,6 +121,7 @@ export function ClassicStage({
   rightLabel,
   rightBadge = 0,
   size,
+  toasts = false,
   className,
 }: ClassicStageProps): ReactNode {
   const t = useTx();
@@ -118,6 +130,7 @@ export function ClassicStage({
   const frontRef = useRef<HTMLDivElement>(null);
   const [measured, setMeasured] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const [drawer, setDrawer] = useState<RailSide | null>(null);
+  const [toastOwner] = useState(() => Symbol('classic-stage'));
 
   useLayoutEffect(() => {
     if (size) return;
@@ -167,6 +180,16 @@ export function ClassicStage({
   }, [drawer]);
 
   const toggle = useCallback((side: RailSide) => setDrawer((d) => (d === side ? null : side)), []);
+
+  // toast 落点：换成视口坐标（加上 .frame 让出的安全区）登记给 hud 的 Toasts；布局阶段登记，换位置不闪一帧
+  const dw = dims.w;
+  const dh = dims.h;
+  useLayoutEffect(() => {
+    const slot = toasts && dw > 0 && dh > 0 ? classicToastSlot(computeClassicLayout(dw, dh), drawer) : null;
+    const o = slot ? ref.current?.getBoundingClientRect() : undefined;
+    useToastSlot.getState().set(toastOwner, slot && { ...slot, x: slot.x + (o?.left ?? 0), y: slot.y + (o?.top ?? 0) });
+  }, [toasts, dw, dh, drawer, toastOwner]);
+  useEffect(() => () => useToastSlot.getState().release(toastOwner), [toastOwner]);
 
   // 棋盘视窗太小时（手机横屏）决策层改叠在整个舞台下半部（工具列以下）
   const overlayRect = stageToScreen(box, box.board.w >= 420 ? REGION.board : { x: 0, y: 40, w: 640, h: 440 });

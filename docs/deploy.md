@@ -22,7 +22,7 @@
 - **Docker**：Docker Engine 27 及以上与 Compose v2（`docker compose version`）。27 起 compose 网络开启 IPv6 时自动分配子网、ip6tables 缺省开启；Dockerfile 用到 BuildKit 的 `RUN --mount` 与 `HEALTHCHECK --start-interval`。基础镜像只有 Docker Hub 官方的 `node:24-slim` 与 `caddy:2`（`scan-image.sh` 也在 `node:24-slim` 里运行扫描程序，服务器上不用装 Node）。
 - **中国大陆的主机**：域名必须先完成 ICP 备案，否则 80/443 端口的网站访问会被运营商拦截，证书也签不下来。
 - **防火墙 / 安全组**：放行 TCP 80（证书校验与跳转 HTTPS）、TCP 443、UDP 443（HTTP/3，可选）。SSH 端口建议只对自己的 IP 开放。app 的 3000 端口不需要、也不应该对外开放。
-- **本机**：已经 clone 本仓库并 `npm ci`，按 architecture M9 生成了 `rich4-data/`（`npm run extract -- all && npm run extract -- pack --out rich4-data/`）；要用原版皮肤的话还有 `rich4-assets/`（`npm run extract -- assets build`）。
+- **本机**：已经 clone 本仓库并 `npm ci`，按 architecture M9 生成了 `rich4-data/`（`npm run extract -- all && npm run extract -- pack --out rich4-data/`，含台湾、大陆、日本、美国四张图）；要用原版皮肤的话还有 `rich4-assets/`（`npm run extract -- assets build --out rich4-assets/ --video --strict`：不带 `--video` 就没有片头与开局飞行动画，步骤与核对见 §9.6）。
 
 ## 2. 取代码
 
@@ -175,7 +175,7 @@ docker compose logs app | grep -E 'asset pack enabled|rich4 server listening'
 
 - `/healthz`、`/readyz` 返回 200；`/api/maps` 未登录返回 401（门禁生效）。
 - 用真实域名时响应带 `Strict-Transport-Security: max-age=31536000`、`X-Frame-Options: DENY`、`Referrer-Policy: same-origin`，没有 `Server` / `Via` 头。
-- app 日志里有 `asset pack enabled`（带 packId、文件数）与 `rich4 server listening`（`maps` 里有 `taiwan`，`access` 为 `passcode`）。
+- app 日志里有 `asset pack enabled`（带 packId、文件数）与 `rich4 server listening`（`maps` 里有 `taiwan`、`china`、`japan`、`usa`，`access` 为 `passcode`）。
 - 浏览器打开 `https://rich4.example.com`：门禁页输入口令 → 片头（可跳过）→ 原版标题画面 → 單機對戰，能开局、掷骰、买地即可。之后 `docker compose logs app | grep 'private address'` 应当没有输出（§7.1）。
 
 ## 9. 日常运维
@@ -237,7 +237,7 @@ bash deploy/scan-image.sh rich4:local
 - 服务器内存紧张时（§1）用 §6 的「在本机构建」：本机构建、扫描、`docker save | ssh … docker load`，服务器上 `git pull && docker compose up -d --no-build --wait`。
 - 仓库没有远程地址时（§2），`git pull` 换成在本机重跑 `git archive --format=tar HEAD | ssh … 'tar -x -C /srv/rich4'`，其余命令不变。
 - 只想重启：`docker compose restart app`。
-- 数据包或素材包更新：按 §3 重新 rsync，再 `docker compose restart app`（服务器只在启动时读 manifest）。
+- 数据包或素材包更新：按 §3 重新 rsync，再 `docker compose restart app`（服务器只在启动时读 manifest）。数据包有变化（新增地图、重建 MapDef）时素材包必须跟着重建，见 §9.6。
 - **提取规则有改动的版本**（`tools/extract/src/assets/` 的 catalog、图像处理变了，例如 2026-09-30 把卡片插画 `card.<k>` 从 `corner-rgb0` 改为 `opaque`）：只升级镜像不够——素材包不在镜像里。先在本机 `npm run extract -- assets build` 重建、`npm run extract -- assets verify`，按 §3 带 `--delete` rsync `rich4-assets/`，`docker compose restart app`；再核对 app 日志 `asset pack enabled` 的 packId 与本机 `rich4-assets/manifest.json` 的 `packId` 相同（通过门禁后也可以看 `/pack/manifest.json`，例如 `entries["card.1"].transparency` 应为 `opaque`）。
 
 ### 9.5 备份与恢复
@@ -282,6 +282,29 @@ docker compose up -d --wait app
 - 恢复会让整个库回到备份时刻：之后建的房间、存档、签发的邀请码都会消失，**之后做过的吊销也会被撤销**（吊销计数 epoch 回退，旧 cookie 重新有效）。恢复后如有需要，再执行一次 §9.1 的吊销。
 - 启动时只恢复 24 小时内更新过的房间快照；更早的对局可以用存档（每个房间停机或解散时写的 `auto:<房间号>` 自动存档）读档继续。
 
+### 9.6 更新地图数据包与素材包（例如接入大陆 / 日本 / 美国）
+
+原版皮肤的棋盘按 MapDef 绑定（素材包构建时逐图核对地图资源、几何与精灵集合），所以**数据包一变，素材包就要跟着重建**：否则新图（或 MapDef 变了的图）在原版皮肤下回退到程序化棋盘。都在**本机**仓库根目录做：
+
+```sh
+# 1. 数据包：all = map raw（gm 0–3）→ map diff 0–3 → exe tables → map build --map all --strict4 --preview（不打包）
+npm run extract -- all
+npm run extract -- pack --out rich4-data/          # 与已有 manifest 合并；要跳过的图已在 manifest 里时报 E_PACK_DROP、什么都不写
+for gm in 0 1 2 3; do npm run extract -- verify --samples --map $gm; done
+shasum -a 256 rich4-data/maps/taiwan.map.json      # 必须仍是 14ef91e8…6c10
+
+# 2. 素材包：必须带 --video（片头与四段飞行动画）；--strict：缺任何一张图的 MapDef 就失败，不出半套包
+npm run extract -- assets build --out rich4-assets/ --video --strict
+npm run extract -- assets verify --out rich4-assets/ --full
+```
+
+- **台湾图必须逐字节不变**：`taiwan.map.json` 的 sha256 `14ef91e8…6c10`、mapHash `3c2f31eb…a551`。服务器上的房间快照、自动存档与玩家导出的存档都按 mapHash 引用地图，变了就会报 `MAP_UNAVAILABLE`，旧存档读不回来。
+- `rich4-data/manifest.json`：四张图都在，`pending` 都是 `[]`、`validation.ok` 都是 true。`pack` 不带 `--map` 时只打最近一次 `map build` 报告 exit 0 的图，其余告警跳过，所以某张图缺席时先看它的 `map build` 报告。
+- `rich4-assets/manifest.json`：`maps` 有四张图；台湾 MapDef 没变时 `maps/taiwan.skin.<hash>.json` 也不变。四张图的完整素材包约 213 MB（只有台湾时约 200 MB）。
+- 上传与生效：按 §3 带 `--delete` rsync 两个目录，`docker compose restart app`；核对 app 日志 `rich4 server listening` 的 `maps` 有四张图、`asset pack enabled` 的 packId 与本机 `rich4-assets/manifest.json` 相同；通过门禁后 `/api/maps` 四张图都是 `playable: true`，台湾的 `mapHash` 仍是 `3c2f31eb…`。然后四张图各开一局冒烟（原版皮肤：开局设置点关卡换背景、开局飞行动画、棋盘与小地图）。
+- 只更新了数据包、还没重建素材包时，新图照样能玩，只是棋盘用程序化美术；服务器不会因为素材包过期起不来。
+- 本机起服务核对时，`RICH4_DATA_DIR` 写绝对路径或干脆不设（服务器会自动找仓库根目录的 `rich4-data/`）：`npm run dev:server` 经 `npm -w` 在 `apps/server` 下运行，写相对路径 `rich4-data` 会找不到数据包，退回只有 fixture 地图。
+
 ## 10. 已经在用 nginx 的主机
 
 不启动 Caddy，让 app 只发布到宿主的 `127.0.0.1:3000`，由现有的 nginx 反代。§2 里仓库根目录的 `.env` 改成叠加 `docker-compose.nginx.yml`：
@@ -321,7 +344,9 @@ sudo nginx -t && sudo systemctl reload nginx
 | 能进页面但连不上房间 / 一直「重新连接中」 | 先看 `/readyz` 与 app 日志。公司网络、某些代理或 CDN 会拦 WebSocket 升级：前端这时会自动改走 HTTP 长轮询（浏览器开发者工具 Network 里能看到大量 `/socket.io/?EIO=4&transport=polling` 请求），可以正常玩，只是延迟略高；如果长轮询也不通，检查中间代理是否缓冲或截断了长连接（nginx 见 §10 的 `proxy_buffering off` 与 120 秒读超时）。 |
 | 很多人同时被 429 挡住 / 建房报 `RATE_LIMITED`、`SERVER_BUSY` | 多半是客户端 IP 塌缩（§7.1）。 |
 | 原版皮肤没出来，前端是程序化美术 | 看 app 启动日志：`asset pack: directory not found` / `no readable manifest.json`（目录没挂上或 uid 1000 读不了，见 §3 的权限）；`manifest.json failed contract validation` 或 `files do not match manifest`（上传不完整或本机素材包本身有问题：本机先 `npm run extract -- assets verify`，再按 §3 带 `--delete` 重新 rsync；可以临时设 `RICH4_ASSETS_VERIFY=full` 让服务器启动时逐文件复算 sha256）。 |
-| `/api/maps` 里没有 `taiwan` | app 日志里有「RICH4_DATA_DIR 下没有 manifest.json，只提供 fixture 地图」或「地图文件 sha256 与 manifest 不符，跳过」：`rich4-data/` 没传或不完整、权限不对，按 §3 重新同步后 `docker compose restart app`。 |
+| `/api/maps` 里没有 `taiwan`（或少了 `china` / `japan` / `usa`） | app 日志里有「RICH4_DATA_DIR 下没有 manifest.json，只提供 fixture 地图」或「地图文件 sha256 与 manifest 不符，跳过」：`rich4-data/` 没传或不完整、权限不对，按 §3 重新同步后 `docker compose restart app`。只少某张新图：本机 `rich4-data/manifest.json` 里就没有它（`pack` 只打最近一次 `map build` exit 0 的图），按 §9.6 重建数据包。 |
+| 新图能开局，但原版皮肤下棋盘是程序化美术 | 素材包是在这张图的 MapDef 之前（或 MapDef 变了之后没重建）打的：原版棋盘皮肤按 MapDef 绑定，对不上就回退。按 §9.6 在本机重建素材包、`assets verify`，再 rsync 并重启 app。 |
+| 原版皮肤下新局没有飞行动画（片头也没有） | 素材包构建时没带 `--video`（没有 `video.*` 条目时客户端直接跳过）：按 §9.6 带 `--video` 重建。读档继续、刷新、重连、观战本来就不播（DEVIATIONS DEV-24）。 |
 | 数据目录写不进去（改成绑定宿主目录而不是命名卷时） | 宿主目录属主要是 1000:1000：`sudo chown -R 1000:1000 <目录>`。 |
 | 重启后玩家没回到对局 | 页面会自动重连并拿到快照（epoch 加 1）；只恢复 24 小时内更新过的房间。所有真人都离开时房间暂停，第一个真人回来就继续。 |
 | `scan-image.sh` 退出码 2 | 扫描本身没跑成（docker 出错、`$TMPDIR` 不可写或磁盘满、拉不到 `node:24-slim`）：看它最后几行输出，修好环境后重跑；退出码 1 才是镜像里有原版或派生数据。 |

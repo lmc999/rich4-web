@@ -10,7 +10,7 @@
  *   没人待决时成交或流拍。
  * - 小游戏格：controller=human 且 minigames='play' 时发 MINIGAME 决策（只允许 MINIGAME_DECLINE，系统 action
  *   MINIGAME_RESULT 结算）；电脑座位直接走不玩分支（50 + rand15()%20）。
- * - 卡片格：抽 1 张卡（CARD_GAINED 为 redactCards 事件，用来测私密模式脱敏）。
+ * - 卡片格：抽 1 张卡（CARD_GAINED 为 redactHand 事件，用来测私密模式脱敏）。
  * - 每个事件都带 post（对公开世界做实体级 diff）；天数推进发 DAY_ADVANCED + DAY_END；限时、破产、真人全出局结束。
  * - 确定性：只用 state.secret.rng（xoshiro）；SYS_DEBUG forceNext{purpose:'dice'} 可指定点数。
  */

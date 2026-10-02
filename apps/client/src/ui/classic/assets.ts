@@ -29,11 +29,25 @@ export function diceFlicKey(n: number): string {
   return `ui.dice.roll${Math.min(3, Math.max(1, Math.trunc(n)))}`;
 }
 
-/** 节日插画（台湾图 Data#4–27：illustration.holiday.<slot>；slot 与插画序号的对应按目视，未读 exe 核实） */
-export function holidayArtKey(mapId: string | null, holiday: string | null): string | null {
-  if (!holiday || mapId !== 'taiwan') return null;
+/**
+ * 节日插画的全局编号基址（按原版地图号 gm）：键 illustration.holiday.<n>，n = Data 资源号 − 4 = 基址 + slot
+ * @source exe v2.06 VA 0x473098 u16[4] = (4, 28, 47, 67)（0x416428、0x43333e：mov bx,[gm*2+0x473098]; add ebx, slot），
+ *   slot 为 fcn.00450a17 按日期查节日表返回的槽号；Data#66（七夕）节日表里没有对应项，不用
+ */
+export const HOLIDAY_ART_BASE: readonly number[] = [0, 24, 43, 63];
+/** 各图节日表的有效项数（台湾 24、大陆 19、日本 19、美国 20；exe 节日表 VA 0x47d6aa） */
+export const HOLIDAY_ART_COUNT: readonly number[] = [24, 19, 19, 20];
+
+/** 节日插画（原版四张图：illustration.holiday.<基址 + slot>）；不是原版地图（fixture）、slot 越界时 null */
+export function holidayArtKey(globalMapId: number | null, holiday: string | null): string | null {
+  if (!holiday || globalMapId === null) return null;
+  const base = HOLIDAY_ART_BASE[globalMapId];
+  const count = HOLIDAY_ART_COUNT[globalMapId];
+  if (base === undefined || count === undefined) return null;
   const m = /^h(\d{1,2})$/.exec(holiday);
-  return m ? `illustration.holiday.${Number(m[1])}` : null;
+  if (!m) return null;
+  const slot = Number(m[1]);
+  return slot < count ? `illustration.holiday.${base + slot}` : null;
 }
 
 export interface SpriteFrame {

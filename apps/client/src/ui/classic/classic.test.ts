@@ -14,6 +14,8 @@ import {
   CLASSIC_SPRITES,
   diceFlicKey,
   ensureClassicImage,
+  HOLIDAY_ART_BASE,
+  HOLIDAY_ART_COUNT,
   holidayArtKey,
   maskRegion,
   resetClassicAssetsForTest,
@@ -122,12 +124,29 @@ describe('日历', () => {
     expect(daysInMonth(1900, 2)).toBe(28);
   });
 
-  it('节日插画：只有台湾图，slot → illustration.holiday.<slot>', () => {
-    expect(holidayArtKey('taiwan', 'h0')).toBe('illustration.holiday.0');
-    expect(holidayArtKey('taiwan', 'h23')).toBe('illustration.holiday.23');
-    expect(holidayArtKey('test', 'h0')).toBeNull();
-    expect(holidayArtKey('taiwan', null)).toBeNull();
-    expect(holidayArtKey('taiwan', 'x')).toBeNull();
+  it('节日插画：原版地图号 gm → 基址 [0,24,43,63] + slot（exe 0x473098 = Data#4/28/47/67）；fixture、越界、null 为 null', () => {
+    // 台湾 Data#4–27
+    expect(holidayArtKey(0, 'h0')).toBe('illustration.holiday.0');
+    expect(holidayArtKey(0, 'h23')).toBe('illustration.holiday.23');
+    expect(holidayArtKey(0, 'h24')).toBeNull();
+    // 大陆 Data#28–46
+    expect(holidayArtKey(1, 'h0')).toBe('illustration.holiday.24');
+    expect(holidayArtKey(1, 'h18')).toBe('illustration.holiday.42');
+    expect(holidayArtKey(1, 'h19')).toBeNull();
+    // 日本 Data#47–65（#66 七夕不用）
+    expect(holidayArtKey(2, 'h0')).toBe('illustration.holiday.43');
+    expect(holidayArtKey(2, 'h18')).toBe('illustration.holiday.61');
+    expect(holidayArtKey(2, 'h19')).toBeNull();
+    // 美国 Data#67–86
+    expect(holidayArtKey(3, 'h0')).toBe('illustration.holiday.63');
+    expect(holidayArtKey(3, 'h19')).toBe('illustration.holiday.82');
+    expect(holidayArtKey(3, 'h20')).toBeNull();
+    // fixture（globalMapId null）、未知地图号、没有节日、键不认识
+    expect(holidayArtKey(null, 'h0')).toBeNull();
+    expect(holidayArtKey(4, 'h0')).toBeNull();
+    expect(holidayArtKey(0, null)).toBeNull();
+    expect(holidayArtKey(0, 'x')).toBeNull();
+    expect(HOLIDAY_ART_BASE.map((b, gm) => b + HOLIDAY_ART_COUNT[gm]!)).toEqual([24, 43, 62, 83]);
   });
 });
 
@@ -151,7 +170,8 @@ describe('资料栏四页', () => {
       expect(n.cash + n.deposit - n.loan + n.stockValue + n.estateValue).toBe(n.netWorth);
       for (const page of PROFILE_PAGES) expect(profileRows(page, n)).toHaveLength(3);
       expect(profileRows('funds', n).map((r) => r.value)).toEqual([p.cash, p.deposit, n.netWorth]);
-      expect(profileRows('other', n)[2]!.value).toBe(`${p.cardCount}/${p.items.reduce((a, b) => a + b, 0)}`);
+      expect(profileRows('other', n)[2]!.value).toBe(`${p.cardCount}/${(p.items ?? []).reduce((a, b) => a + b, 0)}`);
+      expect(n.items).toBe(p.itemCount);
     }
     expect(profileNumbers(view, map, 9 as never)).toBeNull();
   });

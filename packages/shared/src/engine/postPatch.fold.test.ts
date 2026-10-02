@@ -20,6 +20,7 @@ describe('post 折叠一致性', () => {
   }, () => {
     let actions = 0;
     let events = 0;
+    let stows = 0;
     for (let seed = 0; seed < 20; seed++) {
       const players = seed % 3 === 0 ? (['human', 'ai', 'human', 'ai'] as const) : (['human', 'ai', 'ai'] as const);
       const g = newGame({
@@ -41,10 +42,13 @@ describe('post 折叠一致性', () => {
         state = r.state;
         actions++;
         events += r.events.length;
+        if (a.type === 'STOW_VEHICLE') stows++;
       }
     }
     expect(actions).toBeGreaterThan(5000);
     expect(events).toBeGreaterThan(actions);
+    // 奇数种子汽车开局：随机候选里有收起交通工具（STOW_VEHICLE），VEHICLE{stowed} 的折叠也在这里核对
+    expect(stows).toBeGreaterThan(0);
   });
 
   it('diffPublic / applyPostPatch 的基本性质', () => {

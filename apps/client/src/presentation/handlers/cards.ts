@@ -10,10 +10,10 @@ import {
   CARD,
   CARD_KEYS,
   type CardId,
+  type EventUseTarget,
   type GameEventOf,
   type PassiveContext,
   type SeatIndex,
-  type UseTarget,
 } from '@rich4/shared/engine';
 import { CARD_SHOW_MS, CARD_SHOW_TAIL_MS } from '@rich4/shared/view';
 import { CARD_CATEGORY, type CardCategory } from '../../ui/components/cardVisuals';
@@ -50,7 +50,7 @@ export function cardBeamColor(card: CardId): number {
 }
 
 /** 目标在棋盘上的位置（光束终点）；没有具体位置的目标（股票、骰子、全体）为 null */
-export function targetAnchor(ctx: PresentationContext, user: SeatIndex, t: UseTarget): Anchor | null {
+export function targetAnchor(ctx: PresentationContext, user: SeatIndex, t: EventUseTarget): Anchor | null {
   switch (t.t) {
     case 'seat':
     case 'rob':
@@ -78,8 +78,8 @@ export function targetAnchor(ctx: PresentationContext, user: SeatIndex, t: UseTa
   }
 }
 
-/** 目标的文字说明（弹窗「目标：…」） */
-export function targetText(ctx: PresentationContext, t: UseTarget): string | null {
+/** 目标的文字说明（弹窗「目标：…」；抢夺卡只写被抢的人，不写抢走的东西——私密手牌模式下别人看不到种类） */
+export function targetText(ctx: PresentationContext, t: EventUseTarget): string | null {
   const n = ctx.names;
   switch (t.t) {
     case 'none':

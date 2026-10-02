@@ -1434,6 +1434,7 @@ RICH4_ASSETS_ALLOW_UNGATED=0     # 仅本机调试：非 production + PUBLIC_URL
 - `packages/shared/src/engine/golden/taiwan.test.ts`：有 `RICH4_DATA_DIR`（相对路径按当前目录与仓库根解析，要有 manifest 里的 taiwan 条目）时，在台湾图上用固定种子跑 4 局 4 电脑对局（30 / 91 / 182 / 365 天；角色各不相同；最后一局第 268 天以 lastStanding 结束）。四个座位都由 OriginalAiPolicy 代打，rng 派生与服务器 AiDriver 相同（座位视角 projectState + makeAiContext）；每一步 `checkInvariants`、每 50 步 `explainState`，AI intent 被拒 0 次；同一种子重跑一遍结果完全相同。
 - 快照 `golden/__golden__/taiwan.json` 只含哈希、计数与事件类型名（ENGINE_VERSION、mapHash、每局的 actions / days / reason / 事件总数 / 各类型次数 / 前 160 个事件类型 / 每 400 个事件的链式哈希 / 终局状态哈希），不含原版数据；check-no-original 放行。数据包 mapHash 与快照不同时 skip 并提示重新生成；ENGINE_VERSION 与快照不同时失败（规则变更升版本要一起刷新）。缺数据（CI）时整组 skip。
 - 刷新：`RICH4_UPDATE_GOLDEN=1 RICH4_DATA_DIR=./rich4-data npx vitest run --project shared src/engine/golden/taiwan`。
+- 2026-09-30 起泛化为 `golden/maps.test.ts`，四张原版图表驱动，刷新时必须用 `RICH4_GOLDEN_MAPS` 点名要重写的图（§27.6）；taiwan.json 内容不变。
 
 ### 24.4 实机核对清单
 
@@ -1588,3 +1589,167 @@ RICH4_ASSETS_ALLOW_UNGATED=0     # 仅本机调试：非 production + PUBLIC_URL
   - 原版手机横屏开局设置的说明约 9 CSS 像素（minor，属实）：两列面板里计时档位这一行占满整行（`settingsFields.WIDE_FIELDS` 把它排在演出节奏之后、落在左列，14 项 + 快速局仍是 8 行），说明排在下拉框右边、字号 14 逻辑像素（844×390 实测 11.4 CSS 像素），在「：」处折行、不越出行。
   - 顺带发现、未改（已另开任务建议）：左手模式下镜头 insets 仍按右栏在右边算，跟随的角色不在棋盘视口正中；原版皮肤从系统菜单点「托管设置」，原版托管画面开在系统菜单下面（改层级之前就是这样）。
   - 验证：`npm run check` 全绿（vitest 302 个文件 2975 通过 2 跳过）；E2E 全量（CI=1）默认配置 45 通过 1 跳过 1 失败——失败的是 `skin-classic-dialogs`「原版老虎机」（观战页 30 秒内没出现老虎机，与本轮改动无关），单独重跑该文件两遍 10/10 通过；原版配置 43 通过 4 跳过（跳过均为按配置的既有 skip）。`decision-countdown` 在去掉 `hudBars` 时会失败（1100×800 偏下），修复后两种配置都通过。真实素材包目视（`test/review-fix-shots.mjs`，端口 3361 / 5361，截图与记录在 `.cache/cs/fix/`，不入库）：程序化 1280×800 起换 10 档窗口（含行动区两行的 1200×800、1100×800、1100×700、1024×768、1194×834、1024×600），倒计时中心与棋盘视口中心偏差都是 0；系统菜单、设置、托管设置打开时数字中心处最上层是对话框（两种皮肤），回合菜单的股市面板上最上层仍是数字；台湾图真引擎里 P2 身无分文落到 P1 的地上破产后，P1 立刻变不限时（侧栏「輪到你了 不限時」、没有中央倒计时），P2 关页面转断线托管后又等 33 秒，P1 的回合菜单没被代决、仍是 human；大厅与建房的说明按预期换文字；原版 844×390 开局设置里说明实际 11.4 CSS 像素、在下拉框右边、不越出行；控制台 0 错误。
+
+## 27. 原版另外 3 张图（大陆 / 日本 / 美国）接入实施记录（2026-09-30）
+
+接入 v2.06 的另外 3 张原版图：大陆 `china`（gm 1）、日本 `japan`（gm 2）、美国 `usa`（gm 3），显示名 中国大陆 / 日本 / 美国（繁体 中國大陸 / 日本 / 美國）。范围：MapDef 与数据包、原版皮肤素材（地面、小地图、住宅、企业 / 景观精灵、节日插画、开局设置背景）、原版选关界面与 Fly*.avi 飞行动画、引擎与表现层对新结构的适配、golden 与自对弈。按五个轨道并行：T1 数据管线、T2 原版素材、T3 选图与飞行动画、T4 引擎与表现适配、T5 golden / 自对弈 / 文档汇总。
+
+用户已定的取舍：三张图的数据基线都用 v206-mapdat（VERIFY V-M1）；原版文案瑕疵照原样保留（DEVIATIONS 附表）；联机由房主自选地图，不做通关记录与「下一关」列表（DEV-23）；飞行动画只在客户端播、可以跳过，读档 / 重连 / 观战不播（DEV-24）；开局设置去掉 StageBanner；V-M7（环路关押格）、美国 kind 2 节日、街道价格样本、命运 33–36 按图文案、日本股市电子业图标先按现状或 exe 证据实现并用测试锁定，登记待用户在原版核实（VERIFY、verify-checklist §5）；开局设置头像格的位置差异不在本轮范围。
+
+**台湾不变**：`rich4-data/maps/taiwan.map.json` 逐字节不变（sha256 `14ef91e8…6c10`，mapHash `3c2f31eb…a551`），`__golden__/taiwan.json` 不变——已部署服务器上的房间快照与存档按 mapHash 引用地图。
+
+### 27.1 冻结的接口约定
+
+- **id 与 gm**：taiwan 0、china 1、japan 2、usa 3；`MapDef.globalMapId = gm`；顺序即原版关卡顺序（exe 0x46aac4 第 9–12 项、0x4070e1），`tools/extract` 的 MAP_KEYS、客户端 STAGE_MAPS、SaveLoadScreen 与 golden 的 MAPS 同序。
+- **素材键**（台湾的键全部不变）：地面 `map.<id>.ground`（map#2gm，2×2 切片）、小地图 `map.<id>.minimap`（map#8+gm）、住宅 `map.<id>.house.<L>`（map#27+5gm+L−1）；企业 / 景观精灵键名仍是 `board.landmark.<res>`，只有一张图用的归 `map.<id>` 分组，多图共用的 {75,80,82,84,87,132,144} 归新分组 `board.landmarks`；节日插画沿用全局编号 `illustration.holiday.<res−4>`，res = [4,28,47,67][gm] + slot（exe 0x473098），每图节日数 [24,19,19,20]，Data#66（七夕，节日表没有对应项）不收；开局设置背景台湾 `title.setup.bg`（jump#0）、其他 `title.setup.bg.<id>`（jump#1–3）；飞行动画 `video.flytw / flychina / flyjp / flyus`（exe 0x472f78）。
+- **i18n 键**：`lobby:maps.<id>`；`events:holiday.<id>.h<slot>`；`fate:33–36.byMap.<gm>`。
+
+### 27.2 数据管线（T1，`tools/extract`）
+
+- **地图键**：`map/pack.ts` 的 MAP_KEYS 为四张图；`resolveMapKeys` 接受键名、gm 数字与 `all`（报错列出四个键），只要一张图的地方用 `resolveMapKey`（拒绝 `all`）。`map/i18n.ts` 的 MAP_NAMES 增加 中國大陸 / 日本 / 美國（zh-CN 由 opencc 生成）。
+- **pack**：不带 `--map` 时只打最近一次 `map build` 报告为 exit 0 的图，其余告警跳过；显式 `--map` 时条件不满足报 `E_PACK_BUILD`。`map build` 中途抛错也写构建报告，旧的 map.json 不会被打进去。
+- **企业↔股票核对**（`exe/mapData.ts`）：结果分 OK / KNOWN / BAD，只有 BAD 让 `map build` exit 1；白名单 KNOWN_NAME_MISMATCHES 只有一项：gm 1 C4「王井府百貨」对股票下标 2「王府井百貨」（@source MapDat[1]、v3.11 companies#4，股票表 0x47ce92 + 432）。
+- **样本**（`verify/samples.ts`）：`runMapSamples(raw, spec)` 按图规格 MAP_SAMPLES 驱动（`runTaiwanSamples` 保留为包装，`samples.map0.json` 逐字节不变）。新图断言：计数、关押格 8001 / 8002 的节点与景观名、封路的确切边（大陆 28→136、日本 78→79、美国无）、bit31 格（日本 23–29，其余 0）、各企业 industry / stockIndex / assetValue、已知瑕疵（按来源给期望）；街道样本留了 ⚠️ 占位（VERIFY V-M9）。台湾 bit31 格 17 个只在 local 测试断言，没加进台湾样本规格（保持 samples.map0.json 不变）。
+- **map build / provenance**：`--map all` 逐图构建，一张图出错不影响其余各图；样本对所有图生成；台湾仍写 `docs/research/provenance-summary.md`（逐字节不变，核对时要带 `--strict4 --preview`），其他图写 `docs/research/provenance-<key>.md`；构建报告增加 `exit` 与 `companyStocks`。
+- **placeLands**：放宽只针对严格候选为空（拥挤）的地块，按轮次扩大；I_LAND_FAR 只列最终距期望格超过 2 的地块。台湾不进放宽分支（按 sha 核对）。
+- **`extract all`**：依次 map raw（gm 0–3，`--sources all`）→ map diff 0–3 → exe tables → `map build --map all --strict4 --preview`，任何一步失败即停，退出码取最大值，不自动 pack。map diff 的 exit 4 只在该图的规则差异正好等于已知清单 `ACCEPTED_RULE_DIFFS`（大陆 `companies#4.name`、日本 `lands#17.rent`）、且 overrides 的 `source.id` 是清单的基线 `v206-mapdat` 时视为已处理（否则大陆、日本的已知差异会让 `all` 在真实数据上永远 exit 4）；清单之外的规则差异照样停下（审查修复）。`pack` 与 `<out>/manifest.json` 已有条目合并，只替换本次打包的图；不带 `--map` 时要跳过的图已在 manifest 里就报 `E_PACK_DROP`，`--replace` 才整份重写（审查修复：此前 `pack --map china` 会把 manifest 覆盖成只剩大陆）。`verify --samples` 放开到 `--map 0..3`。
+- **几何 overrides**（`tools/extract/maps/{china,japan,usa}.overrides.json`，已冻结）：基线 v206-mapdat、`expectResourceSha256` 取完整值、格点固定 T=48 identity，原点大陆 (32,39) / 日本 (17,41) / 美国 (34,6)，`terrain.margin` 4，expect 计数；再用 nodeCell / edgeRoute / lot 迭代：大陆 nodeCell 75/76/90/121/122/135、edgeRoute 26-27/79-80/121-122、lot C1/C2/F7；日本 nodeCell 11/57/101/103、edgeRoute 60-61、lot C2；美国 nodeCell 32/36/48/53/66/89、edgeRoute 1-2、lot C2。结果：三张图偏侧住宅地 0、W_TILES_TOUCH 0、I_LAND_FAR 0、facing 假设启用、企业都是 2×2；剩余告警都在允许清单内（大陆 W_LINK_ONEWAY / W_DEADEND / W_COMPANY_REMOTE_FRONT，日本另有 W_NAME_EMPTY，美国 W_COMPANY_REMOTE_FRONT / W_NAME_EMPTY）。每条 override 都做过逐条去掉的对照，理由写在 notes。之后再改几何，要重建素材包与对应图的 golden（`maps.local.test.ts` 锁定了 dataHash）。
+- **各图数据包**：
+
+  | 图 | 节点 / 住宅 / 设施 / 企业 / 景观 | dataHash（mapHash） | 文件 sha256 |
+  |---|---|---|---|
+  | taiwan | 103 / 50 / 4 / 3 / 21 | `3c2f31eb596b…a551`（不变） | `14ef91e8…6c10`（不变） |
+  | china | 144 / 73 / 8 / 4 / 26 | `a36d1285be25…4363` | `58bd4313…138d` |
+  | japan | 110 / 49 / 5 / 6 / 16 | `0fc7c82a5d02…5a48` | `fe439cb6…1474` |
+  | usa | 118 / 55 / 8 / 6 / 16 | `52a0d97ced74…5ed2` | `f0b9a5f7…232b` |
+
+- **测试**：单测 `mapKeys.test.ts`、`placeLandsRelax.test.ts`，补了 samples / exeTables / cli / mapBuild.cli；本机测试 `maps.local.test.ts`（22 条）锁定三张新图的构建结果与 dataHash，并回归台湾 sha、dataHash 与 bit31 格。文档：data-pipeline.md §2、§3、§8.2、§10.1、§10.2，README 的提取一节。
+
+### 27.3 原版素材（T2，`tools/extract/src/assets`）
+
+- **资源目录**（`catalog.v206.ts`）：ORIGINAL_MAPS（taiwan / china / japan / usa = gm 0–3）与每张图的企业 / 景观精灵集合；每张图生成地面、小地图、住宅五级；共用精灵进 `board.landmarks`，只有一张图用的进 `map.<id>`（台湾旧键全部保留，只有 75/80/84/87/144 换了分组）。节日插画收 Data#4–86（不收 #66），置信度 exe（0x473098 + fcn.00450a17 返回的 slot），改正了旧文档差一位的区间（日本 47–65、美国 67–86）。开局背景 jump#1–3 → `title.setup.bg.<id>`（exe 0x406c05、0x40549c、0x40730c）。命运插图 Data#436–475 按 exe 0x473dd8 表升为 exe（k < 33 用表[k]，k ≥ 33 用表[k+4gm]）。排除表删掉「其他地图」几段：map#1/3/5/7（地图结构）继续排除，map#69–74、83、86、88、100 标为四张图都不引用，Data#66 标为七夕。覆盖率仍为 100%。
+- **构建**（`build.ts`、`commands/assets.ts`）：逐图生成皮肤，MapDef 按 mapId 读 `--map-data` 目录下的 `<id>.map.json`（默认 `rich4-data/maps`，给单个文件时按旧用法只作台湾）；MapDef 的 id / gm 与目录不符直接失败，精灵集合逐图核对；缺某张图的 MapDef 只跳过它的皮肤并告警，`--strict` 时失败（exit 2）；报告里新增 `maps`（已建、已跳过的图与各图 binding 计数）。`verify` 遇到「有地面没有皮肤」的图只告警；`preview` 每张图读自己的 MapDef 渲染棋盘（新图取中心、医院、监狱，日本另加快艇段镜头）。
+- **合成包**：`title.setup.bg.china/japan/usa` 占位（换天色、左上角画 gm 个白块）与四张图首末 slot 的节日插画占位；不含 `video.fly*`（客户端 FlyVideo 在 E2E 里走缺条目跳过）。
+- **binding 计数**（企业 / 地块 / 节点）：taiwan 3/54/103（不变）、china 4/81/144、japan 6/54/110、usa 6/63/118。试跑（调研版 MapDef）完整包 2382 个条目、4527 个文件、212.89 MB，比只有台湾时多 129 个条目、13.26 MB；分组体积（试跑报告，按 10⁶ 字节计）：`map.china` 3.87 MB、`map.japan` 4.02 MB、`map.usa` 3.49 MB，`illustration.holiday` 0.61 → 2.17 MB（82 个文件），`title` 多 0.87 MB，`board.landmarks` 0.35 MB（7 个精灵），`map.taiwan` 4.30 → 4.06 MB；台湾皮肤 JSON 逐字节不变（sha256 `ca179eee…`）。正式包由 Build 阶段在 T1 冻结的 MapDef 上带 `--video --strict` 重建：`npm run extract -- assets build --out rich4-assets/ --video --strict` exit 0（2 分 35 秒，清掉 15 个旧产物：台湾住宅 sprites/map/27–31 的旧 atlas JSON 及其 .br / .gz），packId `daa850ef3a455b4a`（旧 `932c2c2602ab571f`），manifest sha256 `581f4047…13c8`；2382 个条目、4527 个文件、212.89 MB（按 1048576 字节计；盘上连 .br / .gz 238.30 → 251.88 MB），与试跑包的 packId 与文件表逐项相同——调研版与终版 MapDef 文件 sha 不同，但皮肤绑定只看世界坐标、朝向与 resourceSha256，这几项相同。四张图的皮肤：`taiwan.skin.ca179eee`（不变）、`china.skin.931e2b05`、`japan.skin.d0143fbd`、`usa.skin.e9cacd29`，用客户端同一个 `checkMapSkinBinding` 核对四张图都绑定成功。旧条目 2253 个一个不缺，换分组的只有 `board.landmark.75/80/84/87/144`（map.taiwan → board.landmarks）；另有 70 个旧条目只改了来源说明（`illustration.fate.*` guess → exe，`illustration.holiday.0–23` 与 `title.setup.bg` 升 exe，`map.taiwan.house.1–5` 的 src 多一条 VA 0x407a98），像素不变。分组增量：`map.china` +3.69 MB、`map.japan` +3.84 MB、`map.usa` +3.33 MB、`illustration.holiday` 0.58 → 2.06 MB（82 个文件，键 0–82 缺 62 即 Data#66）、`title` +0.83 MB、`board.landmarks` +0.33 MB、`map.taiwan` 4.10 → 3.87 MB；`video.flytw / flychina / flyjp / flyus` 四段都在（各 6688 ms）。`assets verify --out rich4-assets/ --full` exit 0（0 处不符），`assets preview` 873 张联系表、52 张棋盘渲染，逐图目视通过（`.cache/maps/assets/` 的联系表，本机）。之后任何流程重建都应得到同一个 packId（构建是确定性的）。
+- 文档：original-skin.md §6「按地图素材与选关流程」；ui.md、design-draft.md 的节日区间。部署：数据包一变素材包必须重建，且要带 `--video`（deploy.md §9.6）。
+
+### 27.4 选关界面与飞行动画（T3，客户端）
+
+- **选关**（`ui/classic/screens/layout.ts`）：STAGE_MAPS = taiwan / china / japan / usa（下标即 gm）；新增 `stageOf`、`setupBgKey`、`FLY_VIDEO` / `flyVideoKey`、`stageCheck`。竖栏按 exe 贴在整屏 (445,10)（0x404f71；此前目视值 448），关卡行点击区按竖栏坐标推算，即整屏 (457,31+32k)–(625,62+32k)（exe 0x46aac4 第 9–12 项），勾画在竖栏内 (150,20+32k)（y 表 0x46ab2c），即整屏 (595, 30+32k)。点关卡行播 `click`（全局 UI 音效表第 1 项，exe 0x405439 push 0x47f602），不是下拉框的 `move`。手机横屏 / 粗指针下关卡行只读（32 高、四行紧挨，缩放后约 25 CSS 像素），开局设置用两列面板里的地图下拉、大厅的房主用左抽屉「房间设置」的地图下拉选图。**去掉 StageBanner 与 SETUP_BANNER**：原版开局设置没有这条横幅，Panel 帧 11–14 只在「下一关」列表里用。
+- **开局设置**（`ClassicCreate.tsx`）：关卡行改成按钮，只有 `/api/maps` 里存在且 playable 的图可点，其余变暗、禁用；点选写 `draft.mapId`（与左侧地图下拉双向同步）、播 `move` 音效、打勾、背景换 jump#gm。新组件 `parts.SetupBg`：jump#0 垫底，该图的 `title.setup.bg.<id>` 不可用时回退 jump#0（exe 0x406c05 / 0x40549c）；`SCREEN_KEYS` 仍只要求 `title.setup.bg`。建房缺省地图改取服务器的 `defaultMap`（`settingsDraft` 新增 `FALLBACK_MAP_ID`、`mapAfterList`；`defaultMap` 不可开局时取列表里第一张可开局的图），程序化皮肤的 `CreateRoomForm` 同样。
+- **选人大厅**（`ClassicLobby.tsx`）：背景跟随房间地图；房主点关卡行发 `room:updateSettings {game:{mapId}}`，非房主与读档后的大厅只读；`ClassicRoomScreen` 的进房中 / 出错画面在已知房间时用该图背景；标题画面仍是 jump#0。
+- **节日插画**：`assets.holidayArtKey(globalMapId, holiday)` = `illustration.holiday.<[0,24,43,63][gm]+slot>`（exe 0x473098），slot 超出 [24,19,19,20] 返回 null（fixture 等没有 gm 的图也是 null）；`CalendarPanel` 传入 `map.def.globalMapId`。三张新图的节日名（`events:holiday.<id>.h<slot>`）是我们自写的，对照节日插画目视：日本 h1、h2 都写「新年」，大陆 h6 写「党的生日」，美国 h0 写「除夕」，没有原版文案出处（TODO，待用户过目）。
+- **飞行动画**（新文件 `screens/FlyVideo.tsx`，DEV-24）：`IntroVideo` 泛化出 `videoUrl(key)` 与共用的 `VideoOverlay`。只在原版房间页播，条件是本页亲眼看到大厅 → 对局（或单机页刚建房开局留下的 `rich4.flyFresh` 记号）；读档开局（开局前大厅里有 `loadedSave`）、刷新 / 重连 / 中途进房、观战、`?anim=instant`、素材包缺条目都不播；按「房间码:epoch」记在 sessionStorage（读写都容错）。可跳过（按钮与 Esc / Enter / 空格，在捕获阶段接管，不会同时触发空格掷骰）；轮到本人决策时跳过钮醒目（`data-urgent`）；5 秒还没开始、或超过条目时长 + 3 秒都直接结束；叠在 Loading 之上（z 205）；浏览器不许有声自动播放时照片头的做法静音播放。MapDef 与状态里都没有「读档恢复」字段（服务器开局时清掉 `loadedSave`），所以「新局」用「本页见过大厅 → 对局且大厅里没有 loadedSave（或单机记号）」判断，再以 `view.clock.elapsedDays === 0` 兜底。
+- **暂缓回放**：新接口 `EventPlayer.hold(): () => void`（解除函数幂等，`player.held` 可读）：暂缓期间批次照常入队、积压照常累计，全部解除后接着播，积压按现有追帧规则加速或跳过；`reset`（快照）照常直达，`dispose` 清掉所有持有者。播放期间 `uiStore.introPlaying` 为真，`audioWiring` 在对局中返回 `screen: none`，不放棋盘曲，播完由导演层切回 `game`（原版 0x41525d 飞行动画后从棋盘曲第 0 首开始，未与原版对照，VERIFY V-U10）。
+- **素材预取**（`skin/resolve.ts`、`skinStore.ts`、`PackClient.ts`）：对局时预取「当前地图组 + `board.landmarks`」（`SHARED_BOARD_GROUPS` / `mapWarmGroups`），不预取其他三张图的组；素材包里有 `board.landmarks` 而它加载失败时，与地图组失败一样判 group-missing、回退程序化棋盘；旧素材包没有这个组时忽略。
+- **i18n 与开发页**：`lobby:maps` 加 china / japan / usa；`classicScreens` 加 `fly.*` 与带图名的 `stageNone`；`events` 加三张图的节日名；`ui` 的 `dev.map.taiwanHint` 改为通用的 `dataHint`；`dev/mapSource.ts` 的 MAP_CHOICES 加三张图，`dev/MapPreview.tsx` 对所有原版图显示数据提示。只重生成这 4 个命名空间的 zh-TW。
+- **顺带修复**：原版全屏视频层与 Loading 整图在手机横屏和桌面上被上下裁切（视频元素高度按宽度推出，812×375 下为 812×609）；改为绝对定位后按 4:3 留黑边，片头也一并修好。
+- **测试**：`screens.test.ts`（关卡行与勾按 exe、STAGE_MAPS / setupBgKey / flyVideoKey、flyMedia、shouldPlayFly 矩阵）；`screens.dom.test.tsx`（defaultMap 缺省、点关卡同步下拉 / 勾 / 背景、不可开局变暗、背景回退 jump#0、大厅房主改图 / 非房主与读档只读）；`flyVideo.dom.test.tsx` 7 例（新局播一次、ended / 出错 / Esc 结束且 Esc 不外传、醒目跳过钮、读档不播、刷新 / 观战不播、instant / 缺条目 / fixture 不播、单机记号）；`classic.test.ts`（台 h0→0、h23→23；陆 h0→24、h18→42；日 h0→43、h18→61；美 h0→63、h19→82；越界 / null）；`classic.dom.test.tsx`；`EventPlayer.test.ts`（hold）；`audioWiring.test.ts`；`resolve.test.ts` 与 `skinStore.dom.test.tsx`（board.landmarks 预取与失败回退、不预取其他图）；`stores.test.ts`（mapAfterList）；`lobby.dom.test.tsx`；`keys.test.ts`；E2E `skin-classic-screens`「选关」（拦截 `/api/maps` 返回四张图，美国不可开局、缺省大陆）与 `lobby.spec`（建房缺省地图 = `/api/maps` 的 defaultMap）。
+
+### 27.5 引擎与表现层适配（T4）
+
+- **日历**（`engine/rules/calendar.ts`）：文件头注释改写：v2.06 反汇编 fcn.00450a17 0x450b12–0x450b6c 直接看到「w < 当月 1 日的星期 → 7」的写法，美国图 kind 2 落到星期日的原版缺陷在 v2.06 上也有了静态证据（不再只是从 v3.11 推断）。`calendar.test.ts` 新增 5 组美国用例（HolidayDef 字面量）：1998-01-18、1998-09-06 都是星期日；11 月第 4 个星期四 1998 年为 11/26，2002 年落到 11/24 星期日；2001 年 5 月第 5 个星期一不命中（1998 年落在 5/31 星期日）；5 月第 2 个星期日各年都正确（VERIFY V-M10）。
+- **行业测试图**：新 fixture `test-industries`（`test-map-industries.json`，dataHash `c5d05173…`）：航空、电子、汽车、石油（流通股 0，同中國石油）、建设五家企业；同时有环路式医院（20 既是保释格也是关押格）与台湾式监狱（16 保释，16→25 封路，26 在支线尽头关押）。只给测试用，没有注册进 `buildFixtureMaps`（`/api/maps` 与 E2E 不受影响），另加 `buildTestOnlyFixtureMaps`，由 `npm run fixtures` 一起写出。`mapIndex.test.ts` 测两种关押结构的 jailGate / hospitalGate / holdTile、前进候选与 placeableTiles（按 V-M7 锁定现状）；`engine/scenario/industries.scenario.test.ts` 9 例：航空转盘 0–3 与出国 n 天（回来仍在原节点）；电子、汽车（机车）、石油（汽车，3 步）按座驾系数 × 步数收费，步行免费；石油只能现场认购；建设公司选地、董事长免费加 2 级；环路医院出院（来路与保释格相邻时沿用来路，否则取 nb[0]）；台湾式监狱（命运 33 关进支线尽头 26，获释搬到 16，往 17 走）；环路关押格同格（被关的人不算在棋盘上，路过的人会被问保释）。test-industries 自对弈：random + check-fold 120 局、original 60 局、basic 3 人 40 局全部结束，rejects / invariantErrors / errors 都是 0。
+- **原版棋盘**：`game/orig/confinedSpread.browser.test.ts` 确认「同格多人按座位错开」对被关的棋子同样生效；`OrigBoardView.landmarkWorld` 仍未启用（V-M7 ①）。
+- **股市行业图**（`venues/a/layout.ts` stockIndustryFrame）：从按股票序号取模改为按所属企业的行业码查 exe 表 0x4733b7（Panel#75 帧 3–11 已目视核对），日本图（gm 2）电子业改用帧 8（0x42947c–0x42948a）；反汇编 0x429450 另外表明没有企业的股票原版不画行业图。**台湾显示因此有三处变化**：臺灣人壽 帧 4 → 5，大宇百貨 帧 5 → 4，9 支没有企业的股票不再有图（纠正原来的取模错误，VERIFY V-U4 待用户截图确认）。
+- **拍卖缩图**（`venues/b/auctionLayout.ts`）：`mapStyleIndex` 改按 `globalMapId`（exe 0x43ad6e：Panel#26 帧 29 + 5·gm + L），不再按 id 子串。
+- **命运 33–36 按图**：调试脚本从 rich4.exe v2.06 读出处理函数表 0x473d14 表项 37–48 的原文（与 tables.v206.json 逐项一致），反汇编确认分派为 k + 4·gm（0x44c5c7 / 0x44c6a0）；`zh-CN/fate.json` 增加 `33–36.byMap.1–3`（zh-TW 只重生成 fate.json）；`eventText` 的 fateTitle / fateShown.text 按 globalMapId 选文案；变体各有自己的语音（voice 0222–0233），`soundMap` 的命运语音按图换成 `fate.<k+4gm>`；`presentation/names.ts` 给 NameKit 加可选的 `globalMapId()`，`logFormat` 与 `handlers/events` 改用 `shown.text`。
+- **原版命运板没有接回**（可选项）：原版皮肤的命运弹窗仍整体回退到程序化弹窗，33–36 的按图插图（0x473dd8）没有接；要接回得新做版式（TODO，VERIFY V-M11 / V-U12）。
+- **长名称**：按 12px 字宽与栏宽估算，「拉斯維加斯 N」约 71px，资产表、公布栏、股市、建设公司选地都放得下，没有改布局。
+- 规则没有改动，ENGINE_VERSION 不变（0.4.0），台湾 golden 不变。V-M7 核实后如要改：`flow/turn.ts:71-80`、`mapIndex.ts:68-71`、`decisions/targets.ts:144-146`；影响台湾 golden 时升 ENGINE_VERSION，用 `RICH4_GOLDEN_MAPS=all` 刷新快照；画法按截图结论启用 landmarkWorld。
+
+### 27.6 golden 与自对弈（T5）
+
+- **golden 泛化**：`packages/shared/src/engine/golden/taiwan.test.ts` 改为 `maps.test.ts`，按 MAPS = taiwan / china / japan / usa 表驱动：`dataDirFor(id)`（RICH4_DATA_DIR 里含这张图的数据包目录）、`loadMap(dir, id)`（fixture + 这一张原版图）；每张图各有 `__golden__/<id>.json` 与各自的 mapHash 守卫；数据包里没有这张图或还没有快照时单独 skip，mapHash 不同时 skip 并提示重新生成。四张图共用同一组 4 局（种子 7a1a0001–4，30 / 91 / 182 / 365 天，角色各不相同），快照格式不变。新增 `RICH4_GOLDEN_MAPS`（逗号分隔；不设或 `all` 为全部）：只跑点名的图；**`RICH4_UPDATE_GOLDEN=1` 必须同时点名**，否则直接失败、不写任何文件，免得顺手改掉 taiwan.json。刷新命令：`RICH4_UPDATE_GOLDEN=1 RICH4_GOLDEN_MAPS=china,japan,usa RICH4_DATA_DIR=./rich4-data npx vitest run --project shared src/engine/golden`。
+- **三份新快照**（ENGINE_VERSION 0.4.0，四局 AI intent 被拒 0 次，同种子重跑完全相同）：
+
+  | 图 | mapHash | 30 天 | 91 天 | 182 天 | 365 天局 |
+  |---|---|---|---|---|---|
+  | taiwan（不变） | `3c2f31eb596b…` | 182 action | 524 | 960 | 1657 action，第 268 天 lastStanding |
+  | china | `a36d1285be25…` | 185 | 522 | 1006 | 1965 action，打满 365 天 |
+  | japan | `0fc7c82a5d02…` | 188 | 501 | 994 | 1283 action，第 229 天 lastStanding |
+  | usa | `52a0d97ced74…` | 173 | 515 | 972 | 1000 action，第 182 天 lastStanding |
+
+  四局里的小游戏（MINIGAME_ENDED）：台湾 0、大陆 54、日本 50、美国 38；企业收费（COMPANY_FEE）：台湾 50、大陆 35、日本 60、美国 56。
+- **自对弈**：`apps/server/scripts/simulate.ts` 新增 `--stats`（各事件类型次数、COMPANY_FEE 按行业码、CONFINED 按「地点 / 起因」、各决策种类次数；不影响 finalHash / journalHash，已核对有无 `--stats`、单线程与 `--workers 4` 的哈希相同），注释补上原版四张图。批跑脚本 `test/maps-t5-sim.sh`（本机，输出 `.cache/maps/t5/sim/`）：每张图 original 1000 局（`--workers 8 --time-limit 730`）、random + `--check-fold` 300 局、basic 3 人 100 局，同参数各跑两次核对 finalHash。**24 次运行全部 exit 0**：每组 finished = 局数、rejects = 0、invariantErrors = 0、errors = 0，两次的 finalHash 与 journalHash 都一致（本机负载约 13–14，original 1000 局每次 6–8.5 分钟，没有降局数）：
+
+  | 图 | original 1000 局：平均天数 / 每局 action / 结束原因 | finalHash | random + check-fold 300 局 | finalHash | basic 3 人 100 局 | finalHash |
+  |---|---|---|---|---|---|---|
+  | taiwan | 345.1 / 1730 / lastStanding 1000 | `29bb577e41ff6d7b` | 131.5 / 2996 | `561347e28d5fcc2f` | 377.5 / 1335（timeLimit 1） | `0c351829d954eb65` |
+  | china | 497.0 / 2444 / lastStanding 951、timeLimit 49 | `0439f98f34480dde` | 194.5 / 4564 | `59bf0c092a1ad9b7` | 546.7 / 1922（timeLimit 8） | `fcb4984078e02f90` |
+  | japan | 318.7 / 1635 / lastStanding 1000 | `804bcebbf73e8034` | 131.1 / 3016 | `2c7c8c261bacdde3` | 441.8 / 1573（timeLimit 2） | `f0c3a79dfa0d1c57` |
+  | usa | 361.7 / 1817 / lastStanding 997、timeLimit 3 | `ec7cad5fa24d9945` | 132.0 / 2967 | `86ed861c36c80d54` | 470.2 / 1678（timeLimit 3） | `14b95df28490de48` |
+
+  每局平均事件次数（original 1000 局；括号里是 random / basic 3 人）：
+
+  | 图 | 小游戏 MINIGAME_ENDED | 企业收费 COMPANY_FEE（按行业） | 其他 |
+  |---|---|---|---|
+  | taiwan | 0.12（0.18 / 0.16） | 保险 24.4 | — |
+  | china | 33.9（14.0 / 29.7） | 保险 18.0、石油 6.2 | — |
+  | japan | 26.0（10.9 / 34.0） | 电子 9.4、保险 11.9、汽车 4.5、建设 9.4 | 建设公司选地 CONSTRUCTION_PICK 13.1 |
+  | usa | 23.9（7.9 / 29.9） | 航空 8.7、电子 10.6、保险 13.3、汽车 4.5 | 航空出国（CONFINED away / airline）7.2 |
+
+  - 小游戏：台湾的三种小游戏格在医院支线上（释放时直接回到保释格），一局平均不到 1 次；三张新图的小游戏格在主环路上（日本在快艇段），原版 AI 局每局 24–34 次，真人局的节奏与计时压力会明显上升（TODO）。
+  - 百货、银行没有企业收费（行业收费种类为 none），表里不列。basic 策略的 3 人局在四张图（含台湾）上都没有 COMPANY_FEE 事件，与地图无关，本轮没有深究。
+  - 关押（CONFINED）每局（original）：三张新图住院多于台湾（身上的炸弹爆炸 6.4–8.5 次、路面物件 5.6–7.4 次；台湾 5.5、5.1 次），命运坐牢日本、美国少于台湾（3.9、3.2 次；大陆 6.0、台湾 5.5 次）；统计原文在本机 `.cache/maps/t5/sim/summary.txt`（`node test/maps-t5-sim-summary.mjs` 生成）。
+- 脚本：`simulate.ts` 的 `--map` 注释补上 taiwan / china / japan / usa。`loadtest.ts` 按房间轮换地图是可选项，没做（TODO）；服务器代码不改，`DEFAULT_MAP` 仍为 taiwan。
+
+### 27.7 验证
+
+- T5：`npx vitest run --project shared src/engine/golden`：没有 RICH4_DATA_DIR 时四张图 skip（1 通过 4 跳过）；`RICH4_DATA_DIR=./rich4-data` 时 5 条全过，连跑两遍稳定；`git diff` 里 `__golden__/taiwan.json` 为空（sha256 `b6075520…a112` 不变）。`npx vitest run --project shared` 83 个文件 820 通过 4 跳过。`npm run typecheck`、`npm run lint`（1269 个文件）、`check:no-original`（1693 个文件，含三份新快照）、`check:determinism`、`check:deps`、`check:zh-tw` 通过。自对弈见 §27.6。
+- T1、T2 的验证见各自交接（数据包 `extract all` / `map build --strict4` / `verify --samples --map 0..3` / `pack`，`tools/extract` 单测与本机测试，素材试跑出包与 `assets verify --full`）。
+- T3：`npm run typecheck`；`npx vitest run --project client-unit --project client-dom` 106 个文件 1344 通过；client-browser 13 个文件 65 通过 1 跳过；`check:zh-tw`、`check:deps`、`check:no-original`；本机手测（调研版数据包 + 叠加素材包）逐图截图。T4：`npx vitest run --project shared` 819 通过 1 跳过；台湾 golden 通过、`taiwan.json` 不变；`check:determinism`；`gen-fixtures --check`；`sim --map test` 200 局 random + check-fold 与 test-industries 三种策略自对弈全部结束、rejects / invariantErrors / errors 为 0；venues / presentation / game/orig 24 个文件 256 通过。
+- **集成**（2026-09-30，端口 5815 / 3815）：
+  - 逐文件核对各轨道没有互相覆盖：`cli.ts` 的 assets 用法已含 T2 的 `--strict` 与 preview 的 `--map-data`；T3 在独占路径外的小改（EventPlayer.hold、audioWiring、uiStore 注释、MapPreview、stores.test、lobby.dom.test）与 T4 的 presentation 改动（names / soundMap / logFormat / handlers/events / eventText）互不重叠；zh-TW 各命名空间与 zh-CN 一致（`check:zh-tw`）。工作区里另有修棋盘画布放大、收起座驾、toast 等会话的未提交改动（含 `flow/turn.ts`、`decisions/*`、`DEVIATIONS` 的 DEV-22、`design/client.md`），没有动。
+  - 修正一处：T3 在 `e2e/specs/lobby.spec.ts` 加的「建房表单缺省地图 = defaultMap」断言在原版皮肤配置下失败——原版的开局设置是单独画面，没有第二个 `home-create` 可点；改为原版皮肤按 `create-cancel`（EXIT）回标题，程序化皮肤照旧再点一次「建房」收起表单。两种配置单独重跑都通过。
+  - 数据包：四张图 `map build --strict4 --preview` 都 exit 0，产物与 `rich4-data/maps/` 逐字节相同（台湾 `14ef91e8…6c10`），四份 provenance 不变；`pack` 打到临时目录与 `rich4-data/` 逐字节相同（manifest `52ca1711…a86c`）；`verify --samples --map 0/1/2/3` 全过，`samples.map0.json` 仍为 `e60f74c5…`。
+  - `npm run check` 全绿（vitest 319 个文件 3207 通过 5 跳过；lint 1274 个文件）；`--project extract` 55 个文件 523 通过 1 跳过；client-browser（`RICH4_CHROMIUM_PATH` 指向本机 chromium_headless_shell-1228）13 个文件里 `fx.browser.test.ts` 一条在负载约 13 时 30 秒超时，单独重跑 4/4 通过，其余 64 通过 1 跳过；golden：`RICH4_DATA_DIR=./rich4-data` 5 条全过，`taiwan.json` sha256 仍为 `b6075520…a112`。
+  - E2E（`CI=1`）：默认配置 52 通过 1 跳过（deploy-restart 需要 `E2E_RESTART_CMD`）；原版配置 48 通过 4 跳过（按配置的既有 skip）1 失败（上面的 lobby.spec，修正后重跑通过）。`skin-classic-screens`「选关」与 `skin-pack-load` 两种配置都通过。
+  - 真实素材包巡检（`RICH4_DATA_DIR=rich4-data`、`RICH4_ASSETS_DIR=rich4-assets`、免门禁；`test/maps-final-inspect.mjs`、`maps-final-confine.mjs`、`maps-final-names.mjs`，截图在本机 `.cache/maps/final/`）：四张图在桌面 1280×800 与手机横屏 812×375 下——开局设置点关卡后地图下拉同步，勾在舞台 (598, 30 + 32k)（审查修复后竖栏按 exe 移到 x 445，勾在 (595, 30 + 32k)），背景 `title.setup.bg.<id>`（台湾 `title.setup.bg`），大厅背景跟随；开局播对应的 flytw / flychina / flyjp / flyus（播放中暂缓回放，跳过后解除；手机横屏 4:3 留黑边），刷新不重播；皮肤判定 original、packId `daa850ef3a455b4a`、没有失败分组；日历节日插画 大陆 10/1 → `illustration.holiday.33`、日本 12/25 → `.61`、美国 7/4 → `.75`、台湾 10/10 → `.10`；股市行业图 台湾 臺灣人壽 帧 5、大陆 石油 帧 9、日本 ＳＥＧＡ 帧 8、美国 ＩＢＭ 帧 7；天使卡把一条街升到 2 级后拍卖，拍卖缩图 Panel#26 帧 31 / 36 / 41 / 46（= 29 + 5·gm + 2），成交后住宅换成买家的主人色；存档窗缩图 `ui.saveLoad/2–5`；「地圖」大图与小地图；日本快艇段 23–29 的快艇姿态；命运 33 的按图文案（大陆「街頭鬧事」、日本「誘騙未成年人」、美国「非法持有槍械」）；被关棋子画在关押格上，另一名玩家传送到同一格时按座位错开（房主暂停后截图）；获释后第一步 大陆 63→62、日本 55→54、美国 85→84、118→117，台湾医院 23 获释搬到保释格 16，与 §27.5 锁定的现状一致（V-M7 待用户核实）；托管期间大陆、日本各触发一次小游戏（MINIGAME_ENDED）；原版资产表里「拉斯維加斯 2」「喬治亞人壽」「ＳＥＧＡ」「王府井百貨」都不溢出；四张图切到程序化皮肤各看一遍棋盘。全程控制台 0 错误。
+  - 回归（`test/maps-final-regress.mjs`）：台湾 30 天局托管到结束，第 10 天手动存档，新建房间读档开局不播飞行动画、托管到结束（两局排名完全相同）；早先版本留下的台湾自动存档（engine 0.4.0、第 23 天，`test/maps-final-old-save.mjs` 按导出格式写成 .r4save）导入后签名不同显示为非官方存档，读档开局 mapHash `3c2f31eb…` 没有失配，从第 23 天继续到第 26 天；旧素材包（packId `932c2c2602ab571f`，只有台湾皮肤）配新客户端：台湾原版棋盘，大陆 / 日本 / 美国经典界面 + 程序化棋盘（boardReason `map-missing`），开局背景回退 jump#0，节日插画回退为节日名，飞行动画照播，不崩溃、控制台 0 错误。
+  - 没有覆盖到的：住宅 3–5 级只在素材联系表里看过（牌堆里天使卡只有 2 张，局内只升到 2 级）；小游戏画面、航空转盘、建设公司选地没有在真实新图上截图（由场景测试、自对弈统计与 fixture 图的 E2E 覆盖）；观战不播飞行动画只有 DOM 测试。
+
+### 27.8 遗留
+
+- 待用户在原版核实：VERIFY V-M1、V-M7、V-M9、V-M10、V-M11、V-U4、V-U10、V-U12（verify-checklist §5）。核实结论改规则、影响台湾 golden 时升 ENGINE_VERSION，并用 `RICH4_GOLDEN_MAPS=all` 刷新快照。
+- 三张新图的街道价格没有独立样本（MAP_SAMPLES 留了位）。
+- 开局设置头像格 (4,10) / (4,321) 的差异、机舱跳伞序列、`loadtest --map` 轮换、小游戏频率对真人局的影响：见 TODO「原版另外 3 张图」。
+- 线上部署等用户同意（deploy.md §9.6）。
+
+## 28. 用户反馈修复：收起载具、百货按原版、联机隐藏手牌（2026-10-01）
+
+本节之后以代码和本节为准；与 §5.7、§20 等处「手牌默认公开还原原版」的说法冲突时以本节为准。
+
+### 28.1 收起载具（V-R29）
+
+- 原版：骑机车 / 坐汽车时真人道具欄右下角（格号 14）画 Panel#11 图 15 / 16（「车 + 禁止圈」），点一下调道具函数表第 14 项 0x4467b1：
+  身上的车回背包、改为步行、1 颗骰子，不说台词、不扣道具、不结束回合、次数不限；工程车不能收起；原版电脑从不收起。
+- 引擎：新 intent `STOW_VEHICLE`（TURN_MENU，非终结）；`TurnMenuOptions.vehicle?: {current, canStow}`（可选，旧存档没有时客户端不显示入口）；
+  `effects/items/vehicle.ts stowByHand` 复用 `stowVehicle`（车回背包，同种满 10 台时回共享库存）；`VEHICLE` 事件新增可选字段 `stowed`，
+  只在真人收起时出现，客户端据此不弹提示、不放音效、日志记「收起××，改为步行」。电脑策略不变，golden 不变；`randomIntent` 的候选含 STOW_VEHICLE。
+- 界面：原版皮肤道具欄第 15 格固定画 ui.itemBar 帧 15 / 16（`stow-vehicle-icon`）；程序化背包页「收起X，改为步行」（`inv-stow-vehicle`）。
+- 未做（docs/TODO.md）：梦游卡结束后原版会恢复座驾；工程车模式下原版仍能用机车 / 汽车道具直接顶掉工程车；收起时的通用换车闪光。
+
+### 28.2 百货道具按原版（V-R30）
+
+- 引擎 `flow/shop.ts`：SHOP_BUY_ITEM 的 qty 必须为 1；本次进店买过的道具不能再买；真人只能买进店时有库存的（`listed`）。
+  `decisions/economy.ts` 给道具行加 `listed`、`bought`，`maxQty` 只会是 0 / 1；两者都从本次交易记录推出，不新增帧字段。
+  原版电脑本来就一次买 1 个、不重复买（0x42e620..0x42e6ea），所以规则对所有座位统一生效，golden 实测不变。卖道具仍允许 qty > 1（DEV-27）。
+- 界面：两种皮肤都去掉库存与数量钮，买过的行变灰（原版灰字 #a0a0a0、描边 #101010）；原版货架行不再写持有数。
+- ENGINE_VERSION 暂未升：随下一项规则改动（监狱 / 医院获释位置，docs/TODO.md）一起升 0.5.0 并刷新四张图的 golden。
+
+### 28.3 联机隐藏手牌（DEV-25）
+
+- 规则：`net/room.ts effectiveHandVisibility`——座位上真人 ≥ 2 时 `handVisibility` 锁定为 `private`，写进房间设置，随快照与存档保存，只会从公开改为私密。
+  `Room.launch`（开局、读档开局）与 `Room.restore`（重启恢复，按座位上的真人占用计数）都按这条规则锁定。
+- 投影（`view/project.ts`）：他人的 `cards` / `items` 为 null，另给 `cardCount` / `itemCount`；私密时 `GameView.pools` 为 null、事件去掉 `post.pools`；
+  他人的 `hostility` 只保留「对观察者本人」一项（抢夺卡结算时敌意增量等于被抢物的标价，第三方可据此反推种类），观战者全为 0。
+  事件 privacy 改为 `'redactHand'`：CARD_GAINED / CARD_LOST / SHOP_TRADE / CHAIRMAN_GIFT / ITEM_GAINED / ITEM_LOST 对非本人置 null；
+  SHOP_OPENED.shelf 只给进店的人；CARD_USED 只在抢夺卡抢道具时把道具种类限给双方。view、batch、catchup、快照、观战、时光机都走同一投影。
+- 公开保留：卡片张数与道具总数、正在骑的交通工具、点券、出卡 / 用道具 / 被动卡亮卡、公布栏、研究所成果；抢夺卡与命运「生日」的对手清单
+  只在 DecisionForYou 里发给出卡人本人（与原版「先看清单、可以取消、不扣卡」的信息量相同）。
+- 电脑：纯电脑座位用全量视图，决策不变；真人座位的托管与超时代打按房间设置降级。
+- 泄漏扫描：`view/handLeaks.ts findHandLeaks`，服务器集成测试、客户端 viewFold 测试与 E2E（hand-privacy.spec）共用。
+- 大厅说明：两种皮肤的房间设置下加一行（`room-hand-hint`）：真人 ≥ 2 或房间已锁定私密时为「他人无法查看自己手牌及道具」并高亮，
+  否则为「两名以上真人时，他人无法查看自己手牌及道具」（settingsDraft.handPrivateNow）。
+- 已知仍可推断的途径（未处理，见 TODO）：点券变化反推成交价、研究所成果、命运 / 魔法屋「卖光」金额、免费卡 / 嫁祸卡的决策种类与停顿。

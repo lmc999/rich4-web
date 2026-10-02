@@ -315,6 +315,29 @@ describe('voiceFor', () => {
     expect(toll(2, 1000, 1)).toEqual([]);
   });
 
+  it('私密手牌模式下别人的敌意只剩对本人的一项（view/project.ts hideHostility）：不猜最敌视的人，按付钱分档', () => {
+    // 座位 2 视角看付钱的 0 号：cards 为 null，hostility 只剩 [2]
+    const hidden = makeSoundQuery(
+      viewWith((v) => {
+        v.players[0]!.cards = null;
+        v.players[0]!.hostility = [0, 0, 90, 0];
+      }),
+      map,
+    );
+    expect(hidden.rivalOf(0)).toBeNull();
+    const c = CHARS[0]!;
+    for (let s = 0; s < 20; s++) {
+      expect(
+        voiceFor(
+          { type: 'TOLL_PAID', payer: 0, owner: 2, ally: null, amount: 6000, allyAmount: 0, lots: ['L1'], mods: [] },
+          hidden,
+          vm,
+          ctx(s),
+        ).map((v) => v.key),
+      ).toEqual([slotKey(c, 10)]);
+    }
+  });
+
   it('卡片台词：对他人用 = 使用者 use + 被施用者 target；对自己用优先 self，没有则 use', () => {
     const use = (card: number, target: SeatIndex) =>
       voiceFor(

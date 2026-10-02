@@ -20,14 +20,16 @@ import { scanOriginal } from './fingerprint/scan';
 import { sha256Hex } from './io/hash';
 import { isDirectory, isFile, readFileRO } from './io/readOnly';
 import { safeWriteFile, writeCanonicalJson } from './io/writeCanonicalJson';
+import { loadOverrides } from './map/overrides';
+import { allMapKeys } from './map/pack';
 import { failedChecks } from './map/parseRaw';
-import { diffExitCode, diffRaw } from './map/rawDiff';
+import { ACCEPTED_RULE_DIFFS, acceptRuleDiffs, diffExitCode, diffRaw, type MapRawDiff } from './map/rawDiff';
 import { computeRawStats, type RawStats } from './map/rawStats';
-import type { MapDataRaw } from './map/rawTypes';
+import type { MapDataRaw, RawSourceId } from './map/rawTypes';
 import { loadRawSource, RAW_SOURCES, selectSources } from './map/sources';
 import { MkfArchive } from './mkf/container';
 import { ICON, renderTable } from './report/table';
-import { runTaiwanSamples, type SampleResult, samplesFailed } from './verify/samples';
+import { runMapSamples, type SampleResult, samplesFailed, samplesSpecFor } from './verify/samples';
 
 const USAGE = `用法: rich4-extract <命令> [选项]
   fingerprint [--allow-unknown] [--json]            扫描 original/，比对 known-files.json
@@ -40,20 +42,30 @@ const USAGE = `用法: rich4-extract <命令> [选项]
                                                      （--write-anchors 把迁移得到的 v2.06 VA 写回 anchors）
   exe diff [--r2] [--r2-timeout 120]                 两版表/地图/字符串/函数对比 → docs/research/version-diff.md、events-from-exe.md
                                                      （--r2 另用 radare2 线性反汇编核对指令边界，可选）
-  verify [--samples] [--tables] [--constants] [--map 0] [--sources auto|all|<id,…>]
-                                                     台湾样本；--tables 手录规则表与 exe 对照；--constants 常量锚点两版核对
-                                                     （都不加 = 三者都跑）
-  map build --map taiwan [--overrides <file>] [--strict4] [--preview] [--strict]
-                                                     语义层 + 几何归一化 → .cache/extract/maps/taiwan.map.json，
-                                                     并写 docs/research/provenance-summary.md（--preview 另写 .cache/extract/preview/taiwan.svg）
-  pack [--out rich4-data/] [--map taiwan]            部署数据包 → <out>/manifest.json、<out>/maps/*.map.json
+  verify [--samples] [--tables] [--constants] [--map 0..3] [--sources auto|all|<id,…>]
+                                                     按图样本（gm 0 台湾、1 大陆、2 日本、3 美国，默认 0）；
+                                                     --tables 手录规则表与 exe 对照；--constants 常量锚点两版核对（都不加 = 三者都跑）
+  map build --map taiwan|china|japan|usa|all [--overrides <file>] [--strict4] [--preview] [--strict]
+                                                     语义层 + 几何归一化 → .cache/extract/maps/<key>.map.json，并写 provenance
+                                                     （台湾 docs/research/provenance-summary.md，其他图 provenance-<key>.md；
+                                                     --preview 另写 .cache/extract/preview/<key>.svg；--map 也接受 gm 0..3）
+  pack [--out rich4-data/] [--map taiwan|china|japan|usa|all] [--replace]
+                                                     部署数据包 → <out>/manifest.json、<out>/maps/*.map.json
+                                                     （与 <out>/manifest.json 已有的条目合并：只替换本次打包的图；
+                                                     不带 --map 只打最近一次 map build 为 exit 0 的图，其余跳过，
+                                                     但要跳过的图已在 manifest 里时报错；--replace 整份按本次的图重写）
+  all                                                依次 map raw（gm 0–3，--sources all）→ map diff 0–3 → exe tables
+                                                     → map build --map all --strict4 --preview；不打包（之后运行 pack）
+                                                     （map diff exit 4 只放行已知差异：大陆 companies#4.name、日本 lands#17.rent）
   overrides schema                                   由 zod 导出 tools/extract/maps/overrides.schema.json
   assets build [--out rich4-assets/] [--only board,ui,fx,minigame,audio,music,video] [--video]
-               [--audio opus,m4a] [--media <Steam Media 目录>] [--map-data <taiwan.map.json>] [--jobs 4] [--allow-unknown]
+               [--audio opus,m4a] [--media <Steam Media 目录>] [--map-data <目录或文件>] [--strict] [--jobs 4] [--allow-unknown]
                                                      原版皮肤素材包（仅供私人游玩；只写入已被 git 忽略的 rich4-assets/ 或 .cache/）
+                                                     （--map-data 默认 rich4-data/maps/，逐图读 <id>.map.json；给单个文件时只作台湾的 MapDef；
+                                                     缺某张图的 MapDef 只跳过它的原版皮肤并告警，--strict 时失败）
   assets verify [--out rich4-assets/] [--full]       逐文件复算 sha256、契约与交叉引用（--full 另解码 PNG/FLC）
   assets ls [--out rich4-assets/] [--group <分组>]   列出资源目录项及其构建结果
-  assets preview [--pack rich4-assets/] [--out .cache/assets-preview/] [--group <分组>]
+  assets preview [--pack rich4-assets/] [--out .cache/assets-preview/] [--group <分组>] [--map-data <目录或文件>]
                                                      本机浏览用联系表、棋盘渲染与 index.html
   assets synth [--out .cache/synthetic-pack/]        fixture 地图的合成素材包（CI 用，不入库）
                                                      （build / preview / synth 输出到仓库外须加 --allow-outside-repo）
@@ -84,6 +96,7 @@ const OPTIONS = {
   strict4: { type: 'boolean' },
   strict: { type: 'boolean' },
   preview: { type: 'boolean' },
+  replace: { type: 'boolean' },
   verbose: { type: 'boolean' },
   only: { type: 'string' },
   video: { type: 'boolean' },
@@ -368,14 +381,20 @@ async function cmdVerify(ctx: ExtractContext, v: Values): Promise<number> {
 
 async function cmdVerifySamples(ctx: ExtractContext, v: Values): Promise<number> {
   const gm = v.map === undefined ? 0 : parseMapId(v.map);
-  if (gm !== 0) throw new ExtractError('E_ARGS', `只有台湾（--map 0）有样本，收到 --map ${gm}`);
+  const spec = samplesSpecFor(gm);
+  if (!spec) {
+    const known = allMapKeys()
+      .map((m) => `${m.gm} ${m.key}`)
+      .join('、');
+    throw new ExtractError('E_ARGS', `地图 ${gm} 没有样本规格（可选：${known}），收到 --map ${gm}`);
+  }
   const { selected, skipped } = await selectSources(ctx, v.sources ?? 'auto');
   for (const s of skipped) ctx.log.out(`（跳过缺失来源 ${s.id}）`);
   const known = await tryLoadKnown(ctx);
   const perSource: { id: string; results: SampleResult[] }[] = [];
   for (const def of selected) {
     const { raw } = await loadRawSource(ctx, def, gm, known);
-    perSource.push({ id: def.id, results: runTaiwanSamples(raw) });
+    perSource.push({ id: def.id, results: runMapSamples(raw, spec) });
   }
   await writeCanonicalJson(ctx, ctx.cachePath('verify', `samples.map${gm}.json`), {
     schema: 'rich4.samples/1',
@@ -406,6 +425,94 @@ async function cmdVerifySamples(ctx: ExtractContext, v: Values): Promise<number>
   const failed = perSource.some((s) => samplesFailed(s.results));
   ctx.log.out(failed ? `${ICON.fail} 有样本失败，exit 1` : `${ICON.pass} 样本全部通过`);
   return failed ? ExitCode.STRUCTURE : ExitCode.OK;
+}
+
+// ───────────────────────── all ─────────────────────────
+
+/**
+ * 一条龙：map raw（gm 0–3，三个来源都要）→ map diff 0–3 → exe tables → map build --map all --strict4 --preview。
+ * 任何一步失败即停，退出码取各步最大值；不自动 pack（部署数据包由用户确认后单独运行 pack）。
+ * map diff 的 exit 4（规则相关差异）只在该图的规则差异正好等于已知清单 ACCEPTED_RULE_DIFFS（大陆 companies#4.name、
+ * 日本 lands#17.rent）、且该图 overrides 的 source.id 是清单的基线（v206-mapdat，与 v3.11 一致）时视为已处理；
+ * 清单之外冒出任何规则差异（包括台湾、美国）都按 exit 4 停下。
+ */
+async function cmdAll(ctx: ExtractContext, v: Values): Promise<number> {
+  if (v.map !== undefined) throw new ExtractError('E_ARGS', 'all 总是处理全部地图（gm 0–3），不接受 --map');
+  const maps = allMapKeys();
+  let exit: number = ExitCode.OK;
+  const step = async (label: string, run: () => Promise<number>, accept?: (code: number) => Promise<boolean>) => {
+    ctx.log.out(`── ${label}`);
+    let code: number;
+    try {
+      code = await run();
+    } catch (e) {
+      if (!(e instanceof ExtractError)) throw e;
+      ctx.log.err(`${ICON.fail} ${e.message}`);
+      code = e.exitCode;
+    }
+    if (code !== ExitCode.OK && accept && (await accept(code))) return true;
+    exit = Math.max(exit, code);
+    if (code !== ExitCode.OK) ctx.log.out(`${ICON.fail} ${label}：exit ${code}，停止`);
+    return code === ExitCode.OK;
+  };
+  for (const { gm } of maps) {
+    if (
+      !(await step(`map raw --map ${gm} --sources all`, () =>
+        cmdMapRaw(ctx, { ...v, map: String(gm), sources: 'all' }),
+      ))
+    )
+      return exit;
+  }
+  for (const { key, gm } of maps) {
+    const ok = await step(
+      `map diff --map ${gm}`,
+      () => cmdMapDiff(ctx, { ...v, map: String(gm) }),
+      async (code) => code === ExitCode.RULE_DIFF && (await knownRuleDiffs(ctx, key, gm)),
+    );
+    if (!ok) return exit;
+  }
+  if (!(await step('exe tables', () => cmdExeTables(ctx, { ...v, edition: undefined })))) return exit;
+  await step('map build --map all --strict4 --preview', () =>
+    cmdMapBuild(ctx, { ...v, map: 'all', strict4: true, preview: true, overrides: undefined }),
+  );
+  ctx.log.out(
+    exit === ExitCode.OK
+      ? `${ICON.pass} 全部完成。部署数据包请再运行：npm run extract -- pack --out rich4-data/`
+      : `${ICON.fail} 有步骤失败，exit ${exit}`,
+  );
+  return exit;
+}
+
+/**
+ * map diff exit 4 能否视为已处理：读刚写出的 .cache/extract/diff/map<gm>.json，规则差异正好等于 ACCEPTED_RULE_DIFFS[gm]，
+ * 且 tools/extract/maps/<key>.overrides.json 选定的基线与清单一致（acceptRuleDiffs）。
+ */
+async function knownRuleDiffs(ctx: ExtractContext, key: string, gm: number): Promise<boolean> {
+  const diffFile = ctx.cachePath('diff', `map${gm}.json`);
+  if (!(await isFile(diffFile))) return false;
+  const diff = JSON.parse(await readFile(diffFile, 'utf8')) as MapRawDiff;
+  const ovFile = path.join(ctx.packageDir, 'maps', `${key}.overrides.json`);
+  let chosen: RawSourceId | null = null;
+  if (await isFile(ovFile)) {
+    try {
+      chosen = (await loadOverrides(ovFile, ctx.displayPath(ovFile))).source.id;
+    } catch {
+      chosen = null;
+    }
+  }
+  const r = acceptRuleDiffs(diff, chosen);
+  if (r.ok) {
+    const spec = ACCEPTED_RULE_DIFFS[gm]!;
+    ctx.log.out(
+      `（${key} 的规则差异 ${spec.keys.join('、')} 是已知差异，已由 ${ctx.displayPath(ovFile)} 选定基线 ${spec.baseline}，` +
+        `视为已处理：${spec.note}）`,
+    );
+    return true;
+  }
+  if (r.unexpected.length > 0) ctx.log.out(`${ICON.fail} ${key}：已知清单之外的规则差异 ${r.unexpected.join('、')}`);
+  if (r.missing.length > 0) ctx.log.out(`${ICON.fail} ${key}：已知清单里的差异这次没有出现 ${r.missing.join('、')}`);
+  if (r.baselineProblem) ctx.log.out(`${ICON.fail} ${key}：${r.baselineProblem}`);
+  return false;
 }
 
 // ───────────────────────── 入口 ─────────────────────────
@@ -451,6 +558,7 @@ export async function main(argv: readonly string[], opts: MainOptions = {}): Pro
     if (cmd === 'map build') return await cmdMapBuild(ctx, v);
     if (pos[0] === 'pack') return await cmdPack(ctx, v);
     if (cmd === 'overrides schema') return await cmdOverridesSchema(ctx);
+    if (pos[0] === 'all' && pos.length === 1) return await cmdAll(ctx, v);
     if (cmd === 'assets build') return await cmdAssetsBuild(ctx, v);
     if (cmd === 'assets verify') return await cmdAssetsVerify(ctx, v);
     if (cmd === 'assets ls') return await cmdAssetsLs(ctx, v);
