@@ -15,14 +15,26 @@
 #   - 本机的前置反代或隧道（BIND_ADDR=127.0.0.1，只有本机进程连得到 Caddy）：CADDY_TRUSTED_PROXIES=private_ranges
 #   - CDN：它的回源网段（例如 Cloudflare 公布的 IPv4 / IPv6 列表），并确认 CDN 转发 WebSocket
 # 端口对公网开放时不要写 private_ranges：经 docker-proxy 进来的连接也显示为私有地址，会被当成可信代理。
+#
+# Cloudflare Tunnel 入口 :8081（docs/deploy.md §11）：第二个域名经 Cloudflare Tunnel 进来，cloudflared（叠加
+# docker-compose.tunnel.yml 才启动）在 compose 网络里连 caddy:8081，走明文 HTTP（TLS 在 Cloudflare 边缘终止，
+# 边缘到 cloudflared 这一段由隧道加密）。8081 不发布到宿主、公网连不到，所以只有这个监听信任私有网段，
+# 并且客户端 IP 取 Cloudflare 边缘写入的 Cf-Connecting-Ip（边缘会覆盖客户端自带的同名头，伪造不了）；
+# 上面 SITE_ADDRESS 那个对公网的入口不受影响，CADDY_TRUSTED_PROXIES 照旧只管它。不跑隧道时这个监听没有人连。
 {
+	# 有监听地址的 servers 块要写在不带地址的前面：Caddy 给每个监听取第一个匹配的块
+	servers :8081 {
+		trusted_proxies static private_ranges
+		client_ip_headers Cf-Connecting-Ip
+	}
 	servers {
 		trusted_proxies static {$CADDY_TRUSTED_PROXIES}
 		trusted_proxies_strict
 	}
 }
 
-{$SITE_ADDRESS:localhost} {
+# 两个入口共用的站点配置
+(rich4) {
 	# 基本安全响应头（对所有响应生效，含反代回来的；块里有删除操作，整块延迟到写响应时执行，覆盖上游同名头）：
 	# - nosniff：/pack/* 服务器本来就带，这里对全站统一
 	# - Referrer-Policy same-origin：跨站请求不带 Referer（房间邀请页 /r/<房间码> 的路径不外泄）
@@ -56,4 +68,16 @@
 		# 见文件头「客户端 IP」
 		header_up X-Forwarded-For {client_ip}
 	}
+}
+
+{$SITE_ADDRESS:localhost} {
+	import rich4
+}
+
+# Cloudflare Tunnel 入口（见文件头）：主机名由隧道的 ingress 规则决定，这里不限定
+http://:8081 {
+	# 访客用 http:// 打开时边缘转来的 X-Forwarded-Proto 是 http：跳到 https（与公网入口的 HTTP→HTTPS 跳转一致）
+	@plainhttp header X-Forwarded-Proto http
+	redir @plainhttp https://{host}{uri} 308
+	import rich4
 }

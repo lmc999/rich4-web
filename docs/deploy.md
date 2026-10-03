@@ -7,6 +7,7 @@
                                                                   ├─ /data          读写卷 rich4-state：sqlite、每日备份
                                                                   ├─ /data-rich4    只读：../rich4-data（原版地图数据）
                                                                   └─ /assets-rich4  只读：../rich4-assets（原版皮肤素材包，可选）
+可选（§11）：浏览器 ──https/wss──▶ Cloudflare 边缘 ══隧道══ cloudflared ──http──▶ caddy:8081（compose 内网）──▶ app:3000
 ```
 
 **镜像里没有任何原版文件或派生数据**（`.dockerignore`、Dockerfile 的构建期检查、`deploy/scan-image.sh` 三道关；后两道与仓库守卫 `check-no-original` 用同一套规则，由 `scripts/scan-tree.ts` 执行）。原版地图数据 `rich4-data/` 与原版皮肤素材包 `rich4-assets/` 只在运行时以只读卷挂进容器。**`original/`（正版安装文件）永远不上传到服务器。**
@@ -154,6 +155,7 @@ docker compose up -d --no-build --wait
 | 有 AAAA 记录，compose 网络只有 IPv4 | 宿主 IPv6 地址上的端口由 docker-proxy 转发，IPv6 访客全部显示成网关 `172.x.0.1` | 保持 `ENABLE_IPV6=true`（缺省；需要 Docker Engine 27+）。主机内核禁用了 IPv6、`up` 报 IPv6 相关错误时只能设为 `false`，这时**不要**加 AAAA 记录（或把 `BIND_ADDR` 写成主机的 IPv4 地址，只接 IPv4） |
 | Caddy 前面还有本机的反代或隧道（`BIND_ADDR=127.0.0.1`） | 全部显示成网关 `172.x.0.1` | `CADDY_TRUSTED_PROXIES=private_ranges`，前置代理要设置 `X-Forwarded-For` |
 | Caddy 前面有 CDN | 全部显示成少数几个 CDN 回源节点，正常用户大面积碰到 `SERVER_BUSY`、`RATE_LIMITED` | `CADDY_TRUSTED_PROXIES=<CDN 公布的回源网段，空格分隔>`（例如 Cloudflare 的 IPv4 / IPv6 列表，要随 CDN 的公布更新），并确认 CDN 转发 WebSocket |
+| 另一个域名经 Cloudflare Tunnel 进来（§11） | 不处理时会全部显示成 cloudflared 容器的地址 | 不用改 `.env`：Caddyfile 的隧道入口 `:8081` 自己信任私有网段、取 `Cf-Connecting-Ip`；公网入口的 `CADDY_TRUSTED_PROXIES` 保持原样 |
 
 - `CADDY_TRUSTED_PROXIES` 生效后，Caddy 从右往左解析这些代理转来的 `X-Forwarded-For`，取第一个不可信的地址（`trusted_proxies_strict`，最左段可被客户端伪造），再原样写给 app。改完 `deploy/.env` 后 `docker compose up -d --wait` 让 caddy 按新环境变量重建。
 - 端口对公网开放（`BIND_ADDR` 为空）时**不要**写 `private_ranges`：经 docker-proxy 进来的连接也显示为私有地址，会被当成可信代理，客户端就能伪造 IP。
@@ -237,6 +239,7 @@ bash deploy/scan-image.sh rich4:local
 - 服务器内存紧张时（§1）用 §6 的「在本机构建」：本机构建、扫描、`docker save | ssh … docker load`，服务器上 `git pull && docker compose up -d --no-build --wait`。
 - 仓库没有远程地址时（§2），`git pull` 换成在本机重跑 `git archive --format=tar HEAD | ssh … 'tar -x -C /srv/rich4'`，其余命令不变。
 - 只想重启：`docker compose restart app`。
+- 叠加了 Cloudflare Tunnel（§11）时上面的命令照旧；`restart caddy` 期间两个域名都会断开约 1 秒。升级 cloudflared 是改 `deploy/docker-compose.tunnel.yml` 里的镜像版本号，再 `docker compose up -d --wait`。
 - 数据包或素材包更新：按 §3 重新 rsync，再 `docker compose restart app`（服务器只在启动时读 manifest）。数据包有变化（新增地图、重建 MapDef）时素材包必须跟着重建，见 §9.6。
 - **提取规则有改动的版本**（`tools/extract/src/assets/` 的 catalog、图像处理变了，例如 2026-09-30 把卡片插画 `card.<k>` 从 `corner-rgb0` 改为 `opaque`）：只升级镜像不够——素材包不在镜像里。先在本机 `npm run extract -- assets build` 重建、`npm run extract -- assets verify`，按 §3 带 `--delete` rsync `rich4-assets/`，`docker compose restart app`；再核对 app 日志 `asset pack enabled` 的 packId 与本机 `rich4-assets/manifest.json` 的 `packId` 相同（通过门禁后也可以看 `/pack/manifest.json`，例如 `entries["card.1"].transparency` 应为 `opaque`）。
 
@@ -327,7 +330,66 @@ sudo nginx -t && sudo systemctl reload nginx
 
 要点（配置文件头有完整说明）：WebSocket 升级与长轮询都走 `/socket.io/`，读超时 120 秒；`X-Forwarded-For` **覆盖**为 `$remote_addr`（追加模式下客户端能伪造 IP 绕过限流）；`/pack/` 不缓冲、不再压缩、不缓存，Range 原样透传；请求体上限 3 MB。前面还有 CDN 时要用 realip 模块还原真实 IP（`set_real_ip_from` 写 CDN 的回源网段），否则所有人都显示成 CDN 节点的地址（§7.1），并确认 CDN 支持 WebSocket。
 
-## 11. 故障排查
+## 11. 经 Cloudflare Tunnel 增加第二个域名
+
+公网入口（§5–§8：`SITE_ADDRESS`、80/443、Caddy 自动证书）保持不变，再让一个托管在 Cloudflare 上的域名（下文用 `rich4.example.net`）经 Cloudflare Tunnel 访问同一台服务器：两个域名同时可用，看到的是同一批房间。直连线路不好的朋友可以换这条路走，以后想只留 Cloudflare 也能平滑过渡。
+
+工作方式：
+
+- 隧道在 Cloudflare 上远程管理（`config_src=cloudflare`），转发规则（ingress）是 `rich4.example.net → http://caddy:8081`，其余主机名一律 `http_status:404`。
+- 服务器叠加 `deploy/docker-compose.tunnel.yml` 启动 cloudflared。它主动连出到 Cloudflare 边缘（QUIC，UDP 7844；不通时退回 HTTP/2，TCP 7844），不需要放行任何入站端口。令牌只放在 `deploy/tunnel.env`（600），只交给 cloudflared，app 容器里看不到。
+- TLS 在 Cloudflare 边缘终止（证书由 Cloudflare 负责）；边缘到 cloudflared 这一段由隧道加密；cloudflared 到 Caddy 是 compose 内网里的明文 HTTP。
+- `deploy/Caddyfile` 的 `:8081` 入口不发布到宿主，公网连不到。它单独信任私有网段，客户端 IP 取 Cloudflare 写入的 `Cf-Connecting-Ip`（§7.1）；访客用 `http://` 打开时 308 跳转到 https；安全响应头、请求体上限、压缩和公网入口共用同一段配置。公网入口的 `CADDY_TRUSTED_PROXIES` 不用改。
+- `PUBLIC_URL` 仍写公网域名：它只决定访问 cookie 是否带 `Secure`（两个域名都是 https）以及分享页的 `og:url`。房间页的邀请链接按当前页面地址生成，从隧道域名进来的人复制到的就是隧道域名的链接。
+
+使用上的差别：
+
+- **两个域名的浏览器数据互不相通**：访问 cookie（口令要各输一次）、断线重连用的身份令牌（`localStorage` 的 `rich4.token`）、设置都按域名分开。玩家在一局之内不要中途换域名，换了会被当成新访客，要重新认领座位。
+- 延迟取决于玩家被分到哪个 Cloudflare 节点。从服务器自测（香港节点）复用连接时，每个请求往返约 16ms，隧道本身只多十几毫秒；但 Cloudflare 免费版经常把中国大陆的访客分到较远的节点，这时可能明显慢于直连。素材包在门禁下是 `private`，Cloudflare 不缓存，每个文件都要回源。
+- Cloudflare 免费版的请求体上限是 100MB（存档导入上限 2MiB，不受影响），WebSocket 缺省开启。
+
+建隧道（本机；cf CLI：`npm i -g cf`，`cf auth login`）：
+
+```sh
+cf tunnels create --name rich4 --config-src cloudflare       # 输出里的 id 就是下面的 TID
+TID=<隧道 id>
+cf tunnels config update "$TID" --body '{"config":{"ingress":[{"hostname":"rich4.example.net","service":"http://caddy:8081","originRequest":{"connectTimeout":10}},{"service":"http_status:404"}]}}'
+cf dns records create -z example.net --body "{\"type\":\"CNAME\",\"name\":\"rich4.example.net\",\"content\":\"$TID.cfargotunnel.com\",\"proxied\":true,\"ttl\":1}"
+# 令牌经管道写到服务器的 deploy/tunnel.env（600），不出现在命令行、终端输出与 shell 历史里
+cf tunnels token get "$TID" | python3 -c 'import json,sys; print("TUNNEL_TOKEN=" + json.load(sys.stdin)["result"])' \
+  | ssh <服务器> 'umask 077; cat > /srv/rich4/deploy/tunnel.env'
+```
+
+启动（服务器，仓库根目录；先按 §9.4 把带 `:8081` 入口的 `deploy/Caddyfile` 和 `deploy/docker-compose.tunnel.yml` 更新上去）：
+
+```sh
+echo 'COMPOSE_FILE=deploy/docker-compose.yml:deploy/docker-compose.tunnel.yml' > .env
+docker compose config --services              # app、caddy、cloudflared
+docker compose --dry-run up -d --no-build     # 确认 app、caddy 是 Running（不重建），只新建 cloudflared
+docker compose restart caddy                  # 让 Caddy 读到带 :8081 的 Caddyfile（§9.4）
+docker compose up -d --no-build --wait
+docker compose logs cloudflared | grep 'Registered tunnel connection'     # 通常 4 条
+```
+
+验证（本机）：
+
+```sh
+cf tunnels list --name rich4 --is-deleted false                              # status: healthy
+curl -fsS https://rich4.example.net/healthz
+curl -s -o /dev/null -w '%{http_code}\n' https://rich4.example.net/api/maps   # 门禁开启：401
+curl -sI 'http://rich4.example.net/r/123456' | grep -i -E '^HTTP|^location'  # 308 → https://…
+curl -s 'https://rich4.example.net/socket.io/?EIO=4&transport=polling'       # 0{"sid":…}
+curl -fsS https://rich4.example.com/healthz                                  # 公网入口照旧
+```
+
+- 真实 IP：`docker compose logs app | grep 'private address'` 应当没有输出。想直接看 app 认定的 IP，可以不带令牌请求一次 `https://rich4.example.net/admin/stats`（401），app 日志里 `admin: auth failed` 的 `ip` 应当是你访问 Cloudflare 用的公网地址（这会给该 IP 记一次管理接口鉴权失败，和登录退避分开计数）。
+- Caddyfile 的隧道入口可以在本机单独验证：`bash test/cf-tunnel-caddy.sh`（客户端 IP、伪造头、http→https 跳转、安全头、WebSocket 升级，公网入口不受影响）。
+
+令牌泄露时：在 Cloudflare 上轮换令牌（或者删掉隧道重建），按上面的管道重新写 `deploy/tunnel.env`，再 `docker compose up -d --force-recreate --wait cloudflared`。
+
+撤掉隧道：仓库根目录 `.env` 改回 `COMPOSE_FILE=deploy/docker-compose.yml`，执行 `docker compose up -d --remove-orphans --wait`（停掉并删除 cloudflared），再在 Cloudflare 上删掉 DNS 记录与隧道（`cf dns records delete`、`cf tunnels delete`）。Caddyfile 的 `:8081` 入口可以留着，没有人连它。
+
+## 12. 故障排查
 
 | 现象 | 原因与处理 |
 |---|---|
@@ -340,6 +402,9 @@ sudo nginx -t && sudo systemctl reload nginx
 | 日志是「环境变量无效：…」 | 逐条对应：`SAVE_HMAC_SECRET 在生产环境必填`；`ACCESS_MODE=passcode 需要 ACCESS_PASSCODE_HASH`；`ACCESS_SECRET 至少 32 字节`；`生产环境开启访问门禁…必须设置 PUBLIC_URL`；`RICH4_TEST_MODE=1 只允许用于本机验证`（删掉这一行）。改完 `.env` 后 `up -d` 让 app 重建。 |
 | 浏览器 502 | app 没就绪或起不来：`docker compose ps` 看 app 是否 healthy，再看 app 日志。升级 / 重启期间的几秒 502 属正常，页面会自动重连。nginx 模式下还要确认 `docker compose port app 3000` 输出 `127.0.0.1:3000`（§10）。 |
 | 改了 Caddyfile 不生效 | `docker compose restart caddy`（§9.4）。 |
+| 隧道域名打开是 Cloudflare 的 1033 错误页 | cloudflared 没在运行或连不上 Cloudflare（§11）：看 `docker compose ps cloudflared` 与 `docker compose logs cloudflared`。令牌不对（`deploy/tunnel.env` 内容错）时日志会报 Unauthorized；出站 UDP/TCP 7844 被防火墙挡住时连不上边缘。根目录 `.env` 的 `COMPOSE_FILE` 里没有叠加 `docker-compose.tunnel.yml` 时，cloudflared 根本不会启动。 |
+| 隧道域名 502 | cloudflared 连不上 `caddy:8081`：Caddy 还是旧配置（没有 `restart caddy`，§9.4）或者没起来，cloudflared 日志里会有连 `caddy:8081` 失败的错误。 |
+| 隧道域名 404（空白页） | 转发规则里没有这个主机名，命中了最后那条 `http_status:404`：`cf tunnels config get <隧道 id>` 核对 ingress（§11）。 |
 | 证书签不下来，浏览器提示证书无效 | 看 `docker compose logs caddy`：DNS 还没指向本机、80/443 没放行或被占用、`SITE_ADDRESS` 写错、大陆主机未备案被拦截，或短时间内反复失败触发了 Let's Encrypt 的频率限制（等一小时再试）。证书存在 `caddy-data` 卷里，不要 `down -v`。 |
 | 能进页面但连不上房间 / 一直「重新连接中」 | 先看 `/readyz` 与 app 日志。公司网络、某些代理或 CDN 会拦 WebSocket 升级：前端这时会自动改走 HTTP 长轮询（浏览器开发者工具 Network 里能看到大量 `/socket.io/?EIO=4&transport=polling` 请求），可以正常玩，只是延迟略高；如果长轮询也不通，检查中间代理是否缓冲或截断了长连接（nginx 见 §10 的 `proxy_buffering off` 与 120 秒读超时）。 |
 | 很多人同时被 429 挡住 / 建房报 `RATE_LIMITED`、`SERVER_BUSY` | 多半是客户端 IP 塌缩（§7.1）。 |
@@ -351,7 +416,7 @@ sudo nginx -t && sudo systemctl reload nginx
 | 重启后玩家没回到对局 | 页面会自动重连并拿到快照（epoch 加 1）；只恢复 24 小时内更新过的房间。所有真人都离开时房间暂停，第一个真人回来就继续。 |
 | `scan-image.sh` 退出码 2 | 扫描本身没跑成（docker 出错、`$TMPDIR` 不可写或磁盘满、拉不到 `node:24-slim`）：看它最后几行输出，修好环境后重跑；退出码 1 才是镜像里有原版或派生数据。 |
 
-## 12. 本机验证（只限本机）
+## 13. 本机验证（只限本机）
 
 `deploy/docker-compose.e2e.yml` 是本机验证镜像用的覆盖文件：只绑定 `127.0.0.1:8080/8443`、`SITE_ADDRESS=localhost`（Caddy 内部 CA 自签证书）、`PUBLIC_URL=https://localhost:8443`、开 `RICH4_TEST_MODE=1`（E2E 要用 `debug:act`），app 的环境变量只从 `.cache/m11/e2e.env` 读（`.cache/` 不入库、不进镜像）。**它开放了可以任意改写对局的调试接口，绝不能用于公网部署。** 本节的命令显式写 `-p` 与 `-f`（显式 `-f` 会盖过仓库根目录 `.env` 里的 `COMPOSE_FILE`），与正式部署的项目 `rich4` 互不相干。
 

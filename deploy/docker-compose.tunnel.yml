@@ -1,0 +1,37 @@
+# Cloudflare Tunnel：在原有的公网入口（Caddy 80/443 + SITE_ADDRESS）之外，再经 Cloudflare 提供第二个域名（docs/deploy.md §11）。
+# 隧道在 Cloudflare 上远程管理（ingress：<第二个域名> → http://caddy:8081），这里只跑连接器 cloudflared，
+# 它主动连出到 Cloudflare 边缘，不需要放行任何入站端口。仓库根目录：
+#
+#   # deploy/tunnel.env（600）只有一行 TUNNEL_TOKEN=<令牌>；令牌经管道写入、不出现在命令行，做法见 §11
+#   echo 'COMPOSE_FILE=deploy/docker-compose.yml:deploy/docker-compose.tunnel.yml' > .env
+#   docker compose up -d --wait
+#
+# - **此后每一条 compose 命令都必须叠加本文件**（同 docker-compose.nginx.yml 的约定：命令不写 -f，由仓库根目录 .env 的
+#   COMPOSE_FILE 决定）。只带基础文件的 `up` 不会动 app 与 caddy，但 cloudflared 会被当成孤儿容器留在那里不受管理。
+# - 令牌只放 deploy/tunnel.env（600，被 .gitignore 的 *.env 与 .dockerignore 排除）：只给 cloudflared 用，不混进 app 的
+#   env_file（deploy/.env），app 容器里看不到它。令牌能以这条隧道的身份接入 Cloudflare，泄露后在 Cloudflare 上轮换。
+# - 客户端真实 IP、http→https 跳转、安全响应头都由 Caddyfile 的 :8081 入口处理；:8081 不发布到宿主。
+#   CADDY_TRUSTED_PROXIES 只管公网入口，套隧道不需要改它。
+# - 公网入口照旧：SITE_ADDRESS 的域名、证书、80/443 都不变，两个域名可以同时用。
+# - 升级 cloudflared：改下面的镜像版本号后 `docker compose up -d --wait`（只重建 cloudflared，在线玩家走隧道的连接会断开重连）。
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.3
+    restart: unless-stopped
+    # 镜像入口已经是 `cloudflared --no-autoupdate`；令牌从环境变量 TUNNEL_TOKEN 读
+    command: ['tunnel', 'run']
+    env_file: tunnel.env
+    depends_on:
+      caddy:
+        condition: service_started
+    # 加固：与 app 一致（cloudflared 用令牌运行时不写文件）
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: ${LOG_MAX_SIZE:-10m}
+        max-file: '${LOG_MAX_FILE:-5}'
