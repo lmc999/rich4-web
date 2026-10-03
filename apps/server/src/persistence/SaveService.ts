@@ -316,6 +316,15 @@ export class SaveService {
         this.d.log.warn({ err }, 'save migrateState failed');
         return incompatible('migrationFailed');
       }
+    } else if (typeof game === 'object' && game !== null && (game as { v?: unknown }).v === save.stateVersion) {
+      // 同版本也经 migrateState：v1 之内新增的字段（0.6.0 PlayerState.parked）由它给旧存档补缺省值（engine migrate/v1.ts）。
+      // state 自带的版本号不符、或结构本身不对（迁移抛错）时保持原样，留给下面的检查报 invalidState（更新的 stateVersion 已被
+      // checkSaveCompat 拒绝）
+      try {
+        game = engine.migrateState(game, save.stateVersion);
+      } catch {
+        // 保持原样
+      }
     }
     let valid = false;
     try {

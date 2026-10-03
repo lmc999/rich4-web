@@ -130,7 +130,12 @@ function m6m7Events(): GameEvent[] {
     { type: 'PASSIVE', seat: 1, card: 21, context: 'frame', other: null },
     { type: 'ITEM_USED', seat: 0, item: 2, target: { t: 'node', node: 5 } },
     { type: 'VEHICLE', seat: 0, vehicle: 'car', dice: 3 },
+    // 原版只刷新外观的切换（architecture §34）：预算 VEHICLE_QUIET_MS；命运失车停 0.8 秒（original）
+    { type: 'VEHICLE', seat: 0, vehicle: 'walk', dice: 1, stowed: 'car' },
+    { type: 'VEHICLE', seat: 0, vehicle: 'moto', dice: 2, via: 'wake', from: 'walk' },
+    { type: 'VEHICLE', seat: 0, vehicle: 'walk', dice: 1, via: 'expire', from: 'engineer' },
     { type: 'VEHICLE_DESTROYED', seat: 0, vehicle: 'moto' },
+    { type: 'VEHICLE_DESTROYED', seat: 0, vehicle: 'car', via: 'fate' },
     { type: 'OBJECT_PLACED', obj },
     { type: 'OBJECT_REMOVED', obj, cause: { k: 'object', ref: null, by: null } },
     { type: 'DOLL_WALK', seat: 0, path: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11], clearedObjects: [1], clearedGods: [7] },

@@ -53,8 +53,6 @@ export const FX_RELEASE_MS = 480;
  * 1–2 格）。原版皮肤按原版 tick 匀速走（shared/view/pacing 的 WALK_OUT）
  */
 export const WALK_OUT_HOPS_MAX = 3;
-/** 换乘交通工具 */
-export const FX_VEHICLE_MS = 450;
 /** 车毁 */
 export const FX_WRECK_MS = 620;
 /** 传送：两端光柱 */

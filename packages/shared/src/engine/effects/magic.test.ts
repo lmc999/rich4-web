@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fixtureRegistry } from '../../data/maps/registry';
+import { ITEM } from '../../data/tables/ids';
 import { engineMap } from '../core/mapCache';
 import { type Scenario, scenario } from '../testing/scenario';
 import type { MagicConditionId, MagicEffectId, SeatIndex } from '../types/ids';
@@ -100,26 +101,36 @@ describe('magic（魔法屋）', () => {
     // 开局道具 155 + 机车 80
     expect(it.player(1)).toMatchObject({ points: 235, vehicle: 'walk' });
     expect(it.player(1).items.every((n) => n === 0)).toBe(true);
-    expect(it.events.filter((e) => e.type === 'VEHICLE')).toMatchObject([{ seat: 1, vehicle: 'walk', dice: 1 }]);
+    // 原版 0x4446de 只刷新外观：via 'sold' 让客户端不弹「换乘」提示
+    expect(it.events.filter((e) => e.type === 'VEHICLE')).toMatchObject([
+      { seat: 1, vehicle: 'walk', dice: 1, via: 'sold', from: 'moto' },
+    ]);
   });
 
-  it('magic 效果 8：开工程车、背包没有道具的目标改回步行时单独发 VEHICLE（变化不夹带进 TURN_ENDED）', () => {
+  it('magic 效果 8：开着工程车时按原版折成 12 号道具一起卖（得 150 点券、不回库存），改回步行单独发 VEHICLE', () => {
     const sc = arena().edit((s) => {
       const p = s.players[1]!;
       p.items.forEach((n, it) => {
         if (it >= 1 && it <= 8) s.pools.items[it] = s.pools.items[it]! + n;
       });
       p.items = p.items.map(() => 0);
+      p.points = 0;
       p.vehicle = 'engineer';
       p.diceCount = 1;
-      p.engineer = { days: 7, restore: 'walk' };
+      p.engineer = { days: 7, restore: 'walk', dice: 1 };
     });
+    const pool12 = sc.state.pools.items[ITEM.ENGINEERING_VEHICLE];
     cast(sc, 10, 8);
-    expect(sc.player(1)).toMatchObject({ vehicle: 'walk', diceCount: 1, engineer: null });
+    // exe 0x4446de：模式 & 3 == 3 → 背包 12 号 +1（0x444728），再按价卖掉；12 号不回库存
+    expect(sc.player(1)).toMatchObject({ vehicle: 'walk', diceCount: 1, engineer: null, points: 150 });
+    expect(sc.player(1).items.every((n) => n === 0)).toBe(true);
+    expect(sc.state.pools.items[ITEM.ENGINEERING_VEHICLE]).toBe(pool12);
     const v = sc.event('VEHICLE');
-    expect(v).toMatchObject({ seat: 1, vehicle: 'walk', dice: 1 });
+    expect(v).toMatchObject({ seat: 1, vehicle: 'walk', dice: 1, via: 'sold', from: 'engineer' });
     expect(v.post?.players?.find((x) => x.seat === 1)?.set).toMatchObject({ vehicle: 'walk', engineer: null });
-    expect(sc.events.some((e) => e.type === 'ITEM_LOST' && e.seat === 1)).toBe(false);
+    expect(sc.events.filter((e) => e.type === 'ITEM_LOST' && e.seat === 1)).toMatchObject([
+      { item: ITEM.ENGINEERING_VEHICLE, qty: 1, cause: 'magic' },
+    ]);
     // 这次 action 里其他事件的 post 都不再含 1 号的座驾变化
     for (const e of sc.events) {
       if (e === v) continue;

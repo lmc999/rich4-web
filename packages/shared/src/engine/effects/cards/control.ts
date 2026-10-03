@@ -63,7 +63,9 @@ export const hibernate: CardEffect = {
     for (const p of boardPlayers(ctx.s)) {
       if (p.seat === seat) continue;
       addHostility(ctx, p.seat, seat, hate);
+      // 取消梦游：停放的座驾不再装回（原版 0x442dcc 只把 +0x37 清 0，+0x66 留着也不会再被读到；机车 / 汽车已在背包里）
       p.st.sleepwalk = 0;
+      p.parked = null;
       setActorStatus(ctx, { t: 'seat', seat: p.seat }, 'hibernate', ECON.HIBERNATE_DAYS);
     }
     for (const v of boardVillains(ctx.s)) {

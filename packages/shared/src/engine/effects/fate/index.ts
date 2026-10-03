@@ -26,7 +26,7 @@
  */
 import { cardDef } from '../../../data/tables/cards';
 import { type FateDef, fateDef, fateParam, swapFateByVehicle } from '../../../data/tables/fate';
-import { FATE_IDS, type FateId, ITEM_IDS, type ItemId, isPoolItem } from '../../../data/tables/ids';
+import { FATE_IDS, type FateId, ITEM, ITEM_IDS, type ItemId, isPoolItem } from '../../../data/tables/ids';
 import { itemDef } from '../../../data/tables/items';
 import { VEHICLE_ITEM } from '../../../data/tables/setup';
 import { add32, addU16, divTrunc, mul32 } from '../../../util/int32';
@@ -51,7 +51,7 @@ import { tradeAmount, updateChairman } from '../../rules/stock';
 import type { BirthdayPickOptions, ScapegoatOptions } from '../../types/decision';
 import type { BlessingResult } from '../../types/events';
 import type { FrameOf } from '../../types/frames';
-import type { SeatIndex } from '../../types/ids';
+import type { SeatIndex, Vehicle } from '../../types/ids';
 import type { PlayerAction } from '../../types/intent';
 import type { GameState, PlayerState } from '../../types/state';
 import { destroyVehicle, gainCard, mutateLot, timesPI } from '../common';
@@ -129,20 +129,26 @@ export function sellAllItemsFull(ctx: Ctx, seat: SeatIndex): number {
 }
 
 /**
- * 同 sellAllItemsFull，另外列出卖掉的道具；vehicleChanged 表示座驾改回了步行（机车 / 汽车折回道具、工程车作废），
- * 调用方没有随后的公布事件时要自己补发 VEHICLE（魔法屋 8：工程车 + 空背包时一个 ITEM_LOST 都没有）
+ * 同 sellAllItemsFull，另外列出卖掉的道具；vehicleFrom 是改回步行之前的座驾（本来步行时为 null）。座驾先折回背包里的道具
+ * 一起卖：机车 / 汽车折成 5 / 6 号（卖后回库存），工程车折成 12 号（按 12 号的价钱卖掉、不回库存，剩余天数一并作废）；
+ * 之后步行、1 颗骰子。调用方没有随后的公布事件时要自己补发 VEHICLE（魔法屋 8：背包空着时只剩座驾那一件）。
+ * 梦游卡停放的座驾（parked）不在这里：停放的机车 / 汽车早已在背包里一起卖掉，工程车不受影响，梦游结束时照样装回
+ * （原版只看模式字节 +0x11）。
+ * @source exe v2.06 fcn.004446de（魔法屋 0x431612、命运 32 0x44c09a、破产 0x40cc53 / 0x40ede0）：模式 & 3 为 1 / 2 / 3 时背包
+ *   机车 / 汽车 / 12 号道具 +1（0x444718 / 0x444720 / 0x444728），模式写 0、骰子写 1、调 0x40b425；再逐个道具（0..12）把数量
+ *   × 价格（道具表 0x47d640 + 8·i 的 +7 字节）累计、前 8 种回库存、背包清 0，返回值由调用方加到点券（0x43111d / 0x44c0a2）；
+ *   v3.11 0x445b66–0x445bae 相同
  */
 export function sellAllItemsDetailed(
   ctx: Ctx,
   seat: SeatIndex,
-): { gained: number; sold: { item: ItemId; qty: number }[]; vehicleChanged: boolean } {
+): { gained: number; sold: { item: ItemId; qty: number }[]; vehicleFrom: Vehicle | null } {
   const s = ctx.s;
   const p = ctx.player(seat);
-  const vItem = VEHICLE_ITEM[p.vehicle];
+  const vItem = p.vehicle === 'engineer' ? ITEM.ENGINEERING_VEHICLE : VEHICLE_ITEM[p.vehicle];
   if (vItem !== null) p.items[vItem] = (p.items[vItem] ?? 0) + 1;
-  const vehicleChanged = p.vehicle !== 'walk';
-  if (vehicleChanged) {
-    // 工程车不是背包道具，折不回来（⚑）：改回步行
+  const vehicleFrom = p.vehicle === 'walk' ? null : p.vehicle;
+  if (vehicleFrom !== null) {
     p.vehicle = 'walk';
     p.diceCount = 1;
     p.engineer = null;
@@ -158,7 +164,7 @@ export function sellAllItemsDetailed(
     sold.push({ item: it, qty: n });
   }
   p.points = addU16(p.points, gained, s.config.rules.intOverflow);
-  return { gained, sold, vehicleChanged };
+  return { gained, sold, vehicleFrom };
 }
 
 // ───────────────────────── 共用 ─────────────────────────
@@ -398,10 +404,16 @@ const sellAllStocks: Apply = (ctx, f, _def, p) => {
   }
 };
 
+/**
+ * 命运 10 机车被偷 / 11 汽车撞毁：车回共享库存、步行。原版直接把模式写成 0、骰子 1，刷新外观、重画，再说事件槽台词
+ * （命运 10 槽 3 / 4 随机二选一，命运 11 槽 3），不走地雷炸弹的毁车 0x40c7cd（没有烧焦外观），客户端据 via 'fate' 不播车毁。
+ * @source exe v2.06 命运 10 0x44b4e0–0x44b559（库存机车 +1）、命运 11 0x44b5f1–0x44b659（库存汽车 +1），台词表 0x47db2a；
+ *   有加持（high）只出消息框
+ */
 const loseVehicle: Apply = (ctx, f, _def, p) => {
   emitFate(ctx, f, null);
   if (blessingOf(f) === 'high') return;
-  destroyVehicle(ctx, p.seat);
+  destroyVehicle(ctx, p.seat, 'fate');
 };
 
 /** 罚金：high 免付（不赔）；low ×2；PROGRAM 直接付；rules.freeCardOnFines 时走 free → scapegoat → pay → insure */

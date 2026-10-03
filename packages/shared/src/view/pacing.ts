@@ -329,6 +329,9 @@ function newsOriginalBudget(e: GameEventOf<'NEWS'>): number {
   return Math.max(COMPACT_BUDGET_MS.NEWS, t.holdMs + t.endMs + FLIC_SLACK_MS);
 }
 
+/** 换座驾原版只刷新外观（0x40b425）：客户端不演出，只留同步外观的余量 */
+export const VEHICLE_QUIET_MS = 200;
+
 /** 一种节奏的完整预算表：以 GameEvent['type'] 为键穷举 */
 export type EventBudgetTable = { readonly [T in GameEventType]: EventBudget<T> };
 
@@ -392,7 +395,8 @@ export const COMPACT_BUDGET_MS = Object.freeze({
   ITEM_GAINED: 600,
   ITEM_LOST: 400,
   ITEM_USED: 1200,
-  VEHICLE: 900,
+  // 换座驾各条路径原版都只刷新外观（architecture §34），客户端不演出
+  VEHICLE: VEHICLE_QUIET_MS,
   VEHICLE_DESTROYED: 1000,
   OBJECT_PLACED: 600,
   OBJECT_REMOVED: 500,

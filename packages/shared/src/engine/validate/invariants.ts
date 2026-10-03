@@ -226,6 +226,16 @@ export function checkInvariants(s: GameState, em: EngineMap, opts: InvariantOpti
     }
   }
 
+  // 8b 座驾：开工程车 ⇔ 有工程车状态；梦游卡停放的座驾只在梦游期间存在，期间步行（梦游时没有途径换车）
+  for (const p of s.players) {
+    if ((p.vehicle === 'engineer') !== (p.engineer !== null)) out.push(`seat ${p.seat} engineer state mismatch`);
+    const k = p.parked;
+    if (k === null) continue;
+    if (p.st.sleepwalk === 0) out.push(`seat ${p.seat} has a parked vehicle but is not sleepwalking`);
+    if (p.vehicle !== 'walk') out.push(`seat ${p.seat} rides ${p.vehicle} while a vehicle is parked`);
+    if ((k.vehicle === 'engineer') !== (k.engineer !== null)) out.push(`seat ${p.seat} parked engineer state mismatch`);
+  }
+
   // 11 四大恶人：在棋盘上 ⇔ 有雇主（雇主在场，对局进行中时）；在棋盘上的站在地图格上；关着的在对应关押格
   for (const v of s.villains) {
     if (v.onBoard) {

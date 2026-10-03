@@ -97,6 +97,7 @@ export interface StagePort {
    * 留在建筑里（walkOut 开始时解除）。null 解除全部（批尾整体同步、reset / 跳过时的 clear）
    */
   holdInside(seat: SeatIndex | null): void;
+  /** 换车：只刷新外观（换姿态库 / 载具图），不闪光、不跳（原版 fcn.0040b425） */
   vehicle(seat: SeatIndex, v: Vehicle, signal: AbortSignal): Promise<void>;
   wreck(seat: SeatIndex, v: Vehicle, signal: AbortSignal): Promise<void>;
   bombAttach(seat: SeatIndex, fuse: number, signal: AbortSignal): Promise<void>;

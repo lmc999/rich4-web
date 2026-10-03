@@ -298,6 +298,59 @@ describe('integration/save-load', () => {
     expect((await exportAs(host.token, autoSaveId(s.code))).statusCode).toBe(409);
   }, 60_000);
 
+  it('0.5.0 的存档（PlayerState 还没有 parked，state 结构版本同为 1）：真实引擎导入、读档时经 migrateState 补 null，可以开局', async () => {
+    srv = await startTestServer({ rateLimitScale: 0, engine: 'real' });
+    const s = await setupRoom(srv.url, { humans: 2, settings: { timerPreset: 'off' } });
+    bots.push(...s.bots);
+    const [host, p1] = s.bots as [BotClient, BotClient];
+    await startGame(s);
+    const sv = await host.req('game:save', { name: '旧版存档' });
+    if (!sv.ok) throw new Error(sv.error.code);
+    expect((await host.req('room:dissolve', {})).ok).toBe(true);
+    await p1.until(() => p1.closedReason === 'dissolved', 3000, 'closed');
+    const f = srv.app.fastify;
+    const exp = await f.inject({
+      method: 'GET',
+      url: `/api/saves/${encodeURIComponent(sv.data.saveId)}/export`,
+      headers: { 'x-player-token': host.token },
+    });
+    expect(exp.statusCode).toBe(200);
+    const raw = gunzipJson(decodeR4S1(exp.body).blob) as {
+      engineVersion: string;
+      stateVersion: number;
+      game: GameState;
+    };
+    expect(raw.stateVersion).toBe(1);
+    raw.engineVersion = '0.5.0';
+    raw.game.engine = '0.5.0';
+    for (const p of raw.game.players) delete (p as Partial<GameState['players'][number]>).parked;
+    const imp = await f.inject({
+      method: 'POST',
+      url: '/api/saves/import',
+      headers: { 'x-player-token': host.token, 'content-type': 'text/plain' },
+      payload: encodeR4S1(gzipJson(raw), ''),
+    });
+    expect(imp.statusCode).toBe(200);
+    const sum = (imp.json() as { ok: true; data: SaveSummary }).data;
+    expect(sum).toMatchObject({ name: '旧版存档', compatible: true, verified: false });
+
+    const code2 = await newRoom(host);
+    expect((await p1.req('room:join', { code: code2, role: 'player' })).ok).toBe(true);
+    expect((await host.req('room:loadSave', { saveId: sum.saveId })).ok).toBe(true);
+    await host.until(() => host.room?.loadedSave?.saveId === sum.saveId, 3000, 'loaded');
+    expect((await p1.req('room:setReady', { ready: true })).ok).toBe(true);
+    expect(await host.req('room:start', {})).toEqual({ ok: true, data: undefined });
+    await host.until(() => host.room?.phase === 'playing' && host.view !== undefined, 3000, 'started');
+    const room2 = srv.app.rooms.get(code2)!;
+    expect(room2.runner!.state.players.map((p) => p.parked)).toEqual([null, null]);
+    expect(srv.engine.validateState(room2.runner!.state)).toBe(true);
+    host.autoPlay();
+    p1.autoPlay();
+    const seq = host.lastSeq;
+    await host.until(() => host.lastSeq >= seq + 10, 20_000, 'game continues');
+    expect(host.gaps).toEqual([]);
+  }, 60_000);
+
   it('读档时 owner 在观战席：自动入座；owner 后来加入：直接回到自己的座位', async () => {
     srv = await startTestServer({ rateLimitScale: 0 });
     const s = await setupRoom(srv.url, { humans: 2, settings: { timerPreset: 'off' } });

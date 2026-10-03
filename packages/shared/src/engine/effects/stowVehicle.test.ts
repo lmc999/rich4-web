@@ -203,15 +203,19 @@ describe('收起交通工具（STOW_VEHICLE）', () => {
     }
   });
 
-  it('只有真人收起的 VEHICLE 带 stowed：梦游卡把车退回背包时照旧只发 VEHICLE{walk,1}', () => {
+  it('只有真人收起的 VEHICLE 带 stowed：梦游卡把车退回背包时发 VEHICLE{walk,1,via:sleepwalk}（并停放，见 sleepwalkVehicle.test）', () => {
     const sc = setup('car');
     sc.give(0, { cards: [CARD.SLEEPWALK] });
     sc.useCard(0, CARD.SLEEPWALK, { t: 'actor', actor: { t: 'seat', seat: 1 } });
-    expect(sc.player(1)).toMatchObject({ vehicle: 'walk', diceCount: 1 });
+    expect(sc.player(1)).toMatchObject({ vehicle: 'walk', diceCount: 1, parked: { vehicle: 'car', dice: 3 } });
     expect(sc.player(1).items[ITEM.CAR]).toBe(1);
     const e = sc.event('VEHICLE');
-    expect(e).toMatchObject({ seat: 1, vehicle: 'walk', dice: 1 });
+    expect(e).toMatchObject({ seat: 1, vehicle: 'walk', dice: 1, via: 'sleepwalk', from: 'car' });
     expect(e).not.toHaveProperty('stowed');
+    // 真人收起不停放、不带 via
+    const hand = stow(setup('car'));
+    expect(hand.event('VEHICLE')).not.toHaveProperty('via');
+    expect(hand.player(0).parked).toBeNull();
   });
 
   it('随机对局的候选（candidateIntents）：能收起且没到菜单上限时含 STOW_VEHICLE，否则不含', () => {

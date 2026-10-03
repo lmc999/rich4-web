@@ -1,5 +1,5 @@
 {
-  "engineVersion": "0.5.0",
+  "engineVersion": "0.6.0",
   "map": "usa",
   "mapHash": "52a0d97ced7404343a611ec17d4c75b6c31ff52901ffa526701197c6a2c35ed2",
   "games": [
@@ -243,7 +243,7 @@
         "d86d5a77632553df",
         "5435ea00f5457f16"
       ],
-      "final": "606d2c66232b7ebd"
+      "final": "5f7aaf2304cce16c"
     },
     {
       "name": "三个月",
@@ -505,7 +505,7 @@
         "4dbc3e1d224bc09e",
         "9c8cb050aaea5f3a"
       ],
-      "final": "18bccd6b43eb1c5f"
+      "final": "acca6f6d6347ffaa"
     },
     {
       "name": "半年",
@@ -788,7 +788,7 @@
         "c8d7d96e5104b4cd",
         "8f2ec46e7da06345"
       ],
-      "final": "5f8f20de678dea76"
+      "final": "f84aaa3f8585ff73"
     },
     {
       "name": "一年",
@@ -1080,18 +1080,18 @@
         "7d477bbddafba2c6",
         "d58bffb37f7dba23",
         "edadc2f5382ed704",
-        "55db82c84791db85",
-        "f3f19d32db741448",
-        "62b77bb7b43eebed",
-        "61eb99ba5d91dd7c",
-        "2505ffb5268bd15d",
-        "daf569fff5fb2d69",
-        "109b99b2ad74e26c",
-        "ea55db25f1da1cd8",
-        "7f5c6b5c3c46a081",
-        "42bbabeb25276e4b"
+        "495e5181a4898b2b",
+        "945eb0b29b686b2b",
+        "537d72f6ea224917",
+        "a406917367c84342",
+        "9726070c720579c5",
+        "faf29ab1456f8910",
+        "401521c8904f8eae",
+        "7b1e1608aae42dc8",
+        "9f8eb5923e5e032e",
+        "40a1a955ce83b44c"
       ],
-      "final": "2be91d8ffb07332f"
+      "final": "c4233815c04fee56"
     }
   ]
 }

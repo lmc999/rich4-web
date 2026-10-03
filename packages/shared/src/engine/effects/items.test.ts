@@ -90,7 +90,7 @@ describe('items（13 种道具的效果）', () => {
     sc.expectEvents(['LANDED', 'BOMB_ATTACHED']);
   });
 
-  it('5 / 6 机车、汽车：装备，原交通工具退回背包，骰子数设为上限；同一种不可用', () => {
+  it('5 / 6 机车、汽车：装备，原交通工具退回背包，骰子数设为上限；同一种不可用（开着工程车时可用，见 sleepwalkVehicle.test）', () => {
     const sc = setup();
     give(sc, 0, ITEM.MOTORCYCLE);
     give(sc, 0, ITEM.CAR);
@@ -204,7 +204,10 @@ describe('items（13 种道具的效果）', () => {
     for (let i = 0; i < 6; i++) sc.untilMenu(0).roll(0);
     sc.until((s) => s.players[0]!.engineer === null);
     expect(sc.player(0)).toMatchObject({ vehicle: 'car', diceCount: 3 });
-    expect(sc.log.some((e) => e.type === 'VEHICLE' && e.seat === 0 && e.vehicle === 'car')).toBe(true);
+    // 到期换车原版只刷新外观（0x41c4d3 之后调 0x40b425）：via 'expire'
+    expect(sc.log.filter((e) => e.type === 'VEHICLE' && e.seat === 0 && e.vehicle === 'car')).toEqual([
+      expect.objectContaining({ dice: 3, via: 'expire', from: 'engineer' }),
+    ]);
   });
 
   it('13 核子飞弹：半宽 220：地产清为无主、窗内所有人（含施放者）住院 3 天', () => {

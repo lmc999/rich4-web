@@ -1728,7 +1728,7 @@ RICH4_ASSETS_ALLOW_UNGATED=0     # 仅本机调试：非 production + PUBLIC_URL
   `effects/items/vehicle.ts stowByHand` 复用 `stowVehicle`（车回背包，同种满 10 台时回共享库存）；`VEHICLE` 事件新增可选字段 `stowed`，
   只在真人收起时出现，客户端据此不弹提示、不放音效、日志记「收起××，改为步行」。电脑策略不变，golden 不变；`randomIntent` 的候选含 STOW_VEHICLE。
 - 界面：原版皮肤道具欄第 15 格固定画 ui.itemBar 帧 15 / 16（`stow-vehicle-icon`）；程序化背包页「收起X，改为步行」（`inv-stow-vehicle`）。
-- 未做（docs/TODO.md）：梦游卡结束后原版会恢复座驾；工程车模式下原版仍能用机车 / 汽车道具直接顶掉工程车；收起时的通用换车闪光。
+- ~~未做（docs/TODO.md）：梦游卡结束后原版会恢复座驾；工程车模式下原版仍能用机车 / 汽车道具直接顶掉工程车；收起时的通用换车闪光。~~（2026-10-03 已按原版改，§34）
 
 ### 28.2 百货道具按原版（V-R30）
 
@@ -2268,3 +2268,200 @@ mapHash 都不变；ENGINE_VERSION 仍是 0.5.0（尚未上线，`engine/version
 - 原版储金红利（新闻 23）给每个没有贷款的在场玩家都列一行（存款为 0 时「得到0元」），引擎的 affected 只含红利 > 0 的人（不改引擎）。
 - 手机横屏（844×390）这次没有截图（脚本支持 `mobile` 参数，本机那一轮卡在开房间，未查原因）。
 - `test/evcard-fix.mjs` 第 3 个场景（新闻板最短时间前点板子不跳过）是 §30.6 的旧行为，脚本没有改。
+
+## 34. 座驾按原版：梦游卡停放与装回、工程车被机车 / 汽车顶掉、只换外观的切换（2026-10-03）
+
+用户要求：docs/TODO.md「收起载具相关的原版差异」四条全部按原版做；取证时新发现的载具差异也一并按原版改（卖光时工程车折成 12 号道具、
+工程车到期恢复原骰子数、用道具换车不再另加提示与闪光，见 34.1–34.3）。引擎规则变了（梦游卡停放座驾、工程车模式下能用机车 / 汽车），
+**ENGINE_VERSION 0.5.0 → 0.6.0**，四张图 golden 刷新；`PlayerState` 新增字段 `parked`，`STATE_SCHEMA_VERSION` 仍为 1（旧快照由
+migrateState 补缺省值）。本节之后以代码和本节为准；与 §28.1「未做」、design/engine.md 旧版「梦游时交通工具退回背包」
+「正开着工程车时机车 / 汽车不可用」的说法冲突时以本节为准。
+
+### 34.1 取证（radare2；v2.06 为主基线，v3.11 逐处核对相同；记法同 §29.9 / §32.1）
+
+玩家记录基址 v2.06 0x493910 / v3.11 0x496b68，步长 0x68：+0x11 座驾模式（0 步行、1 机车、2 汽车，工程车 = 天数 << 2 | 3，用道具时写 0x1f
+即 7 天）、+0x12 骰子数、+0x37 梦游计数、+0x64 / +0x65 工程车到期要换回的座驾与骰子数、+0x66 / +0x67 **梦游前的座驾与骰子数**；
+背包 v2.06 0x495f07 + 道具号（每座位 0x14 字节，机车 0x495f0c、汽车 0x495f0d、工程车道具 0x495f13；v3.11 0x49915b + 道具号）。
+反汇编脚本 `test/vehstow-r2.sh`、`test/vehstow-orig-dump.sh`（输出 `.cache/vehstow/`，不入库）。
+
+- **梦游卡**（卡片函数表 0x473b84 第 16 项 0x442e15）：免罪 / 嫁祸之后 0x442f97–0x44301f：梦游计数写 4 / 5，+0x42（本月倒楣天数）+5，
+  **+0x66 / +0x67 = 模式 / 骰子数**（独立字段，不是背包）；模式不为 0 时：1 → 背包机车 +1、2 → 背包汽车 +1（`inc byte`，不看上限），
+  模式写 0、骰子写 1；工程车的模式字节（含天数）整个存进 +0x66，背包不变。之后只调 0x40b425 刷新外观。复仇反弹 0x44304d–0x4430d2 对出卡者
+  做同样的事。v3.11 0x44435e–0x4443e7（复仇 0x44441d）。
+- **结束**：回合开始 fcn.0041c058 里 0x41c1aa–0x41c27b（整段在主阻碍计数 dword +0x32 为 0 时才执行，0x41c161；关押期间梦游暂停）：
+  梦游计数带 0x80 时清 0；`+0x66 & 3` 为 1 且背包机车 ≠ 0、为 2 且背包汽车 ≠ 0、或为 3（工程车）→ 模式 = +0x66（整字节，含工程车天数）、
+  骰子 = +0x67，模式 1 / 2 时背包 −1；否则模式 0、骰子 1。之后调 0x40b425。v3.11 0x41c9a7–0x41ca77。
+  → 背包里还有那台车才装回（背包 −1、骰子数照旧）；工程车直接装回。
+- **工程车倒数**：同一函数更后面的 0x41c4a6–0x41c58c（不受主阻碍限制）：模式 & 3 == 3 时 −4，天数位为 0 就按 +0x64 & 3 换回（1 / 2 要背包 ≠ 0、
+  背包 −1，否则步行），之后只调 0x40b425。梦游期间模式是 0，**不倒数**；醒来那一回合先装回（0x41c1aa）再倒数（0x41c4a6），**这一回合算一天**。
+  v3.11 0x41cca3–0x41cd8c。
+- **冬眠卡**（第 15 项 0x442d23）0x442dca–0x442dda：梦游清 0、冬眠写 5、+0x42 +5；+0x66 不动，但装回只在计数 0x80 时发生，以后再也读不到
+  → 取消梦游时**不装回**（机车 / 汽车已在背包里，工程车就此没了）。跳过受困者（0x442da0）。
+- **梦游中再中梦游卡**：0x442fb2 无条件把当前模式（0，步行）存进 +0x66 → 第一次停放的座驾被覆盖（机车 / 汽车留在背包里，工程车没了）。
+- **梦游期间的其他事**：落点事件整个跳过（既有）；魔法屋 / 命运 32 卖光 fcn.0x4446de（魔法屋 0x431612、命运 0x44c09a；破产 0x40cc53 / 0x40ede0）
+  只看 +0x11（步行），背包里停放的机车 / 汽车一起卖掉 → 醒来时背包 0，仍步行；停放的工程车不受影响 → 照样装回。抢夺卡 0x442a76 → 0x440596
+  → 0x444641（被抢者背包 ≠ 0 才 −1）同理。地雷 / 炸弹 / 飞弹毁车 0x40c7cd 只看 +0x11 → 停放的座驾不受影响。r_items §5.5 记的社群说法
+  「先梦游再抢夺汽车会出现 255 辆汽车」在两版代码里找不到（装回前 0x41c1dd / 0x41c1f9 先比较背包 ≠ 0）。
+- **机车 / 汽车道具**（道具函数表 0x473c01 第 5 / 6 项）：机车 0x4459e9 只比较模式 ==1（不可用，返回 0）、==2（背包汽车 +1），其余（步行、工程车）
+  直接写 1、骰子 2，调 0x40b425 / 0x41cc56 后说道具台词 0x44d870（0x445a77）、背包机车 −1；汽车 0x445aa4 对称（==2 不可用、==1 背包机车 +1、
+  写 2、骰子 3，台词 0x445b2f）。工程车天数在模式字节里，被覆盖即作废；+0x64 只在工程车倒数（要求模式 & 3 == 3）时读、下次用工程车道具时
+  重写，不再起作用；开工程车时收进背包的车留在背包里，工程车道具不退还。v3.11 0x446e4a / 0x446f05 相同。道具欄 fcn.00446948 只在第 15 格
+  （收起）看模式，不按模式把道具置灰。
+- **电脑**：v3.11 道具判据跳表 0x4753a0：机车 0x421644 要求模式 & 3 == 0、汽车 0x421675 要求 < 2、工程车 0x421e20 要求 ≠ 3——开着工程车时
+  不用机车 / 汽车；v2.06 跳表 0x473228（0x420db7 / 0x420de8 / 0x421596）相同。**电脑策略不用改**。
+- **画面与音效**：刷新外观 fcn.0040b425 按模式 & 3 重新载入姿态库（0x44ec68），当前玩家时（0x488884）把行进循环音 0x472880 换成 0xb + 模式
+  （0x452a09 停、0x4529ee 循环播；网页版的行进音按座驾选，soundMap `MOVE_SEGMENT`），没有一次性音效。各条路径：
+  - 机车 / 汽车 / 工程车道具：0x40b425、0x41cc56(0,0,1) 整屏重画（第 3 个参数 bit0 置位时直接调 0x407ebd 重画、不看 x / y，不移镜头，0x41cc57–0x41cc71）、
+    0x44d870 说道具台词（台词表 0x47e03a 第 4 / 5 / 11 项）；真人从道具欄点用时没有提示，电脑用道具前先出 1.5 秒「使用%s」消息框
+    （0x446c17，所有道具通用）；
+  - 收起 0x4467b1：0x40b425、0x41cc56(0,0,1) 整屏重画，不说台词（§28.1）；
+  - 梦游卡：只调 0x40b425（之前那句 0x44d870(目标, 1, 事件槽 21) 是被梦游的反应台词，网页版随 STATUS_SET 播）；醒来、工程车到期、卖光：只调 0x40b425；
+  - 命运 10 / 11（命运函数表 0x473d14）：0x44b4e0–0x44b559 / 0x44b5f1–0x44b659 直接写模式 0、骰子 1，**不走毁车 0x40c7cd**（没有 +0x15 bit6 的
+    烧焦外观），0x40b425、0x41cc56 重画（命运 10 参数 3 另重画地图），说事件槽台词（命运 10 槽 3 / 4 随机二选一 0x44b52f、命运 11 槽 3 0x44b63d，台词表 0x47db2a），库存 +1；
+  - 地雷 / 炸弹 / 飞弹 / 核弹 / 骑车摔伤：0x40c7cd 置 +0x15 bit6（烧焦外观）再 0x40b425——网页版的车毁演出保留。
+- **卖光遇到工程车**：fcn.004446de 模式 & 3 为 1 / 2 / 3 时背包机车 / 汽车 / 12 号道具 +1（0x444718 / 0x444720 / 0x444728），模式写 0、
+  骰子写 1、刷新外观；再逐个道具按「数量 × 价格」（道具表 0x47d640 + 8·i 的 +7 字节，12 号 150）累计、前 8 种回库存、背包清 0，
+  调用方把返回值加到点券（魔法屋 0x43111d、命运 32 0x44c0a2，`add word`）。→ 工程车折成 12 号道具一起卖，多得 150 点券、不回库存。
+  v3.11 0x445b66–0x445bae 相同。
+- **工程车到期换回的骰子数**：用工程车道具时 +0x65 = 当时的骰子数（0x446600），到期换回机车 / 汽车时骰子 = +0x65（0x41c529），不是上限。
+- **顺带发现、未改**（docs/TODO.md，待用户决定）：「本月倒楣天数」（+0x42，月结 0x436ed8 × PI × 2500）原版中梦游 / 冬眠卡 +5、关押 +天数，
+  我们只在关押期间每回合 +1。
+
+### 34.2 引擎（ENGINE_VERSION 0.6.0）
+
+- 状态：`PlayerState.parked: { vehicle: 'moto' | 'car' | 'engineer'; dice; engineer: EngineerState | null } | null`（原版 +0x66 / +0x67；
+  工程车时 engineer 是停放时的天数与换回目标）。schema 同步；不变量 8b：开工程车 ⇔ `engineer` 非空；`parked` 非空时必须在梦游、步行，
+  停放的工程车 ⇔ `parked.engineer` 非空。
+- `effects/common.ts`：`stowVehicle(ctx, seat, 'hand' | 'sleepwalk')`——'sleepwalk' 先把原座驾、骰子数、工程车状态记进 `parked`（步行时写 null，
+  所以梦游中再中卡会覆盖），机车 / 汽车回背包（`bagVehicle`，同种满 10 台回库存——原版没有上限，但背包最多只能到 10，到不了这条路），
+  步行、1 颗骰子，发 `VEHICLE{walk,1,via:'sleepwalk',from}`；'hand' 照旧发 `stowed`。`destroyVehicle(ctx, seat, via?)`：via 'fate' 只用于
+  命运 10 / 11（`effects/fate` loseVehicle）。
+- `effects/cards/harm.ts`：梦游卡的 apply / revenge 两处改用 'sleepwalk'；`effects/cards/control.ts` 冬眠卡取消梦游时 `parked = null`；
+  `flow/liquidation.ts` 出局清算时 `parked = null`。
+- `flow/turn.ts start`：梦游计数 0x80 → 0（`tickActorCounters`，关押期间不倒数）的那一回合，在 TURN_STARTED 之前把 `parked` 取下（随
+  TURN_STARTED 公布），TURN_STARTED 之后 `wakeVehicle`：机车 / 汽车背包里有才装回（背包 −1、骰子数照旧，`VEHICLE{via:'wake'}`），没有就不发事件；
+  工程车直接装回并调 `tickEngineer` 算本回合的一天，到期则随后的 `restoreEngineer` 换回原车（两条 VEHICLE：wake、expire）。梦游期间 `engineer`
+  为 null，`tickEngineer` 不倒数。
+- `effects/items/vehicle.ts`：机车 / 汽车道具只在已经骑着同一种时不可用；开着工程车时 `bagVehicle` 不收任何东西、`engineer = null`（顶掉、不退还）。
+  `restoreEngineer` 发 `VEHICLE{via:'expire',from:'engineer'}`。
+- 魔法屋「卖光道具」发 `VEHICLE{walk,1,via:'sold',from}`（`sellAllItemsDetailed` 改为返回 `vehicleFrom`）；命运 32 照旧随 FATE 的 post 公布。
+  开着工程车时按原版折成 12 号道具一起卖（得 150 点券、不回库存，魔法屋随后多一条 `ITEM_LOST{12}`），原先是直接作废。
+- 工程车到期的骰子数：`EngineerState` 新增 `dice`（原版 +0x65），用工程车道具时记下当时的骰子数，到期换回机车 / 汽车时恢复它（换不回、
+  步行时 1）；梦游停放的工程车连同 `dice` 一起停放。电脑总按上限掷，所以电脑对局里与旧版的「按上限」相同。
+- 事件：`VEHICLE` 新增可选 `via`（'sleepwalk' | 'wake' | 'expire' | 'sold'）与 `from`；`VEHICLE_DESTROYED` 新增可选 `via: 'fate'`；
+  `isQuietVehicleSwitch(e)`（engine/types/events.ts）= 带 stowed / via，客户端与 pacing 共用这条判断。
+- pacing：`VEHICLE` 预算一律 `VEHICLE_QUIET_MS` = 200 ms（原先 900）；`VEHICLE_DESTROYED` 不变（命运失车停 0.8 秒在预算内）。
+- 电脑策略不变（34.1）；`--policy random` 的候选里开着工程车时多了机车 / 汽车道具。
+- 旧快照：`migrate/v1.ts identityV1` 给缺 `parked` 的玩家补 null、给缺 `dice` 的工程车状态（`engineer` 与 `parked.engineer`）补换回座驾的
+  上限（含时光机锚点里的世界）；0.5.x 中梦游卡时座驾没有停放、梦游结束不装回，到期时按上限设骰子数，两者都与旧行为一致。服务器重启恢复：0.5 ≠ 0.6 → `migrated`（只迁移快照、不重放 journal）。读档：`SaveService` 原先只在
+  stateVersion 更旧时迁移，同版本的旧存档会因缺字段校验失败——改为同版本也经 migrateState（state 自带的 v 与存档的 stateVersion 不符、或迁移抛错时保持原样，
+  留给后面的检查报 invalidState，原有的错误原因不变）。`STATE_SCHEMA_VERSION` 仍为 1。
+
+### 34.3 客户端（两种皮肤共用 handler）
+
+- `presentation/handlers/items.ts`：`VEHICLE` 各条路径（含用道具换车）都只换外观——把 post 同步到 store 与舞台，再调舞台的 `vehicle`；
+  两种舞台的 `vehicle()`（OrigStage / BoardStage）改为只换姿态库 / 载具图，不闪光、不跳（`FX_VEHICLE_MS` 删掉）。不弹「换乘交通工具」提示
+  （那句只进日志）。原版用道具换车另整屏重画一次，网页版棋盘每帧重画，没有对应动作；原版也不移镜头。
+  `ITEM_USED` 遇到换车道具（5 / 6 / 12，shared `isVehicleItem`）不画道具名气泡、不播施放演出，`soundMap` 不放施放音效 magic，只说道具台词
+  （既有的道具台词机制：voice `{k:'item'}`，取自 exe 道具台词表 0x47e03a）；「XX 使用了机车」提示保留（所有道具通用，对应原版电脑用道具时的
+  「使用%s」消息框，真人原版没有）。
+  `VEHICLE_DESTROYED{via:'fate'}`：不提示、不飘「车毁了！」、不播车毁，同步外观后停命运效果后的 0.8 秒（original；compact 0.15 秒）。
+- `soundMap.ts`：VEHICLE 一律不出声（原先放 ding）；命运失车不放爆炸声，说事件槽台词（机车 `spendSmall0` / `spendSmall1` 二选一，汽车 `spendSmall0`）。
+  pacing 的 VEHICLE 预算一律 `VEHICLE_QUIET_MS` = 200 ms。
+- `logFormat.ts` 与 i18n `events:log.VEHICLE_*`：用道具换车「换乘交通工具（n 颗骰子）」；收起「收起××，改为步行」；梦游「梦游，××收回道具栏，改为步行」
+  （工程车「工程车停下」）；醒来「梦游结束，换回××」；到期「工程车到期，换回×× / 改为步行」；卖光「××一并卖掉，改为步行」；
+  命运失车「失去××，改为步行」。zh-TW 由 `npm run i18n:zh-tw` 生成。
+- 两种皮肤共用这些 handler，舞台的 `vehicle()` 两边一起改。
+
+### 34.4 测试
+
+- `engine/effects/sleepwalkVehicle.test.ts`（新，14 例）：机车中卡——停放、背包 +1、骰子数 1 照旧，梦游 5 个回合后第 6 个回合装回（背包 −1，
+  VEHICLE 在 TURN_STARTED 之后）；汽车被抢夺卡抢走后醒来仍步行、不发 VEHICLE；工程车停放期间天数 7 不变、醒来那一回合 6；醒来当回合到期
+  （wake → expire 两条）；步行中卡不停放、梦游中再中卡覆盖；冬眠卡取消；复仇卡反弹双方各自停放与装回；飞弹炸到梦游者不毁停放的车；
+  关押期间 0x80 不醒；不变量；工程车被机车 / 汽车顶掉（菜单可用、天数作废、背包里的汽车还在、之后不再倒数）；同一种仍不可用；到期事件带 via；
+  到期换回机车时骰子数恢复成开工程车前的 1 颗（不是上限 2），醒来当回合到期同样恢复。
+- 改写：`stowVehicle.test.ts`（梦游卡的 VEHICLE 带 via、真人收起不停放）、`magic.test.ts`（卖光 via sold；开着工程车时折成 12 号道具卖掉、
+  得 150 点券、ITEM_LOST{12}、库存不变）、`fate.test.ts`（10 / 11 via fate，骑车摔伤不带）、`items.test.ts`（到期 via expire）、
+  `api.test.ts`（0.5.x 快照缺 parked 与 engineer.dice：直接校验不通过，migrateState 补 null / 上限，含锚点）、版本号两处。
+- 服务器：`integration/restart-recovery.test.ts` 新增「0.5.0 写下的快照、玩家没有 parked」：恢复为 migrated、parked 补 null、0.5.0 中卡的人醒来
+  不发 VEHICLE、对局继续无缺号；`integration/save-load.test.ts` 新增「0.5.0 的存档」：真实引擎导入（compatible）、读档开局、parked 为 null。
+- 客户端：`handlers/vehicleStow.test.ts` 改写（各来源含用道具换车：只调舞台 vehicle、不提示、不出声；换车道具的 ITEM_USED 没有气泡、施放与 magic
+  音效、只说道具台词，飞弹照旧；命运失车的台词）；`handlers/budget.test.ts` 加入各种切换与命运失车。
+- E2E：`vehicle-stow.spec.ts` 新增「梦游卡」：1 真人 + 1 电脑、开局汽车，真人对电脑用梦游卡 → 电脑步行、停放汽车、背包 +1、日志「梦游，汽车收回道具栏」；
+  空走到电脑醒来 → 日志「梦游结束，换回汽车」，全程没有「换乘」提示（按配置的缺省皮肤：默认配置程序化、原版配置原版）。
+- 调试脚本：`test/vehstow-legacy-restore.ts`（0.5.0 快照经 migrateState + validateState 后继续推进：OK）、`test/vehstow-golden-diff.mjs`、
+  `test/vehstow-golden-vehicles.ts`、`test/vehstow-sim.sh`、`test/vehstow-dbg-revenge.ts`。
+
+### 34.5 golden（四张图刷新）
+
+`RICH4_UPDATE_GOLDEN=1 RICH4_GOLDEN_MAPS=taiwan,china,japan,usa RICH4_DATA_DIR=./rich4-data npx vitest run --project shared src/engine/golden`，
+再不带 UPDATE 跑两遍均 5 / 5 通过、四个快照 sha256 不变；mapHash 不变，16 局 AI intent 被拒 0 次，每步不变量检查通过。
+`test/vehstow-golden-vehicles.ts` 按 golden 的同一组对局重放（16 局终局哈希与快照一致），统计座驾切换。各局 事件数 / 天数（旧 → 新）
+与首个不同的 400 事件检查点（`test/vehstow-golden-diff.mjs`）：
+
+| 图 | 一个月 | 三个月 | 半年 | 一年 |
+|---|---|---|---|---|
+| 台湾 | 800 / 30 天，检查点全同 | 2671 / 91，全同 | 5167 / 182，#6 起不同 | 9053 → 9566，357 天 lastStanding → 365 天 timeLimit，#15 起分歧 |
+| 大陆 | 833，全同 | 2457，全同 | 4985，全同 | 9580 / 365，#9 起不同 |
+| 日本 | 858，全同 | 2538，全同 | 5030 / 182，#7 起不同 | 7846 → 7787，294 → 296 天（仍 lastStanding），#8 起分歧 |
+| 美国 | 840，全同 | 2440，全同 | 5011，全同 | 8803 / 365，#13 起不同 |
+
+- 检查点全同的局只是终局哈希因 `state.engine` 版本号变化；事件数不变而检查点不同的局，是事件里多了 `via` 字段——台湾半年（命运 10 / 11 各 1 次
+  `VEHICLE_DESTROYED{via:'fate'}`）、大陆一年（命运失车 2 次）、日本半年（魔法屋卖光 1 次 `via:'sold'`、命运失车 2 次）、美国一年
+  （卖光 1 次、工程车到期 3 次 `via:'expire'`、命运失车 1 次），对局走向不变。
+- 规则改变对局走向的只有两局：台湾一年第 220 天 1 号骑机车中梦游卡（停放，骰子 1），第 225 天醒来装回机车（旧版会一直步行）；日本一年
+  第 121 天 0 号坐汽车中梦游卡，第 126 天醒来装回汽车。16 局共用了 12 次梦游卡，其余 10 次没有停放座驾（目标在步行，或打在恶人身上、被免罪 / 嫁祸挡掉）。
+- 16 局里电脑一次也没有在开工程车时用机车 / 汽车（34.1：原版电脑不会），冬眠卡取消停放 0 次，醒来时背包里已经没有车 0 次。
+- 补上「卖光时工程车折成 12 号道具」「工程车到期恢复原骰子数」（`EngineerState.dice`）之后再刷新一次：大陆、日本两份快照逐字节不变；
+  台湾、美国只有一年局变了——事件数、类型计数、天数都不变，只是事件里的工程车状态多了 `dice`（台湾第 21 个检查点起、美国第 19 个起；
+  美国终局哈希不变，台湾终局时还有人开着工程车，终局哈希变）。16 局里没有开着工程车被卖光的情形；电脑开工程车前总按上限掷，到期恢复的骰子数
+  与旧版的「按上限」相同。之后不带 UPDATE 连跑两遍 5 / 5 通过，sha256：台湾 `5035b4c8…`、美国 `b897a440…`，大陆 `0c8c246e…`、日本 `3573d4af…` 不变。
+
+### 34.6 自对弈
+
+`npm run sim -- --engine-only --map <图> --data-dir rich4-data --games 500 --policy original --workers 7 --stats` 与
+`--games 200 --policy random --check-fold --workers 7`，四张图各跑两遍（`test/vehstow-sim.sh`，输出在 `.cache/vehstow/sim/`；时限缺省 730 天）：
+16 次运行全部 exit 0、finished = 局数，rejects / invariantErrors / errors 都是 0，两遍的 finalHash 与 journalHash 都相同。
+跑自对弈期间 `packages/shared` 的代码与开始时逐字节相同（只改注释的几处在跑完之后才改）。下表是补上卖光工程车、工程车骰子数之后的最终结果：
+
+| 图 | original 500 局 finalHash（平均天数；VEHICLE / VEHICLE_DESTROYED） | random 200 局 finalHash（--check-fold，平均天数） |
+|---|---|---|
+| 台湾 | `f8b3b56e1937e913`（379.0 天；7877 / 3639） | `cf2c98484af718a2`（150.7） |
+| 大陆 | `e2921d141617a095`（513.1 天，38 局 timeLimit；10256 / 4844） | `7df55b9024739ed5`（189.3） |
+| 日本 | `ed8369cafba34756`（306.6 天；6664 / 2901） | `257d5323f64ad716`（119.0） |
+| 美国 | `6cce97b089904625`（382.1 天；8131 / 3702） | `2fc4a80153fbbe96`（134.6） |
+
+（§31.5 的旧值：original 台湾 `0aec5587ae6ff8d4` 381.7 天、大陆 `3c3f4621cc90de45` 517.8、日本 `686b17518710dccb` 306.8、美国 `c37d5bbeb275d4f5` 383.1；
+random 台湾 `a980c4513d7e62e0`、大陆 `9646d6170b534826`、日本 `26dcd8bad624f431`、美国 `2ba641cec6a3760c`。random 也变了：开着工程车时多了
+机车 / 汽车两个候选，且醒来装回改变对局走向。本节第一版（只做 TODO 四条时）的 original 是台湾 `8d7d62394ee9bad8`、大陆 `c0cfda005fbc28e7`、
+日本 `f7fc99061abf0fbd`、美国 `0f499d1b1b86db4a`，补上两条之后 original 全变——卖光时工程车多得 150 点券，状态与事件里的工程车多了 `dice`；
+random 四张图与第一版相同。）
+
+另用 `test/vehstow-golden-vehicles.ts <标签> <图> 60` 每张图跑 60 局一年局（原版电脑 AI，种子 7a1b0000 起）统计座驾切换（第一版时跑的，四张图合计）：
+共用梦游卡 283 次，打到骑车的人停放 111 次（机车 54、汽车 56、工程车 1，每张图分别见 `.cache/vehstow/golden/vehicles-extra60.json`），醒来装回 98 次
+（机车 48、汽车 49、工程车 1）；醒来时背包里已经没有车 4 次（都是机车：停放后被卖光、抢走）；冬眠卡取消停放 6 次；其余 3 次没有走到醒来（对局结束、
+出局清算或梦游中再中卡）；魔法屋卖光座驾 88 次（其中工程车 1 次）；工程车到期 126 次；命运 10 / 11 失车 216 次；**开着工程车时用机车 / 汽车 0 次**（原版电脑不会）；AI intent 被拒 0 次。
+
+### 34.7 验证（2026-10-03，最终一轮）
+
+- `npm run check` EXIT 0：typecheck 四个工作区；lint 1299 个文件；vitest 334 个文件通过 1 跳过、3418 例通过 21 跳过；determinism（193 个文件）/
+  no-original（1788）/ deps（1214）/ zh-tw 通过。
+- `RICH4_DATA_DIR=./rich4-data npx vitest run --project shared`：90 个文件 904 例全过（含四张图 golden）。第一轮自对弈同时跑时曾有 1 例
+  （`ai/items.test.ts`「12 工程车」）、client-dom 的 `realEngine*.dom.test.tsx` 7 例因机器负载超时，单独重跑通过，负载降下来后整跑全过。
+- golden：34.5 两次刷新后都不带 UPDATE 连跑两遍，最后改完注释再跑两遍，5 / 5 通过、快照 sha256 不变。
+- 自对弈：34.6，16 次运行全部通过、两遍哈希一致。
+- 旧快照：`npx tsx test/vehstow-legacy-restore.ts` OK（0.5.0 快照缺 parked 与 engineer.dice，直接校验不通过；migrateState 后通过、不变量为空，
+  engineer.dice 补成 3；中卡的人醒来仍步行、不发 VEHICLE；开工程车的人照常倒数）；服务器 `restart-recovery`（migrated 路径）与
+  `save-load`（0.5.0 存档导入读档）新用例通过。
+- E2E（`CI=1`，端口 3100 / 5174 / 3110 / 5184 事先确认空闲）：`vehicle-stow.spec.ts` + `skin-classic-dice.spec.ts` 默认配置 5 / 5 通过、
+  原版配置 5 / 5 通过（含新增的「梦游卡」）。原版配置有一次 `skin-classic-dice` 第一例卡在 `browser.newContext` 超时（机器负载下浏览器没起来，
+  与本改动无关），重跑 5 / 5 通过。之后只改了卖光工程车那句日志的措辞，E2E 用例走不到。全量 E2E 没有跑。
+
+### 34.8 遗留
+
+- 「本月倒楣天数」原版中梦游 / 冬眠卡 +5、关押时 +天数，我们只在关押期间每回合 +1（与载具无关，docs/TODO.md 待用户决定）。
+- 用道具换车时网页版仍有「XX 使用了机车」提示（所有道具通用的 ITEM_USED 提示，对应原版电脑用道具时的 1.5 秒「使用%s」消息框；真人用时原版没有），
+  原版皮肤没有做成原版的消息框；原版那次整屏重画网页版没有对应动作（棋盘每帧重画）。
+- V-R31：只做了 exe 静态分析，没有在原版里实际看过（verify-checklist V-R31）。
+- 收起座驾（`stowVehicle 'hand'`）与梦游停放时机车 / 汽车回背包仍按同种满 10 台回库存（原版 `inc byte` 不看上限，但背包里的车最多只能到 10 台，
+  这条分支到不了）。

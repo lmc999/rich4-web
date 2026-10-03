@@ -7,6 +7,8 @@
 // - 程序化皮肤（设置里指定）：行动区「道具」→ 道具页「收起机车，改为步行」→ 步行、行动区的颗数钮消失（只剩 1 颗）
 //   → 掷骰 1 颗。
 // 两种皮肤都核对：收起不弹「换乘交通工具」提示（原版 0x4467b1 只刷新外观、不说台词），日志记「收起××，改为步行」。
+// 梦游卡（architecture §34，ENGINE_VERSION 0.6.0）：骑汽车的电脑中卡时汽车停放（回背包）、梦游结束的回合装回；两次都只换外观、
+// 不弹「换乘」提示，日志记「梦游，汽车收回道具栏」「梦游结束，换回汽车」。按配置的缺省皮肤跑（默认配置程序化、原版配置原版）。
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -22,10 +24,12 @@ import {
   expectOriginalSkin,
   newPlayer,
   type Player,
+  playTurn,
   startGame,
   test,
   waitIdle,
   waitMyTurn,
+  zh,
 } from '../fixtures/room';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -277,6 +281,100 @@ test('程序化皮肤：机车开局 → 道具页「收起机车，改为步行
 
     const r = await rollWith(page, m1.seat, [3, 5]);
     expect(r).toEqual({ dice: [3], diceCount: 1 });
+    expectNoErrors([p]);
+  } finally {
+    await p.context.close();
+  }
+});
+
+interface SeatVehicle {
+  vehicle: string;
+  parked: { vehicle: string; dice: number } | null;
+  car: number;
+}
+
+/** 某个座位在本页 view 里的座驾、停放的座驾与背包里的汽车数（单真人 + 电脑：手牌公开） */
+async function seatVehicle(page: Page, seat: number): Promise<SeatVehicle> {
+  return page.evaluate((s) => {
+    // biome-ignore lint/suspicious/noExplicitAny: 测试钩子
+    const g = (window as any).__rich4.store.game.getState();
+    // biome-ignore lint/suspicious/noExplicitAny: 测试钩子
+    const p = g.view.players.find((x: any) => x.seat === s);
+    return { vehicle: p.vehicle, parked: p.parked, car: p.items?.[6] ?? -1 };
+  }, seat);
+}
+
+/** 日志里某座位的 VEHICLE（文案 + 原事件的 via / vehicle） */
+async function vehicleVia(page: Page, seat: number): Promise<{ text: string; via: string | null; vehicle: string }[]> {
+  return page.evaluate((s) => {
+    // biome-ignore lint/suspicious/noExplicitAny: 测试钩子
+    const log = (window as any).__rich4.store.game.getState().log as any[];
+    return log
+      .filter((l) => l.type === 'VEHICLE' && l.src?.event?.seat === s)
+      .map((l) => ({ text: l.text, via: l.src.event.via ?? null, vehicle: l.src.event.vehicle }));
+  }, seat);
+}
+
+test('梦游卡：骑汽车的电脑中卡时汽车停放、梦游结束装回，两次都只换外观、不提示「换乘」', async ({ browser }) => {
+  test.setTimeout(300_000);
+  const p: Player = await newPlayer(browser, '夢遊卡');
+  const page = p.page;
+  try {
+    await createRoom(page, { map: 'test', timer: 'off', aiCount: 1, vehicle: 'car' });
+    await startGame(page, [page]);
+    await waitMyTurn(page);
+    expect(await seatVehicle(page, 1)).toMatchObject({ vehicle: 'car', parked: null, car: 0 });
+
+    // 0 号（本人）对 1 号（电脑）用梦游卡：回合菜单的卡片欄经测试钩子提交 USE_CARD（1 号还没跳伞，先放到 6 号格）
+    await acted(page, () => debugAct(page, { op: 'teleport', seat: 1, node: 6, prev: 5 }));
+    await acted(page, () => debugAct(page, { op: 'give', seat: 0, cards: [16], items: [] }));
+    await waitMyTurn(page);
+    await recordToasts(page);
+    await acted(page, () =>
+      page.evaluate(() => {
+        // biome-ignore lint/suspicious/noExplicitAny: 测试钩子
+        const h = (window as any).__rich4;
+        const dd = h.store.game.getState().decision;
+        // biome-ignore lint/suspicious/noExplicitAny: 测试钩子
+        const row = dd.options.cards.find((r: any) => r.card === 16);
+        const target = { t: 'actor', actor: { t: 'seat', seat: 1 } };
+        return h.client.act({ type: 'USE_CARD', slot: row.slot, card: 16, target }, dd.decisionId);
+      }),
+    );
+    await waitMyTurn(page);
+    await waitIdle(page);
+    expect(await seatVehicle(page, 1)).toEqual({
+      vehicle: 'walk',
+      parked: { vehicle: 'car', dice: 3, engineer: null },
+      car: 1,
+    });
+    expect(await vehicleVia(page, 1)).toEqual([
+      {
+        text: expect.stringContaining(zh('梦游，汽车收回道具栏，改为步行', '夢遊，汽車收回道具欄，改為步行')),
+        via: 'sleepwalk',
+        vehicle: 'walk',
+      },
+    ]);
+
+    // 本人先收起自己的汽车（只掷 1 颗），之后每回合从 12 掷 1 点落到 13（得 30 点），只让电脑走；电脑梦游 5 个回合，
+    // 第 6 个回合醒来装回汽车。万一出现别的决策（电脑对本人用了卡等）按默认处理（playTurn）
+    await acted(page, () =>
+      page.evaluate(() => {
+        // biome-ignore lint/suspicious/noExplicitAny: 测试钩子
+        const h = (window as any).__rich4;
+        return h.client.act({ type: 'STOW_VEHICLE' }, h.store.game.getState().decision.decisionId);
+      }),
+    );
+    for (let i = 0; i < 12 && (await vehicleVia(page, 1)).length < 2; i++) {
+      await playTurn(page, 0, { node: 12, prev: 11, dice: 1 });
+    }
+    expect(await vehicleVia(page, 1)).toEqual([
+      expect.objectContaining({ via: 'sleepwalk' }),
+      { text: expect.stringContaining(zh('梦游结束，换回汽车', '夢遊結束，換回汽車')), via: 'wake', vehicle: 'car' },
+    ]);
+    expect((await seatVehicle(page, 1)).parked).toBeNull();
+    // 整段都没有弹「换乘交通工具」
+    expect((await recordedToasts(page)).filter((t) => t.includes(zh('换乘', '換乘')))).toEqual([]);
     expectNoErrors([p]);
   } finally {
     await p.context.close();

@@ -205,7 +205,7 @@ describe('items（AI 用道具判据）', () => {
     const on = () =>
       setup([{ item: ITEM.ENGINEERING_VEHICLE }], (s) => {
         s.players[0]!.vehicle = 'engineer';
-        s.players[0]!.engineer = { days: 3, restore: 'walk' };
+        s.players[0]!.engineer = { days: 3, restore: 'walk', dice: 1 };
       });
     expect(hits(on, ITEM.ENGINEERING_VEHICLE, { personality: 2 })).toBe(0);
   });

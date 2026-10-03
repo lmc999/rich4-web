@@ -67,7 +67,6 @@ import {
   FX_REMOVE_MS,
   FX_REWIND_MS,
   FX_TELEPORT_MS,
-  FX_VEHICLE_MS,
   FX_WRECK_MS,
   ORIG_FLIC_SLACK_MS,
   ORIG_FLIC_WAITS,
@@ -832,13 +831,14 @@ export class OrigStage implements StagePort {
     this.host.spreadActors();
   }
 
-  /** 换车：原版机车 / 汽车姿态库（OrigActor 按状态选库）+ 跳一下 */
-  async vehicle(seat: SeatIndex, v: Vehicle, signal: AbortSignal): Promise<void> {
+  /**
+   * 换车：只刷新外观——换成原版机车 / 汽车 / 工程车姿态库（OrigActor 按状态选库），不闪光、不跳。原版各条换车路径都只调
+   * fcn.0040b425 重载姿态库（用道具换车另整屏重画、说道具台词，台词由 soundMap 负责；architecture §34）
+   */
+  async vehicle(seat: SeatIndex, v: Vehicle, _signal: AbortSignal): Promise<void> {
     const a = this.actor(seat);
     if (!a) return;
     a.setStatus({ ...a.currentStatus, vehicle: v });
-    this.fx.sparkles(a.boardPos(), 0xffd84d, 8);
-    await Promise.all([a.hop(signal), this.fx.wait(FX_VEHICLE_MS, signal)]);
   }
 
   async wreck(seat: SeatIndex, _v: Vehicle, signal: AbortSignal): Promise<void> {

@@ -91,12 +91,24 @@ export const LOG_FORMAT = {
   ITEM_GAINED: (e, n) => L(n, 'ITEM_GAINED', { who: n.seat(e.seat), item: n.item(e.item), n: e.qty }),
   ITEM_LOST: (e, n) => L(n, 'ITEM_LOST', { who: n.seat(e.seat), item: n.item(e.item), n: e.qty }),
   ITEM_USED: (e, n) => L(n, 'ITEM_USED', { who: n.seat(e.seat), item: n.item(e.item) }),
-  // 真人收起机车 / 汽车（stowed）：记「收起××，改为步行」，不写成换乘（handler 不弹提示，soundMap 不放音效）
-  VEHICLE: (e, n) =>
-    e.stowed
-      ? n.t('game:stow.log', { who: n.seat(e.seat), name: n.t(`game:vehicle.${e.stowed}`) })
-      : L(n, 'VEHICLE', { who: n.seat(e.seat), n: e.dice }),
-  VEHICLE_DESTROYED: (e, n) => L(n, 'VEHICLE_DESTROYED', { who: n.seat(e.seat) }),
+  // 用道具换车写「换乘交通工具」；原版只刷新外观的切换（handler 不弹提示，soundMap 不放音效）按来源写：
+  // 真人收起「收起××，改为步行」、梦游「梦游，××收回道具栏」、醒来「梦游结束，换回××」、工程车到期、卖光
+  VEHICLE: (e, n) => {
+    if (e.stowed) return n.t('game:stow.log', { who: n.seat(e.seat), name: n.t(`game:vehicle.${e.stowed}`) });
+    if (e.via === undefined) return L(n, 'VEHICLE', { who: n.seat(e.seat), n: e.dice });
+    const from = e.from ?? 'walk';
+    const params = {
+      who: n.seat(e.seat),
+      name: n.t(`game:vehicle.${e.via === 'wake' || e.via === 'expire' ? e.vehicle : from}`),
+    };
+    if (e.via === 'expire') return L(n, 'VEHICLE', params, e.vehicle === 'walk' ? 'expireWalk' : 'expire');
+    return L(n, 'VEHICLE', params, from === 'engineer' && e.via === 'sleepwalk' ? 'sleepwalkEngineer' : e.via);
+  },
+  // 命运 10 / 11（via 'fate'）：车是被偷 / 撞毁的，不写「被毁」
+  VEHICLE_DESTROYED: (e, n) =>
+    e.via === 'fate'
+      ? L(n, 'VEHICLE_DESTROYED', { who: n.seat(e.seat), name: n.t(`game:vehicle.${e.vehicle}`) }, 'fate')
+      : L(n, 'VEHICLE_DESTROYED', { who: n.seat(e.seat) }),
   OBJECT_PLACED: (e, n) => L(n, 'OBJECT_PLACED', { tile: n.tile(e.obj.node) }),
   OBJECT_REMOVED: (e, n) => L(n, 'OBJECT_REMOVED', { tile: n.tile(e.obj.node) }),
   DOLL_WALK: (e, n) => L(n, 'DOLL_WALK', { who: n.seat(e.seat) }),

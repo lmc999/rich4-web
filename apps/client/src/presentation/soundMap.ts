@@ -6,7 +6,15 @@
 // - scene：事件期间的场景曲（监狱、医院、破产、乐透开奖、月结、拍卖、结算）。场所屏与小游戏的场景曲由 UI 状态决定
 //   （audio/selectors.sceneLayersFor）。
 // 事件槽的触发门槛与概率按 r_minigames_chars §2.4（第三方转述，语义置信度 visual / guess），金额门槛乘物价指数。
-import { type CardId, cardDef, GOD, type GodKind, type SeatIndex } from '@rich4/shared/engine';
+import {
+  type CardId,
+  cardDef,
+  GOD,
+  type GodKind,
+  isQuietVehicleSwitch,
+  isVehicleItem,
+  type SeatIndex,
+} from '@rich4/shared/engine';
 import { cardGainShows } from '@rich4/shared/view';
 import {
   moneyVoice,
@@ -245,10 +253,26 @@ export const SOUND_MAP = {
   // ── item
   ITEM_GAINED: { sfx: z('ding', 'gain.item') },
   ITEM_LOST: {},
-  ITEM_USED: { sfx: z('magic'), voice: (e) => [{ k: 'item', seat: e.seat, item: e.item }] },
-  // 真人收起机车 / 汽车（stowed）不出声：原版收起只刷新外观、重画（0x4467b1），不说台词、不另放音效
-  VEHICLE: { sfx: (e) => (e.stowed ? null : z('ding')) },
-  VEHICLE_DESTROYED: { sfx: z('boom') },
+  // 换车道具（机车 / 汽车 / 工程车）原版没有施放音效，只说道具台词（0x44d870，台词表 0x47e03a 第 4 / 5 / 11 项）
+  ITEM_USED: {
+    sfx: (e) => (isVehicleItem(e.item) ? null : z('magic')),
+    voice: (e) => [{ k: 'item', seat: e.seat, item: e.item }],
+  },
+  // 换座驾原版只刷新外观（fcn.0040b425 只换行进循环音，没有一次性音效），各条路径都不出声；用道具换车的台词随 ITEM_USED
+  VEHICLE: {},
+  // 命运 10 / 11 失车（via 'fate'）：原版不爆炸，只说事件槽台词——机车被偷槽 3 / 4 随机二选一（0x44b52f rand & 1）、
+  // 汽车撞毁槽 3（0x44b63d），台词表 0x47db2a
+  VEHICLE_DESTROYED: {
+    sfx: (e) => (isQuietVehicleSwitch(e) ? null : z('boom')),
+    voice: (e) =>
+      isQuietVehicleSwitch(e)
+        ? [
+            e.vehicle === 'moto'
+              ? { k: 'slot', seat: e.seat, slot: 'spendSmall0', alt: ['spendSmall1'] }
+              : { k: 'slot', seat: e.seat, slot: 'spendSmall0' },
+          ]
+        : [],
+  },
   OBJECT_PLACED: {
     sfx: (e) => {
       switch (e.obj.kind) {

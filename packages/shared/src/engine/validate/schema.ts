@@ -99,6 +99,12 @@ const CountersSchema = z.strictObject({
   tortoise: nonneg,
 });
 
+const EngineerSchema = z.strictObject({
+  days: nonneg,
+  restore: z.enum(['walk', 'moto', 'car']),
+  dice: z.literal([1, 2, 3]),
+});
+
 const PlayerSchema = z.strictObject({
   seat,
   character: z.literal(CHARACTER_IDS),
@@ -118,7 +124,15 @@ const PlayerSchema = z.strictObject({
   savedPrevNode: tile.nullable(),
   vehicle,
   diceCount: z.literal([1, 2, 3]),
-  engineer: z.strictObject({ days: nonneg, restore: z.enum(['walk', 'moto', 'car']) }).nullable(),
+  engineer: EngineerSchema.nullable(),
+  // 梦游卡停放的座驾（0.6.0 起；旧快照没有，migrateState 补 null）
+  parked: z
+    .strictObject({
+      vehicle: z.enum(['moto', 'car', 'engineer']),
+      dice: z.literal([1, 2, 3]),
+      engineer: EngineerSchema.nullable(),
+    })
+    .nullable(),
   st: CountersSchema,
   returning: z.boolean(),
   bankReject: nonneg,

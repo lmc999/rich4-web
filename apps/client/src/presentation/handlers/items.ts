@@ -1,18 +1,37 @@
 // 道具与路面物件演出（design/client.md §3.6、§4.5）：用道具（施放 + 光束）、交通工具与车毁、路障 / 地雷 / 定时炸弹的
 // 放置与移除、机器娃娃清道、身上的定时炸弹（贴上、转移、爆炸）、飞弹 / 核弹、传送、时光机倒带。
-import type { GameEventOf, SeatIndex, TeleportSource } from '@rich4/shared/engine';
+import {
+  type GameEventOf,
+  isQuietVehicleSwitch,
+  isVehicleItem,
+  type SeatIndex,
+  type TeleportSource,
+} from '@rich4/shared/engine';
+import { FATE_SHOW } from '@rich4/shared/view';
 import { formatEvent } from '../logFormat';
 import type { Anchor, EventHandler, PresentationContext } from '../types';
+import { currentPacing } from './budget';
 import { targetAnchor } from './cards';
 import { showAllDeltas, syncFromPost } from './common';
-import { type ObjectRemoval, stageOf } from './stage';
+import { type ObjectRemoval, stageOf, syncStageTo } from './stage';
 
 const ITEM_BEAM = 0x3d8bfd;
 
+/**
+ * 用道具：提示「使用了XX」（原版电脑用道具时先出 1.5 秒「使用%s」消息框 0x446c17，真人没有）、道具名气泡、施放演出、
+ * 有目标时光束；道具台词由 soundMap 放。换车道具（机车 / 汽车 / 工程车）原版没有施放：只刷新外观、整屏重画、说道具台词
+ * （机车 0x445a40 / 0x445a4e / 0x445a77，汽车、工程车同理），所以这里不画气泡与施放演出，换座驾由随后的 VEHICLE 负责
+ * （architecture §34）
+ */
 export const ITEM_USED: EventHandler<'ITEM_USED'> = async (e, ctx) => {
   const stage = stageOf(ctx);
   const line = formatEvent(e, ctx.names);
   if (line) ctx.ui.toast(line);
+  if (isVehicleItem(e.item)) {
+    syncFromPost(ctx, e.post);
+    showAllDeltas(ctx, e);
+    return;
+  }
   stage.bubble({ seat: e.seat }, ctx.names.item(e.item), 900);
   await stage.cast(e.seat, ctx.signal);
   const to = targetAnchor(ctx, e.seat, e.target);
@@ -23,18 +42,30 @@ export const ITEM_USED: EventHandler<'ITEM_USED'> = async (e, ctx) => {
 };
 
 /**
- * 换乘 / 改回步行。真人从回合菜单收起机车 / 汽车（stowed）不弹提示：原版收起只刷新外观、重画（v2.06 0x4467b1 调
- * 0x40b425、0x41cc56），不说台词也不出对话框；日志照记（EventPlayer 按 logFormat 写）
+ * 换座驾：原版各条路径都只调 fcn.0040b425 刷新外观，不出对话框、没有换车音效、不移镜头（architecture §34）——这里同样只把
+ * 外观换成 post 里的座驾，不提示、不闪光、不跳，日志照记（EventPlayer 按 logFormat 写）。用道具换车（没有 stowed / via）
+ * 原版另外整屏重画一次（0x41cc56(0,0,1) 只走 bit0 → 0x407ebd，不移镜头：机车 0x445a4e、汽车 0x445b06、工程车 0x446629），
+ * 再说道具台词（随 ITEM_USED，soundMap）；收起（0x4467b1）同样重画；中梦游卡（0x442fa8）、梦游结束（0x41c1aa）、
+ * 工程车到期（0x41c4d3）、魔法屋卖光（0x4446de）只刷新外观。网页版棋盘每帧重画，没有对应的动作
  */
 export const VEHICLE: EventHandler<'VEHICLE'> = async (e, ctx) => {
-  const line = e.stowed ? null : formatEvent(e, ctx.names);
-  if (line) ctx.ui.toast(line);
-  await stageOf(ctx).vehicle(e.seat, e.vehicle, ctx.signal);
   syncFromPost(ctx, e.post);
-  await ctx.wait(200);
+  syncStageTo(ctx, e.post);
+  await stageOf(ctx).vehicle(e.seat, e.vehicle, ctx.signal);
 };
 
+/**
+ * 车毁（地雷、炸弹、飞弹、核弹、骑车摔伤）：提示、飘字、车毁演出。命运 10 / 11（via 'fate'，机车被偷 / 汽车撞毁）原版不走
+ * 毁车 0x40c7cd：直接写步行、刷新外观、说事件槽台词（soundMap），之后是命运效果后的 0.8 秒停顿（fcn.00450f9a(800)，
+ * compact 节奏 0.15 秒）——不提示、不飘字、不播车毁
+ */
 export const VEHICLE_DESTROYED: EventHandler<'VEHICLE_DESTROYED'> = async (e, ctx) => {
+  if (isQuietVehicleSwitch(e)) {
+    syncFromPost(ctx, e.post);
+    syncStageTo(ctx, e.post);
+    await ctx.wait(currentPacing() === 'original' ? FATE_SHOW.original.tailMs : 150);
+    return;
+  }
   const line = formatEvent(e, ctx.names);
   if (line) ctx.ui.toast(line, 'warn');
   ctx.board.floatText({ seat: e.seat }, ctx.t('events:bubble.wreck'), 'loss');

@@ -25,7 +25,6 @@ import {
   FX_REMOVE_MS,
   FX_REWIND_MS,
   FX_TELEPORT_MS,
-  FX_VEHICLE_MS,
   FX_WRECK_MS,
   WALK_OUT_HOPS_MAX,
 } from '../../game/fx/timings';
@@ -92,7 +91,7 @@ export function recordingStage(calls: StageCall[], clock?: AnimClock): StagePort
       const total = Math.max(WALK_OUT.hotelMaxTicks * o.tickMs, WALK_OUT_HOPS_MAX * STEP_MS);
       return clock ? clock.wait(total, signal) : Promise.resolve();
     },
-    vehicle: rec('vehicle', FX_VEHICLE_MS),
+    vehicle: rec('vehicle'),
     wreck: rec('wreck', FX_WRECK_MS),
     bombAttach: rec('bombAttach', FX_BOMB_ATTACH_MS),
     bombPass: rec('bombPass', FX_BOMB_PASS_MS),

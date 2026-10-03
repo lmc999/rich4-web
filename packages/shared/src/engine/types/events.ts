@@ -156,6 +156,8 @@ export type ItemChangeSource =
   | 'vehicleSwap'
   | 'bankrupt'
   | 'debug';
+/** VEHICLE.via：不是用道具换车、原版只刷新外观的座驾切换（见 VEHICLE） */
+export type VehicleSwitchVia = 'sleepwalk' | 'wake' | 'expire' | 'sold';
 export type StrikeKind = 'missile' | 'nuke' | 'alien' | 'typhoon' | 'bomb3x3';
 export type GodLeaveReason = 'expired' | 'displaced' | 'dispelled' | 'swept' | 'struck' | 'bitten' | 'bankrupt';
 export type GodManifestEffect = 'levelUp' | 'levelDown' | 'seize';
@@ -269,12 +271,25 @@ export interface GameEventPayloads {
   ITEM_LOST: { seat: SeatIndex; item: ItemId | null; qty: number; cause: ItemChangeSource };
   ITEM_USED: { seat: SeatIndex; item: ItemId; target: UseTarget };
   /**
-   * 换了交通工具（vehicle = 换后的座驾）。stowed 只在真人从回合菜单收起机车 / 汽车（STOW_VEHICLE）时出现，值为收回背包的
-   * 那台：原版收起只刷新外观、重画（0x4467b1 调 0x40b425、0x41cc56），不说台词，客户端据此不弹「换乘」提示、不放音效。
-   * 梦游卡、工程车到期、魔法屋卖光道具等其他改回步行没有这个字段
+   * 换了交通工具（vehicle = 换后的座驾）。原版各条路径都只调 0x40b425 刷新外观，不出对话框、没有换车音效，客户端一律只换外观、
+   * 记日志（architecture §34）。没有 stowed / via 的是用机车、汽车、工程车道具换车（原版另整屏重画、说道具台词，台词随 ITEM_USED）；
+   * - stowed：真人从回合菜单收起机车 / 汽车（STOW_VEHICLE，0x4467b1），值为收回背包的那台；
+   * - via（0.6.0 起；from = 切换前的座驾）：'sleepwalk' 中梦游卡、座驾停放（0x442fa8）；'wake' 梦游结束装回停放的座驾
+   *   （0x41c1aa）；'expire' 工程车到期换回原车或步行（0x41c4d3）；'sold' 魔法屋「卖光道具」连座驾一起折价（0x4446de）
    */
-  VEHICLE: { seat: SeatIndex; vehicle: Vehicle; dice: DiceCount; stowed?: 'moto' | 'car' };
-  VEHICLE_DESTROYED: { seat: SeatIndex; vehicle: Vehicle };
+  VEHICLE: {
+    seat: SeatIndex;
+    vehicle: Vehicle;
+    dice: DiceCount;
+    stowed?: 'moto' | 'car';
+    via?: VehicleSwitchVia;
+    from?: Vehicle;
+  };
+  /**
+   * 交通工具没了（机车 / 汽车回共享库存，工程车作废）。via 'fate'（0.6.0 起）：命运 10 / 11 机车被偷、汽车撞毁——原版直接把
+   * 模式写成步行、刷新外观、说事件槽 3 / 4 的台词（0x44b4eb / 0x44b5fc），不走地雷炸弹那条毁车路径（0x40c7cd），客户端不播车毁
+   */
+  VEHICLE_DESTROYED: { seat: SeatIndex; vehicle: Vehicle; via?: 'fate' };
   OBJECT_PLACED: { obj: RoadObject };
   OBJECT_REMOVED: { obj: RoadObject; cause: Cause };
   DOLL_WALK: { seat: SeatIndex; path: TileId[]; clearedObjects: number[]; clearedGods: GodKind[] };
@@ -575,4 +590,12 @@ export type ResetsViewEventType = {
 
 export function isGameEventType(x: unknown): x is GameEventType {
   return typeof x === 'string' && Object.hasOwn(EVENT_META, x);
+}
+
+/**
+ * 不是用道具换车、也不是被炸毁的座驾切换（VEHICLE 带 stowed 或 via：真人收起、中梦游卡、梦游结束装回、工程车到期、魔法屋卖光；
+ * VEHICLE_DESTROYED 带 via 'fate'：命运 10 / 11 失车，客户端据此不播车毁、改说事件槽台词）。原版这些都不说道具台词（architecture §34）
+ */
+export function isQuietVehicleSwitch(e: GameEventOf<'VEHICLE'> | GameEventOf<'VEHICLE_DESTROYED'>): boolean {
+  return e.type === 'VEHICLE' ? e.stowed !== undefined || e.via !== undefined : e.via !== undefined;
 }

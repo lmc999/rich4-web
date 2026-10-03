@@ -102,6 +102,11 @@ export const VEHICLE_ITEM = Object.freeze({
   engineer: null,
 } as const satisfies { readonly [V in Vehicle]: ItemId | null });
 
+/** 换车道具：机车、汽车、工程车（用了就换座驾；原版只刷新外观、整屏重画、说道具台词，客户端按此不播通用施放演出） */
+export function isVehicleItem(item: ItemId): boolean {
+  return item === ITEM.MOTORCYCLE || item === ITEM.CAR || item === ITEM.ENGINEERING_VEHICLE;
+}
+
 export interface StartItems extends Sourced {
   /** 每位玩家开局各发 1 件 */
   items: readonly ItemId[];

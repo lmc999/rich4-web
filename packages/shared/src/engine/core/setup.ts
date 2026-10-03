@@ -108,6 +108,7 @@ export function createInitialState(
       vehicle: config.vehicle,
       diceCount: maxDice(config.vehicle),
       engineer: null,
+      parked: null,
       st: emptyCounters(),
       returning: false,
       bankReject: 0,

@@ -60,7 +60,6 @@ import {
   FX_REMOVE_MS,
   FX_REWIND_MS,
   FX_TELEPORT_MS,
-  FX_VEHICLE_MS,
   FX_WRECK_MS,
   PARTICLE_LIMITS,
 } from './timings';
@@ -645,12 +644,11 @@ export class BoardStage implements StagePort {
     this.board.spreadActors();
   }
 
-  async vehicle(seat: SeatIndex, v: Vehicle, signal: AbortSignal): Promise<void> {
+  /** 换车：只刷新外观（换载具图），不闪光、不跳——原版各条换车路径都只重载姿态库（fcn.0040b425，architecture §34） */
+  async vehicle(seat: SeatIndex, v: Vehicle, _signal: AbortSignal): Promise<void> {
     const a = this.actor(seat);
     if (!a) return;
     a.setStatus({ ...a.currentStatus, vehicle: v });
-    this.fx.sparkles(a.screenPos(), 0xffd84d, 12);
-    await Promise.all([a.hop(signal), this.fx.wait(FX_VEHICLE_MS, signal)]);
   }
 
   async wreck(seat: SeatIndex, _v: Vehicle, signal: AbortSignal): Promise<void> {

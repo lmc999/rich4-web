@@ -78,6 +78,7 @@ function demoPlayer(seat: SeatIndex, stockCount: number): PlayerView {
     vehicle: seat === 0 ? 'moto' : seat === 1 ? 'car' : 'walk',
     diceCount: seat === 0 ? 2 : seat === 1 ? 3 : 1,
     engineer: null,
+    parked: null,
     st: {
       hotel: 0,
       away: 0,

@@ -3,6 +3,7 @@ import { fixtureRegistry } from '../data/maps/registry';
 import { resolveTraits } from '../data/tables/characters';
 import { createEngine, internal } from './api';
 import { engineMap } from './core/mapCache';
+import { publicWorld } from './core/postPatch';
 import { EngineRuleError } from './errors';
 import { act, editState, makeConfig, makeSetups, newGame, pendingOf, testEngine } from './testing/builders';
 import { dbg } from './testing/debug';
@@ -26,7 +27,7 @@ describe('createGame（design/engine.md §5）', () => {
     const { state: s, events } = newGame({ players: ['human', 'ai', 'human', 'ai'] });
     expect(events.map((e) => e.type)).toEqual(['GAME_STARTED', 'TURN_STARTED', 'PARACHUTE']);
     expect(s.v).toBe(1);
-    expect(s.engine).toBe('0.5.0');
+    expect(s.engine).toBe('0.6.0');
     expect(s.dataRef).toEqual({
       mapId: 'test',
       mapHash: fixtureRegistry.getMap('test').def.meta.dataHash,
@@ -327,6 +328,45 @@ describe('validateState / migrateState', () => {
     expect(m).toEqual(state);
     expect(ruleOf(() => e.migrateState(state, 2))).toBe('BAD_STATE_VERSION');
     expect(ruleOf(() => e.migrateState({ v: 1 }, 1))).toBe('BAD_STATE');
+  });
+
+  it('migrateState：0.5.x 的 v1 快照没有 PlayerState.parked、EngineerState.dice（0.6.0 新增）——补 null / 换回座驾的上限，含时光机锚点里的世界', () => {
+    const anchored = editState(state, (s) => {
+      Object.assign(s.players[1]!, {
+        vehicle: 'engineer',
+        diceCount: 1,
+        engineer: { days: 3, restore: 'car', dice: 3 },
+      });
+      const world = structuredClone(publicWorld(s)) as unknown as NonNullable<typeof s.secret.timeAnchor>['world'];
+      world.flow = structuredClone(s.flow);
+      world.decks = {
+        newsOrder: s.secret.newsOrder.slice(),
+        newsCursor: s.secret.newsCursor,
+        fateOrder: s.secret.fateOrder.slice(),
+        fateCursor: s.secret.fateCursor,
+      };
+      s.secret.timeAnchor = { takenAtTurn: s.clock.turnNo, seat: 0, world };
+    });
+    expect(e.validateState(anchored)).toBe(true);
+    const old = JSON.parse(JSON.stringify(anchored)) as Record<string, unknown>;
+    const strip = (players: Record<string, unknown>[]) => {
+      for (const p of players) {
+        delete p.parked;
+        if (p.engineer) delete (p.engineer as Record<string, unknown>).dice;
+      }
+    };
+    strip(old.players as Record<string, unknown>[]);
+    const anchorWorld = (old.secret as { timeAnchor: { world: { players: Record<string, unknown>[] } } }).timeAnchor
+      .world;
+    strip(anchorWorld.players);
+    // 不迁移直接校验：缺字段，不通过（服务器读档与重启恢复因此都先经 migrateState）
+    expect(e.validateState(old)).toBe(false);
+    const m = e.migrateState(old, 1);
+    expect(m).toEqual(anchored);
+    expect(m.players.every((p) => p.parked === null)).toBe(true);
+    expect(m.players[1]!.engineer).toEqual({ days: 3, restore: 'car', dice: 3 });
+    expect(m.secret.timeAnchor!.world.players.every((p) => p.parked === null)).toBe(true);
+    expect(e.validateState(m)).toBe(true);
   });
 
   it('internal.createEngine 与 createEngine 共享同一套实现', () => {

@@ -131,6 +131,23 @@ export interface Counters2 {
   tortoise: number;
 }
 
+/**
+ * 工程车：剩余自己的回合数（原版模式字节 +0x11 的高 6 位）、到期要换回的座驾（+0x64）与换回时恢复的骰子数（+0x65，
+ * 开工程车之前的骰子数；0.6.0 起，旧快照由 migrateState 补成换回座驾的上限——与旧版到期时按上限一致）
+ */
+export interface EngineerState {
+  days: number;
+  restore: 'walk' | 'moto' | 'car';
+  dice: DiceCount;
+}
+
+/** 梦游卡停放的座驾：vehicle 为工程车时 engineer 是停放时的工程车状态，否则为 null */
+export interface ParkedVehicle {
+  vehicle: Exclude<Vehicle, 'walk'>;
+  dice: DiceCount;
+  engineer: EngineerState | null;
+}
+
 /** 本座位本回合已做的自由操作，按发生顺序（AI 的 PRE_ROLL 用它推算进度，architecture §5.3） */
 export type TurnLogEntry = 'stockBuy' | 'stockSell' | 'boardList' | 'boardBuy' | 'card' | 'item';
 
@@ -185,7 +202,13 @@ export interface PlayerState {
   vehicle: Vehicle;
   /** 持久保存；ROLL{dice} 会改写它 */
   diceCount: DiceCount;
-  engineer: { days: number; restore: 'walk' | 'moto' | 'car' } | null;
+  engineer: EngineerState | null;
+  /**
+   * 梦游卡停放的座驾（原版 +0x66 / +0x67，ENGINE_VERSION 0.6.0 起）：中梦游卡时记下原座驾与骰子数（机车 / 汽车同时退回背包，
+   * 工程车连同剩余天数一起停放、梦游期间不倒数），梦游结束的回合开始时装回（effects/items/vehicle.ts wakeVehicle）；
+   * 中卡时步行、冬眠卡取消梦游、出局时为 null。旧快照没有这个字段，migrateState 补 null
+   */
+  parked: ParkedVehicle | null;
   st: Counters2;
   /** 刚释放、本回合走回棋盘（原版 +0x15|=0x10） */
   returning: boolean;

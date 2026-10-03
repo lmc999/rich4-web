@@ -31,12 +31,12 @@ import { cardEffect } from '../effects/cards/index';
 import { timesPI } from '../effects/common';
 import { attachedSlot, leaveGod } from '../effects/gods/lifecycle';
 import { itemEffect } from '../effects/items/index';
-import { restoreEngineer, stowByHand, tickEngineer } from '../effects/items/vehicle';
+import { restoreEngineer, stowByHand, tickEngineer, wakeVehicle } from '../effects/items/vehicle';
 import { captureAnchor } from '../effects/timeMachine';
 import type { MenuRow } from '../effects/types';
 import { EngineInvariantError, EngineRuleError } from '../errors';
 import { daysBetween } from '../rules/calendar';
-import { displayRemaining, mainBlockOf, tick2, tickActorCounters } from '../rules/counters';
+import { COUNTER_PENDING, displayRemaining, mainBlockOf, tick2, tickActorCounters } from '../rules/counters';
 import { receiveItem, removeItem, returnCardToDeck } from '../rules/inventory';
 import { diceAllowed } from '../rules/movement';
 import { MENU_ACTION_LIMIT } from '../types/decision';
@@ -119,7 +119,11 @@ function start(ctx: Ctx, f: TurnFrame): void {
   // §7.2 步骤 0：未落地先跳伞（先取随机数），步骤 1 再刷新本人股票可买量
   const drop = p.placed ? null : parachuteSpot(ctx);
   refreshQuota(ctx, p);
+  // 梦游计数 0x80 → 0（关押期间不倒数，tickActorCounters）即梦游结束：停放记录随 TURN_STARTED 清掉，之后装回座驾
+  const sleepwalkDue = p.st.sleepwalk === COUNTER_PENDING;
   const released = tickActorCounters(p.st);
+  const parked = sleepwalkDue && p.st.sleepwalk === 0 ? p.parked : null;
+  if (parked !== null) p.parked = null;
   // 保险、拒绝往来、同盟按两段式倒数（g_arbitration §3.2）；神明任期直接 −1；工程车 −1
   p.insuranceDays = tick2(p.insuranceDays).next;
   p.bankReject = tick2(p.bankReject).next;
@@ -128,6 +132,8 @@ function start(ctx: Ctx, f: TurnFrame): void {
   const engineerDue = tickEngineer(p);
   const research = tickResearch(ctx, f.seat);
   ctx.emit('TURN_STARTED', { actor, turnNo: s.clock.turnNo });
+  // 装回梦游卡停放的座驾；工程车先装回再算本回合的一天（原版回合开始 0x41c1aa 在工程车倒数 0x41c4a6 之前）
+  const wokeEngineerDue = parked !== null && wakeVehicle(ctx, f.seat, parked);
   // 公布栏：撤下资产已不在的挂牌
   pruneListings(ctx);
 
@@ -142,7 +148,7 @@ function start(ctx: Ctx, f: TurnFrame): void {
     if (slot !== null) leaveGod(ctx, slot, 'expired');
     else p.god = null;
   }
-  if (engineerDue) restoreEngineer(ctx, f.seat);
+  if (engineerDue || wokeEngineerDue) restoreEngineer(ctx, f.seat);
 
   for (const where of released) {
     release(ctx, p, where);

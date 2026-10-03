@@ -251,6 +251,7 @@ function newPlayer(ps: PlayerSetup, cash: number): PlayerState {
     vehicle: 'walk',
     diceCount: 1,
     engineer: null,
+    parked: null,
     st: { hotel: 0, away: 0, jail: 0, hospital: 0, hibernate: 0, sleepwalk: 0, stay: 0, tortoise: 0 },
     returning: false,
     bankReject: 0,

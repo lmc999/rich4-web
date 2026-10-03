@@ -3,9 +3,9 @@
  * 这些函数都「先改状态再 emit」，调用方拿到的事件顺序即演出顺序。
  *
  * - addHostility：被害者对加害者的敌意（AI 用）；对盟友产生正敌意时同盟当场解除（ALLIANCE_BROKEN{hostility}）。
- * - destroyVehicle：地雷、炸弹、飞弹、核弹毁车：机车 / 汽车回共享库存，工程车作废，改回步行、1 颗骰子。
- * - stowVehicle：梦游卡、真人收起交通工具（STOW_VEHICLE，items/vehicle.ts stowByHand）：机车 / 汽车退回背包（可以因此
- *   达到第 10 台），工程车作废（只有梦游卡会遇到），改回步行、1 颗骰子。
+ * - destroyVehicle：地雷、炸弹、飞弹、核弹毁车，命运 10 / 11 失车：机车 / 汽车回共享库存，工程车作废，改回步行、1 颗骰子。
+ * - stowVehicle：真人收起交通工具（STOW_VEHICLE，items/vehicle.ts stowByHand）、梦游卡：机车 / 汽车退回背包（可以因此
+ *   达到第 10 台），改回步行、1 颗骰子；梦游卡另把原座驾记进 parked（工程车连同剩余天数），梦游结束时装回（wakeVehicle）。
  * - gainCard：得卡（满手时按 rules.handFull：autoCheapest 自动弃最便宜的一张；choose 先入手再压 DISCARD_CARD）。
  * - mutateLot / raiseLot：地产等级变化（研究所被拆到低于项目等级或清为无主时发 RESEARCH_CANCELLED）。
  * - removeObject：路面物件离开地图（路障、地雷、定时炸弹回共享库存；礼物、宝箱直接消失）。
@@ -20,7 +20,7 @@ import { HAND_MAX, makeRoomForCard } from '../rules/inventory';
 import { type MutateMode, mutateFacility, mutateLand } from '../rules/landMutation';
 import { facilityLevelAfter, MAX_LEVEL } from '../rules/purchase';
 import type { CardSource, StatusKey } from '../types/events';
-import type { ActorRef, CardId, Cause, FacilityType, LotId, LotLevel, SeatIndex } from '../types/ids';
+import type { ActorRef, CardId, Cause, FacilityType, LotId, LotLevel, SeatIndex, Vehicle } from '../types/ids';
 import type { RoadObject, RoadObjectKind } from '../types/state';
 
 /** mul32(n, PI) */
@@ -56,8 +56,11 @@ export function addHostility(ctx: Ctx, victim: SeatIndex, by: SeatIndex | null, 
 
 // ───────────────────────── 交通工具 ─────────────────────────
 
-/** 毁车：机车 / 汽车回共享库存；工程车作废；改回步行、1 颗骰子 → VEHICLE_DESTROYED。步行时什么都不做 */
-export function destroyVehicle(ctx: Ctx, seat: SeatIndex): void {
+/**
+ * 毁车：机车 / 汽车回共享库存；工程车作废；改回步行、1 颗骰子 → VEHICLE_DESTROYED。步行时什么都不做（梦游卡停放的座驾
+ * 不受影响：原版毁车 0x40c7cd 只看模式字节 +0x11，不碰 +0x66）。via 'fate'：命运 10 / 11（原版不走 0x40c7cd，只刷新外观）
+ */
+export function destroyVehicle(ctx: Ctx, seat: SeatIndex, via?: 'fate'): void {
   const p = ctx.player(seat);
   if (p.vehicle === 'walk') return;
   const old = p.vehicle;
@@ -66,29 +69,40 @@ export function destroyVehicle(ctx: Ctx, seat: SeatIndex): void {
   p.vehicle = 'walk';
   p.diceCount = 1;
   p.engineer = null;
-  ctx.emit('VEHICLE_DESTROYED', { seat, vehicle: old });
+  ctx.emit('VEHICLE_DESTROYED', via ? { seat, vehicle: old, via } : { seat, vehicle: old });
+}
+
+/** 机车 / 汽车退回背包：同种最多 10 台（原版特例），满了回共享库存；步行、工程车什么都不做 */
+export function bagVehicle(ctx: Ctx, seat: SeatIndex, v: Vehicle): void {
+  const item = VEHICLE_ITEM[v];
+  if (item === null) return;
+  const p = ctx.player(seat);
+  if ((p.items[item] ?? 0) < CMB.VEHICLE_BAG_MAX) p.items[item] = (p.items[item] ?? 0) + 1;
+  else ctx.s.pools.items[item] = (ctx.s.pools.items[item] ?? 0) + 1;
 }
 
 /**
- * 梦游 / 真人收起：机车 / 汽车退回背包，工程车作废，改回步行、1 颗骰子 → VEHICLE（步行时只把骰子改为 1）。
- * byHand：真人从回合菜单收起（stowByHand），VEHICLE 带 stowed = 收回背包的那台，客户端按原版不弹提示、不放音效
+ * 收起座驾、改回步行、1 颗骰子：机车 / 汽车退回背包 → VEHICLE（步行时只把骰子改为 1，不发事件）。
+ * - 'hand'：真人从回合菜单收起（stowByHand，只有机车 / 汽车），VEHICLE 带 stowed = 收回背包的那台；
+ * - 'sleepwalk'：中梦游卡（cards/harm.ts），原座驾与骰子数记进 parked（工程车连同 engineer 一起停放、梦游期间不倒数），
+ *   梦游结束时由 wakeVehicle 装回；VEHICLE 带 via 'sleepwalk'。步行时 parked 写 null——原版照样把模式 0 存进 +0x66，
+ *   所以梦游期间再中梦游卡会覆盖掉第一次停放的座驾（机车 / 汽车留在背包里，工程车就此作废）。
+ * 两种都只是刷新外观（客户端不提示、不放音效）。
+ * @source exe v2.06 梦游卡 0x442fa8–0x44301f（+0x66 / +0x67 存模式与骰子数，模式 1 / 2 背包 +1，模式写 0、骰子写 1，
+ *   调 0x40b425），复仇反弹同样 0x443056–0x4430cb；v3.11 0x44436f–0x4443e7。收起见 items/vehicle.ts stowByHand
  */
-export function stowVehicle(ctx: Ctx, seat: SeatIndex, byHand = false): void {
+export function stowVehicle(ctx: Ctx, seat: SeatIndex, how: 'hand' | 'sleepwalk'): void {
   const p = ctx.player(seat);
   const old = p.vehicle;
-  const item = VEHICLE_ITEM[p.vehicle];
-  if (item !== null) {
-    // 背包里同种交通工具最多 10 台（原版特例），满了就回共享库存
-    if ((p.items[item] ?? 0) < CMB.VEHICLE_BAG_MAX) p.items[item] = (p.items[item] ?? 0) + 1;
-    else ctx.s.pools.items[item] = (ctx.s.pools.items[item] ?? 0) + 1;
-  }
-  const changed = p.vehicle !== 'walk' || p.diceCount !== 1;
+  if (how === 'sleepwalk') p.parked = old === 'walk' ? null : { vehicle: old, dice: p.diceCount, engineer: p.engineer };
+  bagVehicle(ctx, seat, old);
+  const changed = old !== 'walk' || p.diceCount !== 1;
   p.vehicle = 'walk';
   p.diceCount = 1;
   p.engineer = null;
   if (!changed) return;
-  if (byHand && (old === 'moto' || old === 'car')) ctx.emit('VEHICLE', { seat, vehicle: 'walk', dice: 1, stowed: old });
-  else ctx.emit('VEHICLE', { seat, vehicle: 'walk', dice: 1 });
+  if (how === 'sleepwalk') ctx.emit('VEHICLE', { seat, vehicle: 'walk', dice: 1, via: 'sleepwalk', from: old });
+  else if (old === 'moto' || old === 'car') ctx.emit('VEHICLE', { seat, vehicle: 'walk', dice: 1, stowed: old });
 }
 
 // ───────────────────────── 卡片 ─────────────────────────

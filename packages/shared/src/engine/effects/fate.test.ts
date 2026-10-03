@@ -196,11 +196,13 @@ describe('fate（37 张命运）', () => {
     const a = arena().edit(vehicle(0, 'car'));
     fate(a, 10);
     expect(a.event('FATE').id).toBe(11);
-    expect(a.event('VEHICLE_DESTROYED')).toMatchObject({ seat: 0, vehicle: 'car' });
+    // 原版命运 10 / 11 直接写步行、只刷新外观（0x44b4eb / 0x44b5fc），不走地雷炸弹的毁车：via 'fate'
+    expect(a.event('VEHICLE_DESTROYED')).toEqual(expect.objectContaining({ seat: 0, vehicle: 'car', via: 'fate' }));
     expect(a.player(0).vehicle).toBe('walk');
     const b = arena().edit(vehicle(0, 'moto'));
     fate(b, 11);
     expect(b.event('FATE').id).toBe(10);
+    expect(b.event('VEHICLE_DESTROYED')).toMatchObject({ seat: 0, vehicle: 'moto', via: 'fate' });
     const walk = arena();
     fate(walk, 10);
     expect([10, 11]).not.toContain(walk.event('FATE').id);
@@ -215,6 +217,8 @@ describe('fate（37 张命运）', () => {
     fate(b, 12);
     expect(b.event('FATE').id).toBe(13);
     b.expectEvents(['FATE', 'VEHICLE_DESTROYED', 'CONFINED']);
+    // 骑车摔伤走毁车（原版 0x44b756 调 0x40c7cd），不带 via
+    expect(b.event('VEHICLE_DESTROYED')).not.toHaveProperty('via');
     const car = arena().edit(vehicle(0, 'car'));
     fate(car, 12);
     expect([12, 13]).not.toContain(car.event('FATE').id);

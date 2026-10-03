@@ -9,7 +9,8 @@
  *   check      目标正在冬眠 → 整张卡无效（CARD_NO_EFFECT，卡照扣）
  *   exempt     免罪卡自动抵消
  *   scapegoat  嫁祸卡（SCAPEGOAT）；嫁祸回出卡者时 4 天
- *   apply      梦游 5 天（或 4 天）：交通工具退回背包、骰子数改为 1
+ *   apply      梦游 5 天（或 4 天）：原座驾停放（机车 / 汽车退回背包，工程车连同剩余天数），步行、骰子数改为 1；
+ *              梦游结束的回合开始时装回（effects/items/vehicle.ts wakeVehicle）
  *   revenge    没被改嫁、原目标持复仇卡 → 出卡者也梦游 5 天
  */
 
@@ -129,7 +130,7 @@ export const sleepwalkChain = {
         return;
       case 'apply': {
         f.stage = 'revenge';
-        stowVehicle(ctx, target);
+        stowVehicle(ctx, target, 'sleepwalk');
         setActorStatus(ctx, { t: 'seat', seat: target }, 'sleepwalk', Number(f.data.days));
         return;
       }
@@ -139,7 +140,7 @@ export const sleepwalkChain = {
         const user = ctx.s.players.find((x) => x.seat === f.seat);
         if (!user?.alive) return;
         consumePassive(ctx, target, CARD.REVENGE, 'sleepwalk', f.seat);
-        stowVehicle(ctx, f.seat);
+        stowVehicle(ctx, f.seat, 'sleepwalk');
         setActorStatus(ctx, { t: 'seat', seat: f.seat }, 'sleepwalk', CMB.REVENGE_DAYS);
         return;
       }

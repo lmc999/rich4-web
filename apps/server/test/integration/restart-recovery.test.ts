@@ -257,6 +257,67 @@ describe('integration/restart-recovery', () => {
     expect(b2.gaps).toEqual([]);
   }, 60_000);
 
+  it('真实引擎、规则次版本升级（0.5.0 写下的快照，玩家没有 parked）：迁移补 null；0.5.0 时中梦游卡的人醒来仍步行、对局继续', async () => {
+    const dir = tmp();
+    const srv1 = await serve(dir, 'sqlite', 'real');
+    expect(srv1.engine.ENGINE_VERSION).not.toMatch(/^0\.5\./);
+    const s = await twoPlayerGame(srv1);
+    const [a, b] = s.bots as [BotClient, BotClient];
+    for (let i = 1; i <= 2; i++)
+      expect((await a.req('debug:act', { op: { op: 'setPoints', seat: 0, points: i } })).ok).toBe(true);
+    await a.until(() => a.lastSeq === 2, 3000, 'debug acts');
+    await srv1.close();
+
+    // 改写成 0.5.0 写下的快照：PlayerState 还没有 parked；1 号在 0.5.0 时中了梦游卡（机车退回背包、步行，不停放），
+    // 下一回合梦游结束（0x80）
+    const p = openPersistence({ kind: 'sqlite', location: join(dir, 'rich4.db') });
+    const [rec] = p.rooms.listActive(0);
+    const legacy = structuredClone(rec!.state!) as GameState;
+    legacy.engine = '0.5.0';
+    const q = legacy.players[1]!;
+    Object.assign(q, { placed: true, node: 6, prevNode: 5, vehicle: 'walk', diceCount: 1 });
+    q.items[5] = (q.items[5] ?? 0) + 1;
+    legacy.pools.items[5] = legacy.pools.items[5]! - 1;
+    q.st.sleepwalk = 0x80;
+    for (const x of legacy.players) delete (x as Partial<GameState['players'][number]>).parked;
+    p.rooms.writeSnapshot({ ...rec!, engineVersion: '0.5.0', state: legacy });
+    p.close();
+
+    const srv2 = await serve(dir, 'sqlite', 'real');
+    expect(srv2.app.restoreReport).toEqual([
+      { code: s.code, phase: 'playing', mode: 'migrated', replayed: 0, epoch: rec!.epoch + 1, seq: rec!.seq },
+    ]);
+    const room = srv2.app.rooms.get(s.code)!;
+    expect(room.runner!.state.players.map((x) => x.parked)).toEqual([null, null]);
+    expect(room.runner!.state.players[1]).toMatchObject({
+      vehicle: 'walk',
+      st: expect.objectContaining({ sleepwalk: 0x80 }),
+    });
+
+    const a2 = await connectBot(srv2.url, { token: a.token, nickname: 'P0', seed: 31 });
+    const b2 = await connectBot(srv2.url, { token: b.token, nickname: 'P1', seed: 32 });
+    bots.push(a2, b2);
+    expect((await a2.req('room:resume', { code: s.code, lastSeq: a.lastSeq, epoch: a.epoch })).ok).toBe(true);
+    expect((await b2.req('room:resume', { code: s.code, lastSeq: b.lastSeq, epoch: b.epoch })).ok).toBe(true);
+    await a2.until(() => a2.room?.phase === 'playing', 3000, 'resumed');
+    a2.autoPlay();
+    b2.autoPlay();
+    const events = () => a2.batches.flatMap((m) => m.events as GameEvent[]);
+    const started1 = (e: GameEvent) => e.type === 'TURN_STARTED' && e.actor.t === 'seat' && e.actor.seat === 1;
+    await a2.until(() => events().some(started1), 20_000, 'seat 1 turn');
+    // 梦游结束的那一回合：没有停放的座驾可装回（0.5.0 中卡时没停放），不发 VEHICLE{wake}，仍步行
+    const at = a2.batches.find((m) => (m.events as GameEvent[]).some(started1))!;
+    expect((at.events as GameEvent[]).some((e) => e.type === 'VEHICLE' && e.seat === 1)).toBe(false);
+    expect(at.view.players.find((x) => x.seat === 1)).toMatchObject({
+      parked: null,
+      st: expect.objectContaining({ sleepwalk: 0 }),
+    });
+    const seq = a2.lastSeq;
+    await a2.until(() => a2.lastSeq >= seq + 10, 20_000, 'game continues');
+    expect(a2.gaps).toEqual([]);
+    expect(b2.gaps).toEqual([]);
+  }, 60_000);
+
   it('对局中踢人后立即崩溃：座位归属已落盘，重启后仍是电脑，被踢者不能 room:resume 拿回', async () => {
     const dir = tmp();
     const srv1 = await serve(dir);

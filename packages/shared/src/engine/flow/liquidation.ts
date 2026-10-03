@@ -103,6 +103,7 @@ export function liquidate(ctx: Ctx, seat: SeatIndex): { lots: LotId[]; auctionLo
   p.vehicle = 'walk';
   p.diceCount = 1;
   p.engineer = null;
+  p.parked = null;
   zeroOutMoney(s, seat);
   p.loan = 0;
   p.loanDue = 0;

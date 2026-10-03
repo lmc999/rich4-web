@@ -118,8 +118,10 @@ function applyToTarget(ctx: Ctx, f: MagicFrame, effect: MagicEffectId, seat: Sea
     }
     case 'sellTools': {
       const r = sellAllItemsDetailed(ctx, seat);
-      // 座驾改回步行单独公布（工程车 + 空背包时后面一个 ITEM_LOST 都没有，变化不能夹带进下一个事件）
-      if (r.vehicleChanged) ctx.emit('VEHICLE', { seat, vehicle: 'walk', dice: 1 });
+      // 座驾改回步行单独公布，之后逐种 ITEM_LOST（座驾折成的 5 / 6 / 12 号道具也在里面）；原版只刷新外观
+      // （0x4446de 调 0x40b425），via 'sold' 让客户端不弹提示、不放音效
+      if (r.vehicleFrom !== null)
+        ctx.emit('VEHICLE', { seat, vehicle: 'walk', dice: 1, via: 'sold', from: r.vehicleFrom });
       for (const x of r.sold) ctx.emit('ITEM_LOST', { seat, item: x.item, qty: x.qty, cause: 'magic' });
       return;
     }

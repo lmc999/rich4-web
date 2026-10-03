@@ -241,7 +241,10 @@ export interface PlayerState {
   placed: boolean; node: NodeId; prevNode: NodeId;
   savedPrevNode: NodeId | null;      // 已停用（0.5.0 起恒为 null，字段保留）：获释留在关押格、来路 = 关押格，见 §7.2 步骤 3
   vehicle: Vehicle; diceCount: 1 | 2 | 3;
-  engineer: { days: number; restore: 'walk' | 'moto' | 'car' } | null;
+  engineer: { days: number; restore: 'walk' | 'moto' | 'car'; dice: 1 | 2 | 3 } | null;
+                                     // dice：0.6.0 起，到期换回时恢复的骰子数（原版 +0x65），旧快照由 migrateState 补成上限
+  parked: { vehicle: 'moto' | 'car' | 'engineer'; dice: 1 | 2 | 3; engineer: {…} | null } | null;
+                                     // 0.6.0 起：梦游卡停放的座驾（原版 +0x66 / +0x67），梦游结束时装回；旧快照由 migrateState 补 null
   st: Counters2;
   returning: boolean;                // 刚释放、本回合走回棋盘（原版 +0x15|=0x10）
   bankReject: number;                // 拒绝往来天数（普通倒数）
@@ -507,8 +510,12 @@ ROOT.step:
                  （被关时 applyConfinement 已把 node / prevNode 写成关押格 @0x43c34c / 0x43d9d9；期满、新闻 0、保释同路）
        否则 c-1；结果为 0 时改成 0x80
      若主阻碍都为 0，再对 hibernate/sleepwalk/tortoise 执行 tick2（关押期间不倒数）；stay 总是执行 tick2
+       sleepwalk 0x80 → 0（梦游结束）时取下 parked（随 TURN_STARTED 公布），TURN_STARTED 之后装回停放的座驾：
+       机车 / 汽车背包里还有才装回（背包 −1、骰子数照旧），工程车直接装回并算本回合的一天（VEHICLE{via:'wake'}）
+                                                                                       @0x41c1aa（在 0x41c4a6 之前）
      alliance.days--（到期解除；双方敌意各 −20×PI）；insuranceDays--；bankReject--；god.days--（到 0 离场，搭档刷出）
-     名下研究所 research.days--（到 0 交付道具 8+project，满 9 个则作废）；engineer.days--（到 0 恢复原交通工具）
+     名下研究所 research.days--（到 0 交付道具 8+project，满 9 个则作废）；engineer.days--（到 0 恢复原交通工具，
+       VEHICLE{via:'expire'}；梦游期间工程车停放在 parked 里，不倒数）                                  @0x41c4a6
 4 若任一主阻碍 ≠ 0 → emit TURN_BLOCKED{remaining=(raw&0x7f)+1}，stage='end'
   若 returning → 走回棋盘：在当前节点只做物件结算（地雷、神明、礼物等，路障除外），不掷骰，stage='end'   @0x418f04
   若 hibernate ≠ 0 → TURN_BLOCKED{reason:'hibernate'}，stage='end'
@@ -833,7 +840,7 @@ export const CARD_EFFECTS = { 1: equalWealth, /* … */ 30: tortoise } satisfies
 | 13 | 抢夺 | 视窗内对手 + 指定 1 张卡或 1 个道具 | 抢卡：满手先弃自己最便宜的；抢道具：自己已有 9 个则该道具回池 | 所抢物品的标价 |
 | 14 | 停留 | 视窗内任何演员 | stay = 对自己 0x80，对别人 1 | 无 |
 | 15 | 冬眠 | 所有对手 | hibernate=5，并清除梦游。跳过：自己、已出局、不在棋盘上（受困、消失、未落地）、住旅馆中；在场恶人也冬眠 | 每人 150×PI |
-| 16 | 梦游 | 视窗内对手或恶人 | CARD 帧的伤害链（10.3）：梦游 5 天（被嫁祸回出卡者为 4 天），交通工具退回背包、骰子数改为 1；目标冬眠中则无效但扣卡 | 150×PI |
+| 16 | 梦游 | 视窗内对手或恶人 | CARD 帧的伤害链（10.3）：梦游 5 天（被嫁祸回出卡者为 4 天）；原座驾停放进 parked（机车 / 汽车退回背包，工程车连同剩余天数），步行、骰子数改为 1，梦游结束的回合开始时装回（§7.2 步骤 3；冬眠卡取消梦游时不装回，梦游中再中卡覆盖为步行）；目标冬眠中则无效但扣卡 | 150×PI |
 | 17 | 陷害 | 同上 | 伤害链：坐牢 5 天（被嫁祸回出卡者为 4 天） | 150×PI |
 | 18–21 | 复仇、嫁祸、免费、免罪 | 被动卡，不能主动打出 | 见 10.3 | — |
 | 22 | 送神符 | 自己 | 有炸弹就送走炸弹；神明属于 {5,6,7,8,10,15} 时送走（开关可排除 15）；什么都没送走则失败、卡保留 | — |
@@ -869,16 +876,18 @@ export const CARD_EFFECTS = { 1: equalWealth, /* … */ 30: tortoise } satisfies
 |---|---|---|---|
 | 1 | 机器娃娃 | 无 | 从脚下沿前进方向走 9 步（岔路随机），清掉沿途未附身的物件和神明（神明离场后搭档刷出）；用完回池 |
 | 2/3/4 | 路障、地雷、定时炸弹 | 视窗内的空节点：无人、无物件、无神明、未设禁放位 | 放到地上（放置者记在 placedBy） |
-| 5/6 | 机车、汽车 | 无 | 装备：原交通工具退回背包（可以因此达到第 10 台），diceCount 设为该交通工具上限 |
+| 5/6 | 机车、汽车 | 无 | 装备：原交通工具退回背包（可以因此达到第 10 台），diceCount 设为该交通工具上限；已经骑着同一种时不可用。开着工程车时照样能用：直接顶掉工程车（天数与到期要换回的座驾作废、不退还，exe 0x4459e9 / 0x445aa4 只比较 ==1 / ==2） |
 | 7 | 飞弹 | 任意节点 | 以节点坐标为中心、半宽 100 的方窗：地产 mode 0；窗内演员车毁、住院 3 天；物件和未附身神明清除。敌意：地主 30×PI，被炸者 90×PI |
 | 8 | 遥控骰子 | 点数 1..6 | forcedSteps=v，立即执行 ROLL；乌龟生效时不可用 |
 | 9 | 机器工人 | 视窗内地产 | +1 级，不看归属；0 级设施需附带类型 |
 | 10 | 时光机 | 无 | §10.10 |
 | 11 | 传送机 | 演员、未附身神明、物件、房屋 → 空道路或空地 | 被传送者不触发落点、过路费、炸弹倒数；对自己使用则本回合视为已掷骰 |
-| 12 | 工程车 | 无 | 保存原交通工具（机车或汽车退回背包），骰子 1 颗，持续 7 个自己的回合；停在别人已有建筑的地产上 → 夷平到 0（PROGRAM） |
+| 12 | 工程车 | 无 | 保存原交通工具（机车或汽车退回背包）与当时的骰子数，骰子 1 颗，持续 7 个自己的回合（梦游期间停放、不倒数）；到期换回原车（背包里有才装回、骰子数恢复成开工程车之前的，否则步行）；停在别人已有建筑的地产上 → 夷平到 0（PROGRAM） |
 | 13 | 核子飞弹 | 任意节点 | 半宽 220：地产 mode 1（清为无主）；窗内人员车毁、住院 3 天；物件和神明清除（施放者也在判定范围内） |
 
 商店只卖 1..8（进店时池 > 0 的才上架，进店后卖回的不补上；不显示库存）；买道具一次 1 个、每种每次进店只能买一次（SHOP_BUY_ITEM.qty 必须为 1，v2.06 0x42d869 / 0x42d9cf；真人还要 listed，电脑按实时库存）；卖出得 `divTrunc(单价×数量×9,10)` 点券，1..8 回池，9..13 直接消失；百货公司盈余 += 点券价×10。
+
+座驾切换（architecture §34）：用 5 / 6 / 12 号道具换车之外的切换——真人收起（STOW_VEHICLE）、梦游卡停放、梦游结束装回、工程车到期、魔法屋 / 命运卖光（座驾先折回背包里的道具一起卖：机车 / 汽车 5 / 6 号回库存，工程车折成 12 号、按价卖掉，exe 0x4446de）、命运 10 / 11 失车——原版都只调 0x40b425 刷新外观，不说台词、不出对话框；事件带 stowed / via（engine/types/events.ts isQuietVehicleSwitch）。用道具换车原版另整屏重画、说道具台词。客户端各条路径都只换外观，不提示、不放换车音效、不闪光，用道具换车只说道具台词。
 
 ### 10.5 神明（data/gods.ts：好坏、搭档、天数、三项运势、过路费修正、发威、显灵）
 
@@ -1152,7 +1161,7 @@ export function applyPostPatch<V extends PublicWorldLike>(view: V, p: PostPatch)
 | move | DICE_SET{seat,count}、DICE_ROLLED{seat,dice,steps,forced}、MOVE_SEGMENT{actor,path,remaining}、ROADBLOCK_HIT{actor,node}、REVERSED{actor}、LANDED{actor,node} |
 | money | MONEY{from,to,amount,paid,reason,ref}、LOAN{seat,amount,due}、REPAY、LOAN_REMINDER{seat,daysLeft}、LOAN_FORCED、ATM{seat,op,amount}、FINANCE、RESERVE_SHORTFALL{chairman,amount}、INSURANCE_PAYOUT |
 | property | LAND_BOUGHT{seat,lot,price}、LOT_LEVEL{lot,from,to,cause}、FACILITY_BUILT{lot,type}、LOT_MUTATED{lot,mode,cause}、TOLL_PAID{payer,owner,ally,amount,allyAmount,lots,mods}、TOLL_EXEMPT{payer,lot,reason}、FEE_PAID{payer,lot,feeKind,wheel,amount}、HOTEL_STAY{seat,days}、COMPANY_FEE{seat,company,industry,amount,wheel}、SUBSCRIBED{seat,stock,shares,unit}、INVEST_BLOCKED{seat,god}、CANNOT_AFFORD、MARK_SET/MARK_EXPIRED{lots,kind}、TENURE_EXPIRED{lots}、RESEARCH_STARTED/DONE/CANCELLED |
-| card/item | CARD_GAINED{seat,card,source}、CARD_LOST{seat,card,cause}、CARD_USED{seat,card,target}、CARD_NO_EFFECT、PASSIVE{seat,card,context,other}（other = 接反应台词的对方，没有为 null）、ITEM_GAINED/LOST/USED、VEHICLE{seat,vehicle,dice,stowed?}（stowed 只在真人 STOW_VEHICLE 收起时出现：收回背包的那台，客户端不弹提示、不放音效）、VEHICLE_DESTROYED、OBJECT_PLACED/REMOVED{obj,cause}、DOLL_WALK{path,cleared}、BOMB_ATTACHED/TRANSFERRED/EXPLODED、STRIKE{center,half,kind,lots,actors}、TELEPORTED、TIME_REWOUND{bySeat,toTurnNo}（resetsView）、SHOP_OPENED{shelf}、SHOP_TRADE、CHAIRMAN_GIFT |
+| card/item | CARD_GAINED{seat,card,source}、CARD_LOST{seat,card,cause}、CARD_USED{seat,card,target}、CARD_NO_EFFECT、PASSIVE{seat,card,context,other}（other = 接反应台词的对方，没有为 null）、ITEM_GAINED/LOST/USED、VEHICLE{seat,vehicle,dice,stowed?,via?,from?}（没有 stowed / via 的是用道具换车；stowed = 真人 STOW_VEHICLE 收回背包的那台；via = 'sleepwalk' / 'wake' / 'expire' / 'sold'，from = 切换前的座驾。原版各条路径都只刷新外观，客户端一律不弹提示、不放音效、不闪光，architecture §34）、VEHICLE_DESTROYED{seat,vehicle,via?}（via 'fate'：命运 10 / 11 失车，不播车毁）、OBJECT_PLACED/REMOVED{obj,cause}、DOLL_WALK{path,cleared}、BOMB_ATTACHED/TRANSFERRED/EXPLODED、STRIKE{center,half,kind,lots,actors}、TELEPORTED、TIME_REWOUND{bySeat,toTurnNo}（resetsView）、SHOP_OPENED{shelf}、SHOP_TRADE、CHAIRMAN_GIFT |
 | god | GOD_ATTACHED{seat,kind,displaced}、GOD_POWER{seat,kind,slot:{digits,value},transfers}、GOD_LEFT{seat,kind,reason}、GOD_SPAWNED{kind,node}、GOD_MANIFEST{seat,kind,lot,effect}、DOG_BITE、DOG_KNOCKED、DEATH_GOD_SUMMONED |
 | status | CONFINED{actor,where,days,total,cause}、BLESSING{seat,category,result}、STATUS_SET{actor,status,value}、ALLIANCE_FORMED/BROKEN/EXPIRED、BANK_REJECTED |
 | event | NEWS{id,params,affected}、FATE{seat,id,amount,blessing}、MAGIC_CONDITION{cond,targets}、MAGIC_CAST{caster,effect}、LOTTERY_TICKET{seat,number}、LOTTERY_DRAW{number,winner,prize}、MINIGAME_STARTED{seat,minigameId}、MINIGAME_RESULT{seat,score,points,skipped}、BAIL{by,seat}、VILLAIN_HIRED{by,kind}、VILLAIN_ACTION{kind,victim,what,amount}、VILLAIN_HOME、BEGGAR_ALMS{payer,beggar,amount,newNode} |
