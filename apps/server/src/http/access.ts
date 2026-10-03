@@ -14,11 +14,14 @@
  * 路由（契约见 shared/net/access.ts）：
  * - GET  /api/access          当前状态（顺带滑动续期；cookie 已失效时清掉它）
  * - POST /api/access          {passcode} 口令或邀请码 → Set-Cookie
- * - POST /api/access/grant    {room} 生成房间邀请授权（24 小时、8 次）
- * - POST /api/access/redeem   {token} 兑换房间授权 → Set-Cookie
+ * - POST /api/access/grant    {room} 生成房间邀请授权（30 分钟、1 次，绑定房间实例；g 会话 403 ACCESS_SCOPE）
+ * - POST /api/access/redeem   {token} 兑换房间授权 → Set-Cookie（绑定房间的 g cookie）
  * - POST /api/access/logout   清除 cookie
  * 管理（Bearer ADMIN_TOKEN；未配置时 404）：GET/POST /admin/access/invites、DELETE /admin/access/invites/:id、
- * POST /admin/access/revoke（epoch + 1）。
+ * POST /admin/access/revoke（epoch + 1）。POST /admin/access/invites {uses?, days?, note?}（缺省 1 次、7 天；days 可为小数，
+ * null 不过期）→ `{ code, invite: { id, usesLeft, expiresAt, createdAt, note, revoked } }`：外部程序（例如发口令的机器人）
+ * 可以据此签发限时口令；用它登录的会话在 expiresAt 到点即失效（AccessControl）。DELETE /admin/access/invites/:id 停用邀请码：
+ * 不能再登录，用它登录的会话（cookie 带邀请码 id）下一次请求即失效。
  *
  * POST 一律要求 `Content-Type: application/json`（含 logout：跨站 text/plain 表单不能强制登出）；
  * 请求体（口令、token）永不写日志。
@@ -111,7 +114,8 @@ function isJson(req: FastifyRequest): boolean {
   return typeof ct === 'string' && /^application\/json\b/i.test(ct.trim());
 }
 
-const STALE_REASONS = new Set(['expired', 'revoked', 'badSignature', 'malformed']);
+/** 状态接口上清掉的失效 cookie（outdated：旧格式 v1 的房间授权，需要重新兑换） */
+const STALE_REASONS = new Set(['expired', 'revoked', 'badSignature', 'malformed', 'outdated']);
 
 const InviteCreateSchema = z.strictObject({
   uses: z.int().min(1).max(1000).optional(),

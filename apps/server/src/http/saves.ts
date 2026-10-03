@@ -5,6 +5,8 @@
  * - POST /api/saves/import：请求体 ≤ 2MB，text/plain 或 application/octet-stream 的 R4S1 文本，
  *   或 JSON {text}；依次 migrateSave、engine.validateState、验签，签名无效时 verified=false（非官方存档）。
  * 响应统一为 { ok, data | error }；按 IP 限流（每分钟 IMPORT_PER_IP_PER_MIN 次）。
+ * 经房间邀请链接进入的会话（访问 cookie kind g，只对那个房间有效）不能导入：403 ACCESS_SCOPE（architecture §35；
+ * 它们也不能读档，导入没有用处）。导出不限（本人参与过的对局的存档）。
  */
 import { appError, type ErrorCode, SAVE_IMPORT_MAX_BYTES, SaveIdSchema, TOKEN_RE } from '@rich4/shared/net';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -24,6 +26,7 @@ const STATUS: Partial<Record<ErrorCode, number>> = {
   SAVE_NOT_FOUND: 404,
   SAVE_FORBIDDEN: 409,
   SAVE_INCOMPATIBLE: 422,
+  ACCESS_SCOPE: 403,
   RATE_LIMITED: 429,
   INTERNAL: 500,
 };
@@ -73,6 +76,7 @@ export async function registerSavesHttp(app: FastifyInstance, d: SavesHttpDeps):
     });
 
     scope.post('/api/saves/import', async (req, reply) => {
+      if (req.access?.claims?.kind === 'g') return send(reply, 'ACCESS_SCOPE', { reason: 'import' });
       const th = playerTokenHash(req);
       if (!th) return send(reply, 'BAD_REQUEST', { reason: 'playerToken' });
       if (!d.limiter.takeIp(req.ip, 'import')) return send(reply, 'RATE_LIMITED');

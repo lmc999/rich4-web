@@ -3,6 +3,8 @@
 //   用 build + preview 而不是 dev server，避免 HMR 整页刷新打断多页面测试）；
 // - 浏览器用本机 Google Chrome（channel 'chrome'），不下载新浏览器；
 // - 页面 URL 带 ?anim=instant&audio=off；点击一律走 DOM 备用按钮（data-testid），不点画布坐标。
+// - 端口可用环境变量 E2E_SERVER_PORT / E2E_CLIENT_PORT 覆盖（缺省 3100 / 5174）：本机非 CI 时 reuseExistingServer 为 true，
+//   同一台机器上另一个工作目录同时跑 E2E 时必须换一组端口，否则会接到对方的服务器上。
 //
 // 远程模式（architecture M11 验证 3、4）：设置 E2E_BASE_URL（例如 https://localhost）时对着已部署的实例跑——
 // 不启动 webServer，baseURL 用它，忽略证书错误（Caddy 内部 CA 的自签证书）；/socket.io、/api 与前端同源，夹具与用例
@@ -14,12 +16,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, type PlaywrightTestConfig } from '@playwright/test';
+import { envPort } from './fixtures/ports';
 import { E2E_REMOTE } from './fixtures/remote';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..');
-export const SERVER_PORT = 3100;
-export const CLIENT_PORT = 5174;
+export const SERVER_PORT = envPort('E2E_SERVER_PORT', 3100);
+export const CLIENT_PORT = envPort('E2E_CLIENT_PORT', 5174);
 const reuse = !process.env.CI;
 
 /** 远程实例的站点源（E2E_BASE_URL，见 fixtures/remote.ts）；null 为本机模式 */

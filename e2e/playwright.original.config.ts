@@ -2,7 +2,8 @@
 // （`npm run extract -- assets synth` 现场生成到 .cache/synthetic-pack，全为自绘图形，不入库）并开启口令门禁——
 // 启用素材包的服务器必须设门禁（§3 修正 3）。fixture 地图 test 在合成包里有绑定，对局页因此判定为原版皮肤：
 // 经典布局（ui/classic）、原版棋盘（game/orig）、繁体界面；夹具经 RICH4_E2E_PASSCODE 在打开页面前注入 cookie。
-// 换端口（3110 / 5184）与构建目录（.cache/e2e-original/dist），可与默认配置同时跑。
+// 换端口（3110 / 5184，可用 E2E_SERVER_PORT / E2E_CLIENT_PORT 覆盖：另一个工作目录同时跑时换一组）与构建目录
+// （.cache/e2e-original/dist），可与默认配置同时跑。
 // 用法：CI=1 npx playwright test -c e2e/playwright.original.config.ts lobby turn-cycle cards events minigame reconnect save-load
 //
 // 远程模式（与 playwright.config.ts 相同）：设置 E2E_BASE_URL 时不启动 webServer、baseURL 用它、忽略证书错误；口令改用
@@ -14,12 +15,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, type PlaywrightTestConfig } from '@playwright/test';
+import { envPort } from './fixtures/ports';
 import { E2E_REMOTE } from './fixtures/remote';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..');
-const SERVER_PORT = 3110;
-const CLIENT_PORT = 5184;
+const SERVER_PORT = envPort('E2E_SERVER_PORT', 3110);
+const CLIENT_PORT = envPort('E2E_CLIENT_PORT', 5184);
 const DIST = join(repoRoot, '.cache', 'e2e-original', 'dist');
 const PACK_DIR = join(repoRoot, '.cache', 'synthetic-pack');
 const reuse = !process.env.CI;

@@ -1,5 +1,6 @@
 /**
- * 统一的 C2S 处理包装（design/net.md §6.2 第 1–2 步）：限流（按会话）→ zod 校验 → 调用 → 统一 ack 与错误。
+ * 统一的 C2S 处理包装（design/net.md §6.2 第 1–2 步）：限流（按会话）→ zod 校验 → 访问作用域（房间邀请授权的会话只对
+ * 那个房间有效，net/accessScope.ts）→ 调用 → 统一 ack 与错误。
  * - 客户端只传 ack、不传 payload 时，payload 视为 {}。
  * - 处理函数抛异常一律回 INTERNAL（记日志，不把异常细节发给客户端）。
  * - seat 只从 session 取，payload 里不带 seat。
@@ -19,6 +20,7 @@ import type { Clock } from '../infra/clock';
 import type { Logger } from '../infra/logger';
 import type { SaveService } from '../persistence/SaveService';
 import type { RoomManager } from '../rooms/RoomManager';
+import { type AccessScope, checkScope } from './accessScope';
 import { bucketOf, type RateLimiter } from './rateLimit';
 import type { Session, SessionRegistry } from './sessions';
 
@@ -26,6 +28,8 @@ export interface SocketData {
   tokenHash: string;
   nickname: string;
   ip: string;
+  /** 握手时访问 cookie 是房间邀请授权（kind g）：只能在这个房间实例里活动；其他情况为 null */
+  scope: AccessScope | null;
 }
 
 // biome-ignore lint/complexity/noBannedTypes: Socket.IO 的 InterServerEvents 占位
@@ -71,6 +75,8 @@ export function handle<E extends C2SEventName>(ctx: HandlerCtx, socket: AppSocke
     }
     const session = ctx.sessions.bySocketId(socket.id);
     if (!session) return reply(fail('BAD_HANDSHAKE'));
+    const scoped = checkScope(socket.data.scope ?? null, event, parsed.data, session.roomCode, ctx.rooms);
+    if (!scoped.ok) return reply(scoped);
     try {
       reply(fn(parsed.data as C2SPayload<E>, session, socket));
     } catch (err) {

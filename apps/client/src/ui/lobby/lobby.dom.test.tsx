@@ -7,6 +7,7 @@ import { useChatStore } from '../../store/chatStore';
 import { canStart } from '../../store/roomStore';
 import { makeTestClient } from '../../test/fakeTransport';
 import { ai, human, roomView, seat } from '../../test/roomFixtures';
+import { useAccessStore } from '../access/accessStore';
 import { ChatPanel } from '../social/ChatPanel';
 import { CreateRoomForm } from './CreateRoomForm';
 import { LobbyView } from './LobbyView';
@@ -188,6 +189,30 @@ describe('LobbyView', () => {
     await userEvent.click(screen.getByTestId('invite-qr-toggle'));
     const img = await screen.findByTestId('invite-qr');
     expect(img.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+  });
+});
+
+describe('LobbyView：经房间邀请链接进入的房主（architecture §35）', () => {
+  afterEach(() => {
+    useAccessStore.setState({ status: null, statusError: false, required: null });
+  });
+
+  it('房主是邀请链接会话（kind g）时不给读档入口；口令会话的房主照常', () => {
+    const room = roomView({ seats: [human(0, '房主', { host: true, isYou: true }), seat(1), seat(2), seat(3)] });
+    const base = {
+      mode: 'passcode' as const,
+      granted: true,
+      expiresAt: 0,
+      deadline: null,
+      grants: true,
+    };
+    useAccessStore.setState({ status: { ...base, kind: 'g', room: room.code, roomOpen: true, canGrant: false } });
+    const { unmount } = renderWith(<LobbyView room={room} onLeave={() => {}} />);
+    expect(screen.queryByTestId('lobby-saves')).toBeNull();
+    unmount();
+    useAccessStore.setState({ status: { ...base, kind: 'p', room: null, roomOpen: null, canGrant: true } });
+    renderWith(<LobbyView room={room} onLeave={() => {}} />);
+    expect(screen.getByTestId('lobby-saves')).toBeInTheDocument();
   });
 });
 

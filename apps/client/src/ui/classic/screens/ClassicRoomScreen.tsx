@@ -2,6 +2,8 @@
 // 房间关闭回到首页并提示）：大厅阶段显示原版选人画面（ClassicLobby），对局阶段照常挂 GameScreen（经典布局由它按皮肤
 // 选择），进入对局时叠原版 Loading 直到棋盘建好；进房中与出错用原版背景（知道房间的地图时用该图的 jump#gm）上的提示。
 // 本页看到新局开始（大厅 → 对局，或单机页刚开局）时在 Loading 之上播该图的飞行动画（FlyVideo：读档、刷新、重连、观战不播）。
+// 经房间邀请链接进入的会话打开别的房间被拒（ACCESS_SCOPE）时，错误面板另给「回到房间」（邀请的房间还在时）与「我有口令」
+// （architecture §35）。
 import { ROOM_CODE_RE } from '@rich4/shared/net';
 import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useSearch } from 'wouter';
@@ -9,6 +11,7 @@ import { useClient } from '../../../app/services';
 import { useTx } from '../../../i18n/tx';
 import { useRoomStore } from '../../../store/roomStore';
 import { useUiStore } from '../../../store/uiStore';
+import { requireAccess, useGuestRoom, useGuestRoomClosed } from '../../access/accessStore';
 import { Toasts } from '../../hud/Overlays';
 import { ReconnectOverlay } from '../../system/ReconnectOverlay';
 import { regionStyle } from '../layout';
@@ -32,6 +35,8 @@ export default function ClassicRoomScreen({ code }: { code: string }): ReactNode
   const [error, setError] = useState<string | null>(null);
   const [, navigate] = useLocation();
   const valid = ROOM_CODE_RE.test(code);
+  const guestRoom = useGuestRoom();
+  const guestClosed = useGuestRoomClosed();
   const [fly, flyDone] = useFlyPlan(code, room);
   /** 背景：已经知道这个房间时用它的地图（jump#gm），否则台湾的 jump#0 */
   const bgMap = room?.code === code ? room.settings.game.mapId : null;
@@ -72,9 +77,26 @@ export default function ClassicRoomScreen({ code }: { code: string }): ReactNode
           <p className={s.error} role="alert" data-testid="room-error">
             {valid ? error : t('lobby:room.invalidCode')}
           </p>
-          <Link href="/" className={s.panelBtn}>
-            {t('common.backHome')}
-          </Link>
+          <div className={s.panelRow}>
+            {guestRoom && guestRoom !== code && !guestClosed && (
+              <Link href={`/r/${guestRoom}`} className={s.panelBtn} data-tone="blue" data-testid="room-guest-back">
+                {t('lobby:home.guestBack', { code: guestRoom })}
+              </Link>
+            )}
+            {guestRoom && (
+              <button
+                type="button"
+                className={s.panelBtn}
+                onClick={() => requireAccess('manual')}
+                data-testid="room-guest-passcode"
+              >
+                {t('lobby:home.havePasscode')}
+              </button>
+            )}
+            <Link href="/" className={s.panelBtn}>
+              {t('common.backHome')}
+            </Link>
+          </div>
         </div>
       </ClassicScreenFrame>
     );

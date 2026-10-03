@@ -1012,6 +1012,8 @@
 
 /* 消息框（Data#476 图5）风格的分节：深棕底、金边 */
 .box {
+  /* 邀请框说明（ui/lobby/InviteLink 的 inviteNote）：在棕底上用浅色字，对比度约 7:1 */
+  --invite-note: #ecd6a6;
   position: relative;
   padding: 8px;
   border: 3px solid #c98b2b;

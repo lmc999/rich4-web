@@ -41,7 +41,9 @@ export type ErrorCode =
   // 社交
   | 'CHAT_DISABLED'
   // 访问控制（原版素材包门禁：共享口令或房间邀请授权，docs/design/original-skin.md U4）
-  | 'ACCESS_REQUIRED';
+  | 'ACCESS_REQUIRED'
+  // 经房间邀请链接进入的会话只对那个房间有效（建房、单机、读档、进别的房间被拒；architecture §35）
+  | 'ACCESS_SCOPE';
 
 export const ERROR_MESSAGES_ZH = Object.freeze({
   BAD_HANDSHAKE: '连接参数无效，请刷新页面',
@@ -76,6 +78,7 @@ export const ERROR_MESSAGES_ZH = Object.freeze({
   SAVE_FORBIDDEN: '你无权读取这个存档',
   CHAT_DISABLED: '聊天已关闭',
   ACCESS_REQUIRED: '需要访问口令或邀请链接才能进入',
+  ACCESS_SCOPE: '你是通过邀请链接进入的，只能加入邀请你的房间',
 } as const satisfies { readonly [C in ErrorCode]: string });
 
 export const ERROR_CODES: readonly ErrorCode[] = Object.freeze(Object.keys(ERROR_MESSAGES_ZH) as ErrorCode[]);

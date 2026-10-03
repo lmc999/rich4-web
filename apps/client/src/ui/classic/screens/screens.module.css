@@ -76,6 +76,13 @@
   cursor: default;
 }
 
+/* 经房间邀请链接进入的会话：标题的 START / LOAD 图标烘焙在底图里，盖一层暗色表示不可用 */
+.hot[data-locked="true"] {
+  border-radius: 10px;
+  background: rgb(20 10 4 / 0.62);
+  cursor: not-allowed;
+}
+
 .hot:focus-visible {
   outline: 2px solid #fff36b;
   outline-offset: -2px;
@@ -285,6 +292,20 @@
   color: #ffe9a8;
   font-size: 13px;
   line-height: 1.35;
+}
+
+/* 标题画面上方的提示条：自上而下叠放，按文字行数自适应高度 */
+.noteStack {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.noteStack > .note {
+  position: static;
+  min-height: 40px;
+  margin: 0;
 }
 
 /* EXIT 钮（Data#1 图7/8）：面板右下角 */

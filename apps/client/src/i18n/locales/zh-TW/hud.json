@@ -220,7 +220,8 @@
     "SAVE_INCOMPATIBLE": "存檔與當前版本或地圖不相容",
     "SAVE_FORBIDDEN": "你無權讀取這個存檔",
     "CHAT_DISABLED": "聊天已關閉",
-    "ACCESS_REQUIRED": "需要通關密語或邀請連結才能進入"
+    "ACCESS_REQUIRED": "需要通關密語或邀請連結才能進入",
+    "ACCESS_SCOPE": "你是透過邀請連結進入的，只能加入邀請你的房間"
   },
   "errorReason": {
     "timeout": "請求超時，請檢查網路",
@@ -361,11 +362,15 @@
     "submit": "進入",
     "checking": "驗證中…",
     "redeeming": "正在驗證邀請連結…",
+    "backToRoom": "回到房間 {{code}}",
+    "continue": "不用密語，繼續進入",
+    "cancel": "取消",
     "privateNote": "密語只用於換取本瀏覽器的通行憑證，不會儲存在頁面上。",
     "error": {
       "badPasscode": "密語不正確",
       "rateLimited": "嘗試次數過多，請 {{n}} 秒後再試",
-      "grantInvalid": "邀請連結已失效（過期或次數已用完），請向房主索取新連結或輸入密語",
+      "grantInvalid": "邀請連結已失效（超過 30 分鐘，或已被別人用過），請向房主索取新連結或輸入密語",
+      "roomClosed": "邀請你的房間已經關閉，請向房主索取新連結或輸入密語",
       "network": "無法連線伺服器，請稍後再試",
       "generic": "驗證失敗，請稍後再試"
     }

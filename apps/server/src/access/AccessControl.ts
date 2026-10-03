@@ -1,9 +1,18 @@
 /**
- * 访问门禁服务（docs/design/original-skin.md U4、§3 修正 3；design-draft §5.3）：cookie 校验与滑动续期、
- * 口令 / 邀请码登录、房间邀请授权的签发与兑换、吊销。HTTP 路由在 http/access.ts，握手守卫在 net/io.ts。
+ * 访问门禁服务（docs/design/original-skin.md U4、§3 修正 3；design-draft §5.3；architecture §35）：cookie 校验与滑动续期、
+ * 口令 / 邀请码登录、房间邀请授权的签发与兑换、吊销。HTTP 路由在 http/access.ts，握手守卫在 net/io.ts，
+ * g 会话的房间作用域在 net/accessScope.ts 强制。
  *
  * - cookie 有效期：口令与邀请码 ACCESS_TTL_DAYS 天；房间授权（kind g）24 小时。都按「用过就续」滑动：
  *   距上次签发超过 min(有效期/4, 1 天) 的有效 cookie 在下一次 /api、manifest 或握手时换发。
+ *   例外：用带到期时间的邀请码登录的会话，到期时间 = min(现在 + 有效期, 邀请码到期时间)，续期也不超过邀请码到期时间
+ *   （cookie 的 cap 字段），到点即失效；没有到期时间的邀请码照常滑动。
+ * - 邀请码的可用次数 = 可登录的设备数：只有 POST /api/access 消耗次数，同一设备凭 cookie 再进（含续期）不消耗。
+ * - 停用邀请码（DELETE /admin/access/invites/:id）：i cookie 带邀请码 id，check 时查它是否已撤销（已撤销 id 的集合与 epoch
+ *   一样按 epochCacheMs 缓存，另一进程撤销 1 秒内生效）；撤销后下一次 /api、manifest 或握手即被拒（reason revoked），已建立的
+ *   Socket 不强制断开。用这个码的人生成的房间授权、经授权进来的 g 会话不受影响；旧格式换发来的 i（不带 id）照旧只按到期。
+ * - 房间授权：30 分钟、1 次（ACCESS_GRANT_*），绑定房间实例；兑换得到的 g cookie 只对那个房间实例有效。
+ *   持 p / i 会话的人打开链接不消耗次数；持 g 会话的人打开同一房间的链接不消耗，打开别的房间的链接正常兑换并换绑新房间。
  * - 吊销：access_meta.epoch + 1（scripts/access.ts revoke 或 POST /admin/access/revoke）。epoch 每秒至多读一次库，
  *   所以 CLI 在另一个进程里吊销也会在 1 秒内生效；已建立的 Socket 连接不强制断开（下次握手被拒）。
  * - 口令与邀请码永不写日志；失败只记 IP 与累计次数。
@@ -29,6 +38,8 @@ import {
   type CookieCheck,
   clearAccessCookie,
   cookieKey,
+  ROOM_INSTANCE_RE,
+  type RoomBinding,
   readCookie,
   serializeAccessCookie,
   signAccessCookie,
@@ -63,8 +74,11 @@ export interface AccessControlDeps {
   redeemLimiter?: AccessLimiter;
   /** epoch 缓存时长（默认 1 秒） */
   epochCacheMs?: number;
-  /** 房间是否存在（生成授权时检查）；缺省不检查 */
-  roomExists?: (code: string) => boolean;
+  /**
+   * 房间号 → 当前房间实例（net/accessScope.ts 的 roomInstanceOf）；房间不存在返回 null。生成授权时检查房间存在并绑定实例，
+   * 兑换时检查实例仍在。缺省（单元测试）不检查，实例一律记为 '0'
+   */
+  roomInstance?: (code: string) => string | null;
   /** 已启用素材包的 packId（状态接口里告诉已通过门禁的前端）；没有素材包为 null */
   packId?: string | null;
   /** 每 IP 每小时的房间授权数（缺省 GRANTS_PER_IP_PER_HOUR；RICH4_TEST_MODE 下放宽：E2E 的所有页面都来自回环地址） */
@@ -90,9 +104,18 @@ export interface GateCheck {
   renew: string | null;
 }
 
-/** 每 IP 每小时最多生成的房间授权数 */
-export const GRANTS_PER_IP_PER_HOUR = 30;
+/** 每 IP 每小时最多生成的房间授权数（一个链接只给一个人：邀请框每复制 / 出示一次二维码就换一个） */
+export const GRANTS_PER_IP_PER_HOUR = 60;
 const DAY_S = 86_400;
+/** roomInstance 缺省时（单元测试）授权绑定的实例 */
+const ANY_INSTANCE = '0';
+
+/** 签发 cookie 的附加信息：硬性到期（Unix 秒，0 = 无）、g 的房间、i 的邀请码 id */
+interface IssueOptions {
+  cap?: number;
+  room?: RoomBinding | null;
+  invite?: string | null;
+}
 
 export class AccessControl {
   readonly mode: AccessMode;
@@ -105,6 +128,7 @@ export class AccessControl {
   readonly redeemLimiter: AccessLimiter;
   private readonly grantBuckets = new Map<string, TokenBucket>();
   private epochCache: { value: number; at: number } | null = null;
+  private revokedCache: { ids: ReadonlySet<string>; at: number } | null = null;
   private readonly epochCacheMs: number;
   private readonly grantsPerHour: number;
   private lastPrune = 0;
@@ -142,37 +166,79 @@ export class AccessControl {
     return value;
   }
 
+  /** 邀请码是否已撤销（已撤销 id 的集合缓存 epochCacheMs） */
+  private inviteRevoked(id: string): boolean {
+    const now = this.now();
+    if (!this.revokedCache || now - this.revokedCache.at >= this.epochCacheMs) {
+      this.revokedCache = { ids: new Set(this.store.revokedInviteIds()), at: now };
+    }
+    return this.revokedCache.ids.has(id);
+  }
+
   /** 某种 cookie 的有效期（秒） */
   ttlSec(kind: AccessKind): number {
     const full = Math.round(this.d.config.ttlDays * DAY_S);
     return kind === 'g' ? Math.min(full, ACCESS_GRANT_COOKIE_TTL_MS / 1000) : full;
   }
 
-  private issue(kind: AccessKind): { value: string; setCookie: string; exp: number } {
-    const ttl = this.ttlSec(kind);
-    const exp = Math.floor(this.now() / 1000) + ttl;
-    const value = signAccessCookie({ exp, epoch: this.epoch(), kind }, this.key!);
-    return { value, exp, setCookie: serializeAccessCookie(value, { maxAgeSec: ttl, secure: this.d.config.secure }) };
+  /** 这一刻签发的到期时间（Unix 秒）：现在 + 有效期，有 cap 时不超过 cap */
+  private expiryFor(kind: AccessKind, cap: number): number {
+    const full = Math.floor(this.now() / 1000) + this.ttlSec(kind);
+    return cap > 0 ? Math.min(full, cap) : full;
   }
 
-  /** 校验请求的 Cookie 头；需要续期时带上新的 Set-Cookie */
+  private issue(kind: AccessKind, o: IssueOptions = {}): { claims: AccessClaims; setCookie: string } {
+    const cap = o.cap ?? 0;
+    const exp = this.expiryFor(kind, cap);
+    const claims: AccessClaims = {
+      exp,
+      epoch: this.epoch(),
+      kind,
+      cap,
+      room: o.room ?? null,
+      invite: o.invite ?? null,
+    };
+    const value = signAccessCookie(claims, this.key!);
+    const maxAgeSec = exp - Math.floor(this.now() / 1000);
+    return { claims, setCookie: serializeAccessCookie(value, { maxAgeSec, secure: this.d.config.secure }) };
+  }
+
+  /**
+   * 校验请求的 Cookie 头；需要续期时带上新的 Set-Cookie（保留 kind、cap、房间与邀请码 id）。
+   * 邀请码会话：登录所用的邀请码已撤销时判为 revoked。
+   * 续期条件：距上次签发超过 min(有效期/4, 1 天)，且新的到期时间确实更晚（到了 cap 的会话不再换发）。
+   */
   check(cookieHeader: string | string[] | undefined): GateCheck {
     if (!this.enabled) return { granted: true, claims: null, reason: null, renew: null };
     const r = verifyAccessCookie(readCookie(cookieHeader), this.key!, this.now(), this.epoch());
     if (!r.ok) return { granted: false, claims: null, reason: r.reason, renew: null };
-    const ttl = this.ttlSec(r.claims.kind);
-    const age = ttl - (r.claims.exp - Math.floor(this.now() / 1000));
-    const renew = age >= Math.min(ttl / 4, DAY_S) ? this.issue(r.claims.kind).setCookie : null;
-    return { granted: true, claims: r.claims, reason: null, renew };
+    const c = r.claims;
+    if (c.invite !== null && this.inviteRevoked(c.invite)) {
+      return { granted: false, claims: null, reason: 'revoked', renew: null };
+    }
+    const ttl = this.ttlSec(c.kind);
+    const age = ttl - (c.exp - Math.floor(this.now() / 1000));
+    const due = age >= Math.min(ttl / 4, DAY_S) && this.expiryFor(c.kind, c.cap) > c.exp;
+    const renew = due ? this.issue(c.kind, { cap: c.cap, room: c.room, invite: c.invite }).setCookie : null;
+    return { granted: true, claims: c, reason: null, renew };
+  }
+
+  /** g 会话绑定的房间实例是否还在（roomInstance 缺省时按还在） */
+  private roomOpen(r: RoomBinding): boolean {
+    return this.d.roomInstance ? this.d.roomInstance(r.code) === r.instance : true;
   }
 
   statusOf(g: Pick<GateCheck, 'granted' | 'claims'>): AccessStatusWithPack {
-    const kind = this.enabled && g.claims ? g.claims.kind : null;
+    const c = this.enabled && g.claims ? g.claims : null;
+    const kind = c ? c.kind : null;
     return {
       mode: this.mode,
       granted: g.granted,
       kind,
-      expiresAt: this.enabled && g.claims ? g.claims.exp * 1000 : null,
+      expiresAt: c ? c.exp * 1000 : null,
+      deadline: c && c.cap > 0 ? c.cap * 1000 : null,
+      room: c?.room ? c.room.code : null,
+      roomOpen: c?.room ? this.roomOpen(c.room) : null,
       grants: this.grantsEnabled,
       canGrant: this.grantsEnabled && g.granted && (kind === 'p' || kind === 'i'),
       pack: g.granted ? (this.d.packId ?? null) : null,
@@ -216,32 +282,46 @@ export class AccessControl {
     return { ok: false, status: 401, code: 'ACCESS_REQUIRED', details: { reason } };
   }
 
-  /** POST /api/access：口令模式先比口令、再试邀请码；邀请模式只认邀请码 */
+  /**
+   * POST /api/access：口令模式先比口令、再试邀请码；邀请模式只认邀请码。不看请求里已有的 cookie：持房间授权（g）的人
+   * 后来拿到口令或邀请码，登录成功即换发 p / i cookie（Set-Cookie 覆盖同名 cookie），恢复完整权限。
+   */
   async login(passcode: string, ip: string): Promise<AccessOutcome<AccessStatusWithPack>> {
     if (!this.enabled) return { ok: true, data: this.statusOf({ granted: true, claims: null }), setCookie: null };
     return this.limited(this.limiter, ip, async () => {
       let kind: AccessKind | null = null;
+      let cap = 0;
+      let invite: string | null = null;
       if (this.mode === 'passcode') {
         if (await verifyPasscode(passcode, this.d.config.passcodeHash!)) kind = 'p';
       }
-      if (kind === null && normalizeInviteCode(passcode) !== null && this.store.redeemInvite(passcode, this.now())) {
-        kind = 'i';
+      if (kind === null && normalizeInviteCode(passcode) !== null) {
+        const inv = this.store.redeemInvite(passcode, this.now());
+        if (inv) {
+          kind = 'i';
+          invite = inv.id;
+          // 会话到期 = min(现在 + 有效期, 邀请码到期)，续期不超过邀请码到期（向下取整到秒：不晚于邀请码本身）
+          cap = inv.expiresAt === null ? 0 : Math.floor(inv.expiresAt / 1000);
+        }
       }
       if (kind === null) {
         return this.failed(this.limiter, ip, 'login', this.mode === 'invite' ? 'badInvite' : 'badPasscode');
       }
       this.limiter.success(ip);
-      const c = this.issue(kind);
-      this.d.log.info({ ip, kind }, 'access: granted');
+      const c = this.issue(kind, { cap, invite });
+      this.d.log.info({ ip, kind, capped: cap > 0 }, 'access: granted');
       return {
         ok: true,
-        data: this.statusOf({ granted: true, claims: { exp: c.exp, epoch: this.epoch(), kind } }),
+        data: this.statusOf({ granted: true, claims: c.claims }),
         setCookie: c.setCookie,
       };
     });
   }
 
-  /** POST /api/access/grant：已通过口令或邀请码的玩家为房间生成 24 小时、限次的授权 */
+  /**
+   * POST /api/access/grant：已通过口令或邀请码的玩家为房间生成授权（30 分钟、1 次，绑定当前房间实例）。
+   * g 会话不能生成（403 ACCESS_SCOPE，防链式扩散）。
+   */
   grant(g: GateCheck, room: string, ip: string): AccessOutcome<AccessGrantResult> {
     if (!this.grantsEnabled)
       return { ok: false, status: 404, code: 'BAD_REQUEST', details: { reason: 'grantsDisabled' } };
@@ -249,9 +329,12 @@ export class AccessControl {
       return { ok: false, status: 401, code: 'ACCESS_REQUIRED', details: { reason: g.reason ?? 'missing' } };
     }
     if (g.claims.kind === 'g') {
-      return { ok: false, status: 403, code: 'ACCESS_REQUIRED', details: { reason: 'grantNotAllowed' } };
+      return { ok: false, status: 403, code: 'ACCESS_SCOPE', details: { reason: 'grantNotAllowed' } };
     }
-    if (this.d.roomExists && !this.d.roomExists(room)) return { ok: false, status: 404, code: 'ROOM_NOT_FOUND' };
+    const instance = this.d.roomInstance ? this.d.roomInstance(room) : ANY_INSTANCE;
+    if (instance === null || !ROOM_INSTANCE_RE.test(instance)) {
+      return { ok: false, status: 404, code: 'ROOM_NOT_FOUND' };
+    }
     const now = this.now();
     let b = this.grantBuckets.get(ip);
     if (!b) {
@@ -261,7 +344,14 @@ export class AccessControl {
     if (!b.take(now)) return this.rateLimited(Math.ceil(3_600_000 / this.grantsPerHour), 'grant');
     this.maybePrune(now);
     const expiresAt = now + ACCESS_GRANT_TTL_MS;
-    const token = this.store.createGrant({ room, uses: ACCESS_GRANT_MAX_USES, expiresAt, epoch: this.epoch(), now });
+    const token = this.store.createGrant({
+      room,
+      instance,
+      uses: ACCESS_GRANT_MAX_USES,
+      expiresAt,
+      epoch: this.epoch(),
+      now,
+    });
     this.d.log.info({ ip, room }, 'access: room grant issued');
     return {
       ok: true,
@@ -270,7 +360,13 @@ export class AccessControl {
     };
   }
 
-  /** POST /api/access/redeem：兑换房间授权；已持有效 cookie 时不消耗次数 */
+  /**
+   * POST /api/access/redeem：兑换房间授权。
+   * - 持 p / i 会话：不消耗次数，原样返回状态（target = 链接对应的房间，链接已失效为 null）；
+   * - 持 g 会话且链接就是它绑定的房间实例：同样不消耗；
+   * - 其余（没有有效 cookie，或 g 会话打开别的房间的链接）：经兑换限流器消耗一次，签发绑定该房间实例的 g cookie。
+   *   房间已关闭（实例不在了）时不消耗，返回 404 ROOM_NOT_FOUND（reason roomClosed）。
+   */
   async redeem(
     g: GateCheck,
     token: string,
@@ -279,21 +375,32 @@ export class AccessControl {
     if (!this.grantsEnabled)
       return { ok: false, status: 404, code: 'BAD_REQUEST', details: { reason: 'grantsDisabled' } };
     if (g.granted && g.claims) {
+      const bound = g.claims.room;
       const peek = this.store.peekGrant(token, this.now(), this.epoch());
-      return { ok: true, data: { ...this.statusOf(g), room: peek?.room ?? null }, setCookie: g.renew };
+      if (!bound) return { ok: true, data: { ...this.statusOf(g), target: peek?.room ?? null }, setCookie: g.renew };
+      if (peek && peek.room === bound.code && peek.instance === bound.instance) {
+        return { ok: true, data: { ...this.statusOf(g), target: peek.room }, setCookie: g.renew };
+      }
     }
     return this.limited(this.redeemLimiter, ip, () => {
-      const rec = this.store.redeemGrant(token, this.now(), this.epoch());
+      const now = this.now();
+      const epoch = this.epoch();
+      const peek = this.store.peekGrant(token, now, epoch);
+      if (peek && this.d.roomInstance && this.d.roomInstance(peek.room) !== peek.instance) {
+        this.d.log.info({ ip, room: peek.room }, 'access: room grant for a closed room');
+        return { ok: false, status: 404, code: 'ROOM_NOT_FOUND', details: { reason: 'roomClosed' } };
+      }
+      const rec = peek ? this.store.redeemGrant(token, now, epoch) : null;
       if (!rec) return this.failed(this.redeemLimiter, ip, 'redeem', 'grantInvalid');
       this.redeemLimiter.success(ip);
-      const c = this.issue('g');
-      this.d.log.info({ ip, room: rec.room, usesLeft: rec.usesLeft }, 'access: room grant redeemed');
+      const c = this.issue('g', { room: { code: rec.room, instance: rec.instance } });
+      this.d.log.info(
+        { ip, room: rec.room, usesLeft: rec.usesLeft, rebind: g.claims?.kind === 'g' },
+        'access: room grant redeemed',
+      );
       return {
         ok: true,
-        data: {
-          ...this.statusOf({ granted: true, claims: { exp: c.exp, epoch: this.epoch(), kind: 'g' } }),
-          room: rec.room,
-        },
+        data: { ...this.statusOf({ granted: true, claims: c.claims }), target: rec.room },
         setCookie: c.setCookie,
       };
     });
@@ -315,6 +422,8 @@ export class AccessControl {
 
   createInvite(o: { uses: number; days: number | null; note?: string }): { code: string; invite: InviteRecord } {
     const now = this.now();
+    // 外部程序可能天天签发限时邀请码：签发时顺带（每小时至多一次）清掉过期、用完与撤销的
+    this.maybePrune(now);
     const expiresAt = o.days === null ? null : now + Math.round(o.days * DAY_S * 1000);
     return this.store.createInvite({ uses: o.uses, expiresAt, now, ...(o.note ? { note: o.note } : {}) });
   }
@@ -323,8 +432,11 @@ export class AccessControl {
     return this.store.listInvites();
   }
 
+  /** 撤销邀请码：不能再登录，用它登录的会话下一次请求即失效（本进程立即生效，不等缓存过期） */
   revokeInvite(id: string): boolean {
-    return this.store.revokeInvite(id);
+    const ok = this.store.revokeInvite(id);
+    if (ok) this.revokedCache = null;
+    return ok;
   }
 
   /** epoch + 1：全部 cookie 与未兑换的授权立即失效 */

@@ -59,6 +59,36 @@ export function accessEnabled(s: AccessStatus | null): boolean {
   return s !== null && s.mode !== 'off';
 }
 
+/**
+ * 经房间邀请链接进入（kind g）的会话绑定的房间号：只能加入这个房间，建房、单机、读档、进别的房间都会被服务器拒绝
+ * （ACCESS_SCOPE，architecture §35）。其他情况（口令 / 邀请码会话、门禁关闭、状态未知）为 null。
+ */
+export function guestRoomOf(s: AccessStatus | null): string | null {
+  if (s === null || s.mode === 'off' || !s.granted || s.kind !== 'g') return null;
+  return s.room ?? null;
+}
+
+/** 钩子：当前会话绑定的房间号（见 guestRoomOf）；状态由入口的 bootstrapAccess 取得 */
+export function useGuestRoom(): string | null {
+  return useAccessStore((s) => guestRoomOf(s.status));
+}
+
+/** 邀请链接会话绑定的房间是否已经结束（状态里 roomOpen 为 false；旧服务器没有这个字段时按还在） */
+export function guestRoomClosedOf(s: AccessStatus | null): boolean {
+  return guestRoomOf(s) !== null && s?.roomOpen === false;
+}
+
+/** 钩子：绑定的房间已经结束（见 guestRoomClosedOf） */
+export function useGuestRoomClosed(): boolean {
+  return useAccessStore((s) => guestRoomClosedOf(s.status));
+}
+
+/** 会话的硬性到期（毫秒时间戳；带到期时间的邀请码登录的会话），没有为 null */
+export function accessDeadlineOf(s: AccessStatus | null): number | null {
+  if (s === null || s.mode === 'off' || !s.granted) return null;
+  return typeof s.deadline === 'number' ? s.deadline : null;
+}
+
 // ───────────────────────── 门禁页的挂载 ─────────────────────────
 
 let hosts = 0;

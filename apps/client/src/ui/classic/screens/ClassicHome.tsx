@@ -3,7 +3,12 @@
 // （可观战）、单机对战、公开房间。标题音乐由音频接线按「没有房间 = 标题」播放（app/audioWiring）。
 // 首次进入播放片头（素材包 video.start，可跳过）。程序化首页（ui/screens/HomeScreen）的逻辑与 testid 照搬：
 // home-nickname、home-create、home-join-open / home-join-code / home-join / home-watch、home-load-open（home-saves）、
-// home-solo、home-settings、home-error、home-closed-note，E2E 在两种皮肤下用同一组选择器。
+// home-solo、home-settings、home-error、home-closed-note、home-guest-note / home-guest-closed / home-guest-room /
+// home-guest-passcode、home-access-until，
+// E2E 在两种皮肤下用同一组选择器。
+// 经房间邀请链接进入的会话（kind g，architecture §35）只能加入邀请的那个房间：START / LOAD 变暗禁用，按钮带的加入 / 单机 /
+// 公开房间换成「回到房间」与「我有口令」（打开门禁页输入口令或邀请码），画面上方一行说明；邀请的房间已经结束时只剩
+// 「我有口令」，说明换成「请向朋友要新的邀请链接，或输入口令」。
 import { ROOM_CODE_RE } from '@rich4/shared/net';
 import clsx from 'clsx';
 import { type FormEvent, lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -12,6 +17,14 @@ import { useTx } from '../../../i18n/tx';
 import { currentPackClient } from '../../../skin/skinStore';
 import { useRoomStore } from '../../../store/roomStore';
 import { normalizeNickname, useSettingsStore } from '../../../store/settingsStore';
+import {
+  accessDeadlineOf,
+  requireAccess,
+  useAccessStore,
+  useGuestRoom,
+  useGuestRoomClosed,
+} from '../../access/accessStore';
+import { formatAccessDeadline } from '../../access/accessTime';
 import { Modal } from '../../components/Modal';
 import { PublicRooms } from '../../lobby/PublicRooms';
 import { ReconnectOverlay } from '../../system/ReconnectOverlay';
@@ -28,6 +41,7 @@ import {
   SETUP_SHEET,
   TITLE_BAND,
   TITLE_BUTTONS,
+  TITLE_GUEST,
   TITLE_PANEL,
   TITLE_SHEET,
   type TitleButtonId,
@@ -60,6 +74,13 @@ export default function ClassicHome(): ReactNode {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [closedNote, setClosedNote] = useState<string | null>(null);
   const [, navigate] = useLocation();
+  const guestRoom = useGuestRoom();
+  const guestClosed = useGuestRoomClosed();
+  // 邀请链接会话：进标题时重新看一次绑定的房间是否还在（房间可能刚结束）
+  useEffect(() => {
+    if (guestRoom) void useAccessStore.getState().refresh();
+  }, [guestRoom]);
+  const deadline = useAccessStore((st) => accessDeadlineOf(st.status));
   const intro = useMemo(() => introUrl(currentPackClient()), []);
   // 标题底图先载入（载入中显示载入画面，不先露出只有按钮的黑底舞台）；开局设置的部件与背景顺手预取
   useEnsureSceneSprites([TITLE_SHEET, SETUP_SHEET]);
@@ -113,6 +134,25 @@ export default function ClassicHome(): ReactNode {
 
   if (titleStatus === 'loading') return <ScreensPending testId="screen-home-pending" />;
 
+  // 画面上方的提示条（自上而下叠放）：房间关闭、邀请链接会话的说明、登录有效期、错误
+  const topNotes: { testId: string; role: 'status' | 'note' | 'alert'; text: string }[] = [];
+  if (closedNote) topNotes.push({ testId: 'home-closed-note', role: 'status', text: closedNote });
+  if (guestRoom) {
+    topNotes.push(
+      guestClosed
+        ? { testId: 'home-guest-closed', role: 'note', text: t('lobby:home.guestClosed') }
+        : { testId: 'home-guest-note', role: 'note', text: t('lobby:home.guestNote') },
+    );
+  }
+  if (deadline !== null) {
+    topNotes.push({
+      testId: 'home-access-until',
+      role: 'note',
+      text: t('lobby:home.accessUntil', { time: formatAccessDeadline(deadline) }),
+    });
+  }
+  if (error && panel !== 'join') topNotes.push({ testId: 'home-error', role: 'alert', text: error });
+
   if (panel === 'create') {
     return (
       <>
@@ -123,6 +163,7 @@ export default function ClassicHome(): ReactNode {
   }
 
   const press = (id: TitleButtonId): void => {
+    if (guestRoom && id !== 'option') return;
     if (id === 'start') open('create', true);
     else if (id === 'load') open('load', true);
     else open('options', false);
@@ -165,20 +206,25 @@ export default function ClassicHome(): ReactNode {
     >
       <Sprite sheet={TITLE_SHEET} frame={0} x={0} y={0} origin="topLeft" testId="title-bg" />
       <h1 className={s.srOnly}>{t('lobby:home.title')}</h1>
-      {TITLE_BUTTONS.map((b) => (
-        <HotButton
-          key={b.id}
-          rect={b.hit}
-          label={t(`classicScreens:title.${b.id}`)}
-          testId={BUTTON_TEST_IDS[b.id]}
-          cue={b.id === 'option' ? 'open' : 'click'}
-          sprite={{ sheet: TITLE_SHEET, normal: b.normal, hover: b.hover, x: b.x, y: b.y, baked: true }}
-          onPress={() => press(b.id)}
-          attrs={{
-            'aria-expanded': b.id === 'start' ? undefined : panel === (b.id === 'load' ? 'load' : 'options'),
-          }}
-        />
-      ))}
+      {TITLE_BUTTONS.map((b) => {
+        const locked = guestRoom !== null && b.id !== 'option';
+        return (
+          <HotButton
+            key={b.id}
+            rect={b.hit}
+            label={t(`classicScreens:title.${b.id}`)}
+            testId={BUTTON_TEST_IDS[b.id]}
+            cue={b.id === 'option' ? 'open' : 'click'}
+            sprite={{ sheet: TITLE_SHEET, normal: b.normal, hover: b.hover, x: b.x, y: b.y, baked: true }}
+            onPress={() => press(b.id)}
+            disabled={locked}
+            attrs={{
+              'aria-expanded': b.id === 'start' ? undefined : panel === (b.id === 'load' ? 'load' : 'options'),
+              'data-locked': locked ? 'true' : undefined,
+            }}
+          />
+        );
+      })}
 
       <label className={s.plate} style={regionStyle(TITLE_BAND.nickname)}>
         <span className={clsx(s.plateLabel, s.outline)}>{t('classicScreens:title.nickname')}</span>
@@ -193,46 +239,79 @@ export default function ClassicHome(): ReactNode {
           autoComplete="nickname"
         />
       </label>
-      <button
-        type="button"
-        className={s.band}
-        style={regionStyle(TITLE_BAND.join)}
-        aria-expanded={panel === 'join'}
-        onClick={() => {
-          playScreenCue('open');
-          open('join', false);
-        }}
-        data-testid="home-join-open"
-      >
-        <span className={s.bandFace}>{t('classicScreens:title.join')}</span>
-      </button>
-      <Link
-        href="/solo"
-        className={s.band}
-        style={regionStyle(TITLE_BAND.solo)}
-        data-testid="home-solo"
-        onClick={() => {
-          playScreenCue('click');
-          commitNick();
-        }}
-      >
-        <span className={s.bandFace}>{t('classicScreens:title.solo')}</span>
-      </Link>
-      <button
-        type="button"
-        className={s.band}
-        style={regionStyle(TITLE_BAND.public)}
-        aria-expanded={panel === 'public'}
-        onClick={() => {
-          playScreenCue('open');
-          open('public', false);
-        }}
-        data-testid="title-public-open"
-      >
-        <span className={s.bandFace}>{t('classicScreens:title.public')}</span>
-      </button>
+      {guestRoom ? (
+        <>
+          {!guestClosed && (
+            <Link
+              href={`/r/${guestRoom}`}
+              className={s.band}
+              style={regionStyle(TITLE_GUEST.back)}
+              data-testid="home-guest-room"
+              onClick={() => {
+                playScreenCue('click');
+                commitNick();
+              }}
+            >
+              <span className={s.bandFace}>{t('lobby:home.guestBack', { code: guestRoom })}</span>
+            </Link>
+          )}
+          <button
+            type="button"
+            className={s.band}
+            style={regionStyle(guestClosed ? TITLE_GUEST.passcodeWide : TITLE_GUEST.passcode)}
+            onClick={() => {
+              playScreenCue('open');
+              requireAccess('manual');
+            }}
+            data-testid="home-guest-passcode"
+          >
+            <span className={s.bandFace}>{t('lobby:home.havePasscode')}</span>
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            className={s.band}
+            style={regionStyle(TITLE_BAND.join)}
+            aria-expanded={panel === 'join'}
+            onClick={() => {
+              playScreenCue('open');
+              open('join', false);
+            }}
+            data-testid="home-join-open"
+          >
+            <span className={s.bandFace}>{t('classicScreens:title.join')}</span>
+          </button>
+          <Link
+            href="/solo"
+            className={s.band}
+            style={regionStyle(TITLE_BAND.solo)}
+            data-testid="home-solo"
+            onClick={() => {
+              playScreenCue('click');
+              commitNick();
+            }}
+          >
+            <span className={s.bandFace}>{t('classicScreens:title.solo')}</span>
+          </Link>
+          <button
+            type="button"
+            className={s.band}
+            style={regionStyle(TITLE_BAND.public)}
+            aria-expanded={panel === 'public'}
+            onClick={() => {
+              playScreenCue('open');
+              open('public', false);
+            }}
+            data-testid="title-public-open"
+          >
+            <span className={s.bandFace}>{t('classicScreens:title.public')}</span>
+          </button>
+        </>
+      )}
 
-      {panel === 'join' && (
+      {panel === 'join' && !guestRoom && (
         <JoinPanel
           code={code}
           onCode={setCode}
@@ -249,25 +328,14 @@ export default function ClassicHome(): ReactNode {
           onClose={() => setPanel('none')}
         />
       )}
-      {closedNote && (
-        <p
-          className={s.note}
-          style={regionStyle({ x: 120, y: 6, w: 400, h: 44 })}
-          role="status"
-          data-testid="home-closed-note"
-        >
-          {closedNote}
-        </p>
-      )}
-      {error && panel !== 'join' && (
-        <p
-          className={s.note}
-          style={regionStyle({ x: 120, y: closedNote ? 54 : 6, w: 400, h: 40 })}
-          role="alert"
-          data-testid="home-error"
-        >
-          {error}
-        </p>
+      {topNotes.length > 0 && (
+        <div className={s.noteStack} style={{ left: 120, top: 6, width: 400 }}>
+          {topNotes.map((n) => (
+            <p key={n.testId} className={s.note} role={n.role} data-testid={n.testId}>
+              {n.text}
+            </p>
+          ))}
+        </div>
       )}
     </ClassicScreenFrame>
   );

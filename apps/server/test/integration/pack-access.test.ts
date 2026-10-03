@@ -165,6 +165,9 @@ describe('integration/pack-access', () => {
         granted: false,
         kind: null,
         expiresAt: null,
+        deadline: null,
+        room: null,
+        roomOpen: null,
         grants: true,
         canGrant: false,
         pack: null,
@@ -195,7 +198,7 @@ describe('integration/pack-access', () => {
     expect(ok.statusCode).toBe(200);
     expect(ok.headers['cache-control']).toBe('no-store');
     expect(String(ok.headers['set-cookie'])).toMatch(
-      /^r4_access=v1\.\d+\.0\.p\.[\w-]{43}; Path=\/; Max-Age=2592000; HttpOnly; SameSite=Lax$/,
+      /^r4_access=v2\.\d+\.0\.p\.0\.-\.[\w-]{43}; Path=\/; Max-Age=2592000; HttpOnly; SameSite=Lax$/,
     );
     expect(ok.json()).toMatchObject({
       ok: true,
@@ -452,7 +455,7 @@ describe('integration/pack-access', () => {
     bot.socket.disconnect();
   });
 
-  it('房间邀请授权：需要门禁 cookie；链接放在 URL 片段；兑换 8 次后失效；受邀者不能再生成授权', async () => {
+  it('房间邀请授权：需要门禁 cookie；链接放在 URL 片段；只能兑换 1 次；受邀者不能再生成授权', async () => {
     const s = await gated();
     const f = s.app.fastify;
     const host = await connectBot(s.url, { extraHeaders: { cookie: cookieFrom(await login(s)) } });
@@ -497,13 +500,18 @@ describe('integration/pack-access', () => {
     for (let i = 0; i < ACCESS_GRANT_MAX_USES; i++) {
       const r = await redeem();
       expect(r.statusCode, `use ${i + 1}`).toBe(200);
-      expect(r.json()).toMatchObject({ data: { kind: 'g', room: code, granted: true, canGrant: false } });
+      expect(r.json()).toMatchObject({
+        data: { kind: 'g', room: code, target: code, granted: true, canGrant: false },
+      });
+      expect(String(r.headers['set-cookie'])).toMatch(
+        new RegExp(`^r4_access=v2\\.\\d+\\.0\\.g\\.0\\.${code}-[0-9a-z]+\\.`),
+      );
       expect(String(r.headers['set-cookie'])).toContain('Max-Age=86400');
       guests.push(cookieFrom(r));
     }
-    const ninth = await redeem();
-    expect(ninth.statusCode).toBe(401);
-    expect(ninth.json()).toMatchObject({ error: { code: 'ACCESS_REQUIRED', details: { reason: 'grantInvalid' } } });
+    const second = await redeem();
+    expect(second.statusCode).toBe(401);
+    expect(second.json()).toMatchObject({ error: { code: 'ACCESS_REQUIRED', details: { reason: 'grantInvalid' } } });
 
     const guest = guests[0]!;
     expect((await f.inject({ url: '/pack/manifest.json', headers: { cookie: guest } })).statusCode).toBe(200);
@@ -520,7 +528,7 @@ describe('integration/pack-access', () => {
     });
     expect(regrant.statusCode).toBe(403);
     expect(regrant.json()).toMatchObject({
-      error: { code: 'ACCESS_REQUIRED', details: { reason: 'grantNotAllowed' } },
+      error: { code: 'ACCESS_SCOPE', details: { reason: 'grantNotAllowed' } },
     });
     const badToken = await f.inject({
       method: 'POST',
@@ -531,7 +539,7 @@ describe('integration/pack-access', () => {
     expect(badToken.statusCode).toBe(400);
   });
 
-  it('授权 24 小时过期；滑动续期；吊销让 cookie 与授权一起失效', async () => {
+  it('授权 30 分钟过期；滑动续期；吊销让 cookie 与授权一起失效', async () => {
     let t = Date.now();
     const s = await gated({ now: () => t });
     const f = s.app.fastify;
@@ -566,7 +574,7 @@ describe('integration/pack-access', () => {
     t += 86_400_000 + 1000;
     const renewed = await f.inject({ url: '/api/maps', headers: { cookie: c0 } });
     expect(renewed.statusCode).toBe(200);
-    expect(String(renewed.headers['set-cookie'])).toMatch(/^r4_access=v1\..*Max-Age=2592000/);
+    expect(String(renewed.headers['set-cookie'])).toMatch(/^r4_access=v2\..*Max-Age=2592000/);
     expect(
       String((await f.inject({ url: '/pack/manifest.json', headers: { cookie: c0 } })).headers['set-cookie']),
     ).toContain('r4_access=');
@@ -575,7 +583,7 @@ describe('integration/pack-access', () => {
     // Socket.IO 握手响应（engine.io 的第一个 HTTP 响应）同样续期
     const hs = await fetch(`${s.url}/socket.io/?EIO=4&transport=polling`, { headers: { cookie: c0 } });
     expect(hs.status).toBe(200);
-    expect(hs.headers.get('set-cookie')).toMatch(/^r4_access=v1\./);
+    expect(hs.headers.get('set-cookie')).toMatch(/^r4_access=v2\./);
     await hs.text();
 
     // 吊销：ADMIN_TOKEN 接口 epoch+1
@@ -599,7 +607,7 @@ describe('integration/pack-access', () => {
         .statusCode,
     ).toBe(401);
     // 新登录的 cookie 带新 epoch
-    expect(cookieFrom(await login(s))).toMatch(/^r4_access=v1\.\d+\.1\.p\./);
+    expect(cookieFrom(await login(s))).toMatch(/^r4_access=v2\.\d+\.1\.p\./);
     host.socket.disconnect();
   });
 
@@ -666,9 +674,9 @@ describe('integration/pack-access', () => {
     // 不可缓存的 /api 响应（列表、manifest）照常续期
     const renewed = await f.inject({ url: '/api/maps', headers: { cookie } });
     expect(renewed.headers['cache-control']).toBe('private, no-cache');
-    expect(String(renewed.headers['set-cookie'])).toMatch(/^r4_access=v1\./);
+    expect(String(renewed.headers['set-cookie'])).toMatch(/^r4_access=v2\./);
     const manifest = await f.inject({ url: '/pack/manifest.json', headers: { cookie } });
-    expect(String(manifest.headers['set-cookie'])).toMatch(/^r4_access=v1\./);
+    expect(String(manifest.headers['set-cookie'])).toMatch(/^r4_access=v2\./);
     // 门禁关闭时（没有素材包的普通部署）地图保持 1 年 immutable
     await srv?.close();
     srv = await startTestServer();

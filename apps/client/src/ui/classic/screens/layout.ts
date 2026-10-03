@@ -71,6 +71,16 @@ export const TITLE_BAND = {
   public: { x: 510, y: BAND_Y, w: 124, h: BAND_H },
 } as const satisfies Record<string, Rect>;
 
+/**
+ * 经房间邀请链接进入的会话（architecture §35）：按钮带的加入 / 单机 / 公开房间三格换成「回到房间」（加入 + 单机两格宽）与
+ * 「我有口令」（公开房间那一格）；邀请的房间已经结束时只剩「我有口令」，占满三格
+ */
+export const TITLE_GUEST = {
+  back: { x: 250, y: BAND_Y, w: 254, h: BAND_H },
+  passcode: { x: 510, y: BAND_Y, w: 124, h: BAND_H },
+  passcodeWide: { x: 250, y: BAND_Y, w: 384, h: BAND_H },
+} as const satisfies Record<string, Rect>;
+
 /** 标题上的面板（加入房间、设置）：画面中央 */
 export const TITLE_PANEL: Rect = { x: 150, y: 120, w: 340, h: 200 };
 
