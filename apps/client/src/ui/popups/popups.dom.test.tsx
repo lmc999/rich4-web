@@ -37,23 +37,37 @@ const news: NewsPopupSpec = {
   id: 8,
   category: 1,
   categoryLabel: '政府公告',
-  headline: '地产大亨受表扬',
-  body: '孙小美 名下地产最多，获颁奖金 10,000 元。',
+  headline: '公开表扬第一大地主\n孙小美获得10000元奖励',
   affected: [{ ...P0, deltas: [{ field: 'cash', delta: 10000 }] }],
 };
 
 describe('NewsPopup', () => {
-  it('主播、分类、标题（读屏完整）、内文与受影响玩家', () => {
+  it('主播、分类、原文标题（读屏完整，两行）与受影响玩家', () => {
     render(<NewsPopup spec={news} />);
     const root = screen.getByTestId('news-popup');
     expect(root).toHaveAttribute('data-news', '8');
     expect(screen.getByRole('img', { name: '新闻主播' })).toBeInTheDocument();
     expect(within(root).getByText(/政府公告/)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '地产大亨受表扬' })).toBeInTheDocument();
-    expect(screen.getByTestId('news-body')).toHaveTextContent('获颁奖金 10,000 元');
+    expect(screen.getByTestId('news-headline').textContent).toBe('公开表扬第一大地主\n孙小美获得10000元奖励');
+    expect(screen.queryByTestId('news-body')).toBeNull();
     const affected = screen.getByTestId('news-affected');
     expect(within(affected).getByText('孙小美')).toBeInTheDocument();
     expect(within(affected).getByText(/\+10,000/)).toBeInTheDocument();
+  });
+
+  it('税 / 储金红利：原版的逐人行代替名字与金额变化', () => {
+    render(
+      <NewsPopup
+        spec={{
+          ...news,
+          id: 11,
+          headline: '所有人缴交所得税５％',
+          affected: [{ ...P0, deltas: [], line: '孙小美缴交1234元' }],
+        }}
+      />,
+    );
+    const affected = screen.getByTestId('news-affected');
+    expect(within(affected).getByText('孙小美缴交1234元')).toBeInTheDocument();
   });
 
   it('经弹窗层打开：data-news 是新闻编号，不被弹窗实例号覆盖', () => {
@@ -61,7 +75,7 @@ describe('NewsPopup', () => {
     act(() => {
       usePopupStore
         .getState()
-        .open({ kind: 'news', id: 1, category: 0, categoryLabel: '奇闻', headline: 'x', body: '', affected: [] }, 1000);
+        .open({ kind: 'news', id: 1, category: 0, categoryLabel: '无责任新闻', headline: 'x', affected: [] }, 1000);
       usePopupStore.getState().open({ ...news, id: 11 }, 1000);
     });
     expect(screen.getByTestId('news-popup')).toHaveAttribute('data-news', '11');
@@ -75,7 +89,7 @@ describe('NewsPopup', () => {
     act(() => {
       vi.advanceTimersByTime(5000);
     });
-    expect(visual()).toBe('地产大亨受表扬');
+    expect(visual()).toBe('公开表扬第一大地主\n孙小美获得10000元奖励');
   });
 });
 
@@ -85,7 +99,8 @@ describe('FatePopup', () => {
     player: P1,
     id: 25,
     title: '继承遗产',
-    text: '远房亲戚留给 阿土伯 一笔遗产：10,000 元。',
+    text: '意外获得遗产10000元',
+    textAmount: '10000',
     amountText: '+10,000',
     tone: 'good',
     blessingText: '财运亨通，奖金加倍！',
@@ -96,7 +111,7 @@ describe('FatePopup', () => {
     const root = screen.getByTestId('fate-popup');
     expect(root).toHaveAttribute('data-tone', 'good');
     expect(within(root).getByRole('heading', { name: '继承遗产' })).toBeInTheDocument();
-    expect(screen.getByTestId('fate-text')).toHaveTextContent('一笔遗产');
+    expect(screen.getByTestId('fate-text')).toHaveTextContent('意外获得遗产10000元');
     expect(screen.getByTestId('fate-amount')).toHaveTextContent('+10,000');
     expect(screen.getByTestId('fate-blessing')).toHaveTextContent('财运亨通');
     expect(within(root).getByText('阿土伯')).toBeInTheDocument();

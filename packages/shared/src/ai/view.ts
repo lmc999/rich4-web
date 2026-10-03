@@ -11,6 +11,16 @@ import type { GameView, PlayerView } from '../view/types';
 import { CHAIN_TOLL_BASE } from './constants';
 import type { AiRng } from './types';
 
+/** 前瞻 / 后瞻最多几格（原版输出缓冲 0x48b8b4 是 8 个 u16，n > 8 截成 8；@source exe v3.11 0x40b360） */
+const LOOK_MAX = 8;
+
+/**
+ * 原版视角 0 的亚格投影矩阵 [a, b, c, d]：屏幕行 sy ∝ −(b·x + d·y)、列 sx ∝ −(a·x + c·y)。与逐格表 0x46ccf0 视角 0 的
+ * 每格增量一致（沿世界 x 一格 (sy, sx) += (−11, +34)，沿 y 一格 += (+25, +14)），只差逐格表里的舍入。AI 固定用视角 0（DEV-03）。
+ * @source exe v3.11 0x474910（v2.06 0x4727bc，两版相同；VERIFY V-E10）
+ */
+const VIEW0 = { a: -34, b: 11, c: -14, d: -25 } as const;
+
 /** 地产（住宅或设施）的公开状态与静态参数 */
 export interface AiLot {
   id: LotId;
@@ -254,26 +264,55 @@ export class AiView {
   }
 
   /**
-   * 沿来路方向往回看 n 格（第一步走到来路格，之后与 lookahead 相同）（@0x40b343）
+   * 视野内的格，按原版候选表的屏幕行序：0x409ef9 把视野内各格按投影后的像素位置写进 440×440 缓冲（下标 = sy × 440 + sx），
+   * 再逐行、行内从左到右扫出来。这里用视角 0 的线性投影排序（先 sy 后 sx，同一位置按 id），视野本身仍是世界坐标方窗（DEV-04）。
+   * 注意世界坐标的同一行在视角 0 里是右高左低：同一条横街上 x 大的格先扫到（lotsInView 仍按世界坐标先 y 后 x，未改）。
+   * @source exe v3.11 0x409ef9（0x40a028–0x40a046 写缓冲，0x40a05c–0x40a09e 逐行扫出）
    */
-  lookbehind(n: number, rng: AiRng): { nodes: TileId[]; forked: boolean } {
+  tilesInView(tiles: readonly TileId[]): TileId[] {
+    const key = (t: TileId): { sy: number; sx: number } => {
+      const w = this.tileWorld(t);
+      return { sy: -(VIEW0.b * w.x + VIEW0.d * w.y), sx: -(VIEW0.a * w.x + VIEW0.c * w.y) };
+    };
+    return tiles
+      .filter((t) => this.tileInView(t))
+      .sort((a, b) => {
+        const ka = key(a);
+        const kb = key(b);
+        return ka.sy - kb.sy || ka.sx - kb.sx || a - b;
+      });
+  }
+
+  /**
+   * 原版口径的来路：被关押时原版把来路写成 0、获释后不改（@source exe v3.11 0x43d630 / 0x43ecdc，v2.06 0x43c35b / 0x43d9e8），
+   * 我们写成关押格本身（来路 = 节点，flow/confine.ts、flow/turn.ts release）；这里换回 0（原版的全 0 哨兵节点）。
+   */
+  private origPrev(): TileId {
     const me = this.me;
+    return me.prevNode === me.node ? 0 : me.prevNode;
+  }
+
+  /**
+   * 原版前瞻 / 后瞻的共用循环（v3.11 0x40b221 与 0x40b343 只有开头读节点 / 来路的两条指令互换，即起点与排除格对调）：最多 LOOK_MAX 格；
+   * 每一步取 at 的邻格、去掉空槽、排除格 excl 与静态封路（forwardCandidates）：0 个候选回落为 excl（原路返回），
+   * 1 个候选直接走、不取随机数，≥2 个候选取一次 rng.mod(n) 并记下遇到过岔路；然后 excl = at、at = 下一格，输出 at。
+   * at 为 0 时是原版的全 0 哨兵节点（没有邻接，0 个候选）。
+   * @source exe v3.11 0x40b397–0x40b450（v2.06 只有前瞻 0x40ae1d，同一段循环）
+   */
+  private walk(at: TileId, excl: TileId, n: number, rng: AiRng): { nodes: TileId[]; forked: boolean } {
     const nodes: TileId[] = [];
     let forked = false;
-    if (!me.placed || me.node === 0 || me.prevNode === 0) return { nodes, forked };
-    let prev = me.node;
-    let at = me.prevNode;
-    nodes.push(at);
-    for (let i = 1; i < n; i++) {
-      const cands = this.map.forwardCandidates(at, prev);
+    const steps = Math.min(n, LOOK_MAX);
+    for (let i = 0; i < steps; i++) {
+      const cands = at === 0 ? [] : this.map.forwardCandidates(at, excl);
       let next: TileId;
-      if (cands.length === 0) next = prev;
+      if (cands.length === 0) next = excl;
       else if (cands.length === 1) next = cands[0]!;
       else {
         forked = true;
         next = cands[rng.mod(cands.length)]!;
       }
-      prev = at;
+      excl = at;
       at = next;
       nodes.push(at);
     }
@@ -281,28 +320,26 @@ export class AiView {
   }
 
   /**
-   * 沿前进方向看 n 格（不回头；岔路用 AI 的 rng 挑一条并记下遇到过岔路；无路可走原路返回）（@0x40b221）
+   * 沿来路方向往回看 n 格（v3.11 0x40b343）：从来路格出发、排除当前格逐格外推，输出不含来路格本身——
+   * 第一格是往回第 2 格（来路格再往后一格），n = 6 时是往回第 2–7 格。来路格是死路（0 个候选）时第一格回落为当前格。
+   * 获释后（原版来路 0，我们来路 = 节点 = 关押格）从全 0 哨兵出发：第一格回落为关押格，之后排除 0 即全部未封邻格，
+   * 得到 [关押格, 邻格…]。调用方（路障阶段二、地雷、定时炸弹）只拿它与候选格比对，见 ai/items.ts behindCands。
+   * v2.06 没有这个函数：同三处调用方用的是前瞻 0x40ae1d(6)，并且是「候选不在前方 6 格里」的排除语义（architecture §31）。
+   * @source exe v3.11 0x40b343（0x40b376 起点 = 来路 0x496b76、0x40b381 排除 = 节点 0x496b74）
+   */
+  lookbehind(n: number, rng: AiRng): { nodes: TileId[]; forked: boolean } {
+    const me = this.me;
+    if (!me.placed || me.node === 0) return { nodes: [], forked: false };
+    return this.walk(this.origPrev(), me.node, n, rng);
+  }
+
+  /**
+   * 沿前进方向看 n 格（不回头；岔路用 AI 的 rng 挑一条并记下遇到过岔路；无路可走原路返回）
+   * @source exe v3.11 0x40b221（起点 = 节点 0x496b74、排除 = 来路 0x496b76）；v2.06 0x40ae1d
    */
   lookahead(n: number, rng: AiRng): { nodes: TileId[]; forked: boolean } {
     const me = this.me;
-    let at = me.node;
-    let prev = me.prevNode;
-    const nodes: TileId[] = [];
-    let forked = false;
-    if (!me.placed || at === 0) return { nodes, forked };
-    for (let i = 0; i < n; i++) {
-      const cands = this.map.forwardCandidates(at, prev);
-      let next: TileId;
-      if (cands.length === 0) next = prev;
-      else if (cands.length === 1) next = cands[0]!;
-      else {
-        forked = true;
-        next = cands[rng.mod(cands.length)]!;
-      }
-      prev = at;
-      at = next;
-      nodes.push(at);
-    }
-    return { nodes, forked };
+    if (!me.placed || me.node === 0) return { nodes: [], forked: false };
+    return this.walk(me.node, this.origPrev(), n, rng);
   }
 }

@@ -1,11 +1,14 @@
 // M4 经济事件的演出（design/client.md §4.5）：股票成交、分红、乐透开奖、月结、百货交易、企业收费、贷款到期提醒。
 // 金额变化一律按事件 post 与提交前显示态之差飘字并闪动 HUD（showAllDeltas），不自己推算规则数值。
 import type { SeatIndex } from '@rich4/shared/engine';
+import { DICE_TIMING } from '@rich4/shared/view';
 import { classicPopupHostActive } from '../../ui/popups/popupStore';
 import { formatEvent } from '../logFormat';
 import type { EventHandler, PresentationContext } from '../types';
+import { currentPacing } from './budget';
 import { showAllDeltas, syncFromPost } from './common';
 import { playerRef, showPopup } from './popups';
+import { stageOf, syncStageTo } from './stage';
 
 /** LotteryDrawPopup 的展示时长（1x） */
 export const LOTTERY_POPUP_MS = 2800;
@@ -114,12 +117,24 @@ export const COMPANY_FEE: EventHandler<'COMPANY_FEE'> = async (e, ctx) => {
   await ctx.wait(e.wheel === null ? 200 : 1200);
 };
 
+/**
+ * 住旅馆：站在旅馆门前的人走进旅馆（前半程看得见、过半消失），住店期间棋子不画（舞台按住旅馆的状态同步）；
+ * 不在门前的（死神替人付费）直接不见
+ * @source exe v2.06 fcn.0040d06b（在门前且是当前玩家：置 +0x15 bit5 走进去；否则坐标直接写成旅馆坐标）、
+ *         fcn.0040bb40 bit5 分支（过半清 bit5，此后不画）
+ */
 export const HOTEL_STAY: EventHandler<'HOTEL_STAY'> = async (e, ctx) => {
   const line = formatEvent(e, ctx.names);
   if (line) ctx.ui.toast(line);
-  ctx.board.setActorPose(e.seat, 'sleep');
-  await ctx.wait(800);
+  const p = ctx.view().players.find((x) => x.seat === e.seat);
+  const atDoor = p?.placed === true && ctx.map?.def.tiles.find((t) => t.id === p.node)?.ref?.lot === e.lot;
+  if (atDoor) {
+    const tickMs = DICE_TIMING[currentPacing()].throwTickMs;
+    await stageOf(ctx).walkIn(e.seat, e.lot, { tickMs }, ctx.signal);
+  }
+  syncStageTo(ctx, e.post);
   syncFromPost(ctx, e.post);
+  await ctx.wait(atDoor ? 200 : 600);
 };
 
 export const LOAN_REMINDER: EventHandler<'LOAN_REMINDER'> = async (e, ctx) => {

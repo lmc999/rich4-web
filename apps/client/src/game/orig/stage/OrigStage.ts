@@ -1,7 +1,8 @@
 // 原版棋盘舞台（original-skin.md §3 修正 1/2、§5 A8；design-draft §3.4–§3.5）：presentation/handlers 的 StagePort 的原版实现，
 // 与程序化 BoardStage 同一接口（不委托 BoardStage）。
-// - syncWorld：路面物件、路上神明、乞丐、四大恶人（OrigRoads）与角色状态外观（关押姿态、附身神明、身上炸弹、载具、梦游……），
-//   按视角同步，朝向缺失时用确定性默认（OrigRoads / poses）；
+// - syncWorld：路面物件、路上神明、乞丐、四大恶人（OrigRoads）与角色状态外观（附身神明、身上炸弹、载具、梦游……），
+//   按视角同步，朝向缺失时用确定性默认（OrigRoads / poses）；关押 / 住旅馆期间人在景观 / 旅馆里，棋子不画（原版
+//   0x4082a5–0x4082c3），获释时 walkOut 从建筑走一步到格上（原版 fcn.0040bb40 bit4 分支，前半程不画）；
 // - 有原版 FLIC 的演出用 skin/flic 播放器（OrigFlics）：神明降临、离身烟雾、警车 / 救护车、爆炸、飞弹 / 核弹 / 外星人 / 台风、
 //   卡片格得卡、点券格得点券、节日烟火 / 圣诞、破产、终局烟火、开局棋盘伞（OrigActor.drop）。位置与摆放按 flic-map；
 //   可用时长 = 当前节奏的事件预算 − handler 内其他等待（flicPlan.ts、fx/timings 的 ORIG_FLIC_WAITS），original 节奏下原速播完，
@@ -16,6 +17,7 @@ import type {
   GameEvent,
   GodKind,
   GodManifestEffect,
+  LotId,
   RoadObject,
   SeatIndex,
   StrikeKind,
@@ -27,9 +29,16 @@ import { type GameView, ORIGINAL_FLICS, STEP_MS } from '@rich4/shared/view';
 import type { Container } from 'pixi.js';
 import type { SfxCue } from '../../../audio/cues';
 import { budgetMs } from '../../../presentation/handlers/budget';
-import type { ConfineKind, ObjectRemoval, StageEventContext, StagePort } from '../../../presentation/handlers/stage';
+import type {
+  ConfineKind,
+  ObjectRemoval,
+  StageEventContext,
+  StagePort,
+  WalkOutFrom,
+  WalkOutOptions,
+} from '../../../presentation/handlers/stage';
 import type { Anchor, AudioPort } from '../../../presentation/types';
-import { type ActorStatus, statusOf } from '../../actors/ActorStatus';
+import { type ActorStatus, hotelAt, type Inside, insideOf, statusOf } from '../../actors/ActorStatus';
 import { GOD_PALETTES } from '../../actors/godPalettes';
 import { backOut, cubicOut, hopArc, linear, quadInOut } from '../../anim/easing';
 import type { RoadWorld } from '../../board/RoadObjectView';
@@ -91,6 +100,12 @@ export interface OrigStageActor {
   setStatus(s: ActorStatus): void;
   setGod(kind: GodKind | null): void;
   hop(signal?: AbortSignal): Promise<void>;
+  /** 人在建筑里（世界坐标）或回到棋盘（null） */
+  setInside(world: Pt | null): void;
+  /** 获释：从所在的建筑走一步到格 to（前半程不画，过半出现时调 onShow） */
+  walkOut(to: TileId, o: { tickMs: number; signal?: AbortSignal; onShow?: () => void }): Promise<void>;
+  /** 住旅馆：从当前格走进 world（过半后不画） */
+  walkIn(world: Pt, o: { tickMs: number; signal?: AbortSignal }): Promise<void>;
 }
 
 /** 会走路的原版棋子（恶人、机器娃娃；OrigActor 满足） */
@@ -128,8 +143,14 @@ export interface OrigStageHost {
   readonly world: Container | null;
   /** 镜头中心（棋盘坐标；节日烟火、终局烟火的落点） */
   viewCenter(): Pt | null;
-  /** 当前地图（节日表） */
-  readonly mapDef: Pick<MapDef, 'holidays'> | null;
+  /** 当前地图（节日表；格的 ref.lot 找住旅馆的人所在的旅馆） */
+  readonly mapDef: Pick<MapDef, 'holidays' | 'tiles'> | null;
+  /** 节点的世界坐标 */
+  tileWorld(node: TileId): Pt | null;
+  /** 建筑的世界坐标（监狱 / 医院景观、旅馆地块）；没有为 null */
+  insideWorld(b: Inside): Pt | null;
+  /** 同格多人按座位错开（有人进出建筑之后重排） */
+  spreadActors(): void;
   /** 座位 → 角色号 */
   characterOf(seat: SeatIndex): number | null;
   /** 机器娃娃（原版 npc.doll，放在 node）；棋盘未就绪为 null */
@@ -193,6 +214,8 @@ export class OrigStage implements StagePort {
   private readonly sfxSwitch: FlicSfxSwitch | null;
   private releaseSfx: (() => void) | null = null;
   private readonly prefetched = new Set<string>();
+  /** 本回合获释、还没走出来的人（holdInside）：同步时留在建筑里 */
+  private readonly held = new Set<SeatIndex>();
 
   constructor(
     private readonly host: OrigStageHost,
@@ -340,7 +363,19 @@ export class OrigStage implements StagePort {
   syncWorld(view: GameView): void {
     if (!this.ready) return;
     this.host.roads.sync(view);
-    for (const p of view.players) this.host.actor(p.seat)?.setStatus(statusOf(p, view));
+    const def = this.host.mapDef;
+    for (const p of view.players) {
+      const a = this.host.actor(p.seat);
+      if (!a) continue;
+      const s = statusOf(p, view);
+      a.setStatus(s);
+      // 关押 / 住旅馆：人在景观 / 旅馆里，画点放到建筑上、不画（找不到建筑时停在原格、同样不画）
+      // @source exe v2.06 0x43c369–0x43c37d / 0x43d9f6–0x43da0a（坐标写成景观 2 / 1）、0x4082a5–0x4082c3（计数不为 0 不画）
+      if (this.held.has(p.seat)) continue;
+      const inside = p.placed && p.node > 0 ? insideOf(s, p.node, (n) => hotelAt(n, def, view)) : null;
+      a.setInside(inside ? (this.host.insideWorld(inside) ?? this.host.tileWorld(p.node)) : null);
+    }
+    this.host.spreadActors();
     if (this.flics) {
       // 可能马上要播的 FLIC 先取（路上神明的降临、身上炸弹的爆炸、警车救护车）
       for (const g of view.gods) if (g.where.t === 'road') this.prefetchOnce(godArrivalUse(g.kind));
@@ -353,6 +388,12 @@ export class OrigStage implements StagePort {
   clear(): void {
     // 演出节点（FLIC 精灵、飞行的炸弹、恶犬……）都登记在 FxSystem（BoardPort.clearFx 已清）
     this.cur = null;
+    this.held.clear();
+  }
+
+  holdInside(seat: SeatIndex | null): void {
+    if (seat === null) this.held.clear();
+    else this.held.add(seat);
   }
 
   // ───────────────────────── 路面物件（原版精灵 / 小爆炸 FLIC） ─────────────────────────
@@ -766,6 +807,31 @@ export class OrigStage implements StagePort {
     await this.fx.shockwave(a.boardPos(), 40, 0xffffff, FX_RELEASE_MS, signal);
   }
 
+  /**
+   * 获释：从监狱 / 医院景观（旅馆）走一步到所在的格，原版角色的行走姿态库；前半程不画、过半出现（onShow），没有闪光
+   * （原版只有这一步）。棋子不在建筑里时直接出现
+   * @source exe v2.06 fcn.0040d184、fcn.0040bb40 bit4 分支（见 OrigActor.walkOut、shared/view/pacing 的 WALK_OUT）
+   */
+  async walkOut(seat: SeatIndex, _from: WalkOutFrom, o: WalkOutOptions, signal: AbortSignal): Promise<void> {
+    this.held.delete(seat);
+    const a = this.actor(seat);
+    if (!a || a.tile === null) {
+      o.onShow?.();
+      return;
+    }
+    await a.walkOut(a.tile, { tickMs: o.tickMs, signal, ...(o.onShow ? { onShow: o.onShow } : {}) });
+    this.host.spreadActors();
+  }
+
+  /** 住旅馆：从门前的格走进旅馆（原版 fcn.0040bb40 bit5 分支，过半后不画） */
+  async walkIn(seat: SeatIndex, lot: LotId, o: WalkOutOptions, signal: AbortSignal): Promise<void> {
+    const a = this.actor(seat);
+    const w = this.ready ? this.host.insideWorld({ t: 'lot', lot }) : null;
+    if (!a || !w) return;
+    await a.walkIn(w, { tickMs: o.tickMs, signal });
+    this.host.spreadActors();
+  }
+
   /** 换车：原版机车 / 汽车姿态库（OrigActor 按状态选库）+ 跳一下 */
   async vehicle(seat: SeatIndex, v: Vehicle, signal: AbortSignal): Promise<void> {
     const a = this.actor(seat);
@@ -944,6 +1010,9 @@ export const ORIG_STAGE_IMPL = {
   dogBite: { kind: 'sprite', keys: ['object.dog'], fallback: 'fx' },
   escort: { kind: 'flic', uses: [ORIGINAL_FLICS.policeCar.use, ORIGINAL_FLICS.ambulance.use], fallback: 'fx' },
   release: { kind: 'fx' },
+  walkOut: { kind: 'sprite', keys: ['char.<c>.walk'], fallback: 'fx' },
+  walkIn: { kind: 'sprite', keys: ['char.<c>.walk'], fallback: 'fx' },
+  holdInside: { kind: 'sync' },
   vehicle: { kind: 'sprite', keys: ['char.<c>.moto.*', 'char.<c>.car.*'], fallback: 'fx' },
   wreck: { kind: 'sprite', keys: ['char.<c>.stand'], fallback: 'fx' },
   bombAttach: { kind: 'sprite', keys: ['object.bomb'], fallback: 'fx' },

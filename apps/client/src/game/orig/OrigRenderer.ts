@@ -508,7 +508,8 @@ export class OrigRenderer implements BoardSurface {
   spreadActors(): void {
     const byTile = new Map<TileId, OrigActor[]>();
     for (const a of this.actors.values()) {
-      if (a.tile === null || a.isWalking || !a.root.visible) continue;
+      // 看不见本体的（在监狱 / 医院 / 旅馆里、出国、乞丐）不占格子，路过的人不为它错开（原版关押期间根本不画）
+      if (a.tile === null || a.isWalking || !a.root.visible || a.offBoard) continue;
       const list = byTile.get(a.tile) ?? [];
       list.push(a);
       byTile.set(a.tile, list);

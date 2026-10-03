@@ -1,9 +1,10 @@
 // 角色状态外观（design/client.md §3.6）：冬眠（冰蓝色调 + zzz）、乌龟（龟壳）、梦游（摇晃 + 问号）、
-// 身上的定时炸弹（引信数字）、附身神明、交通工具、住院 / 坐牢（离开棋盘，显示在医院 / 监狱窗口气泡里）、
+// 身上的定时炸弹（引信数字）、附身神明、交通工具、住院 / 坐牢 / 住旅馆（人在医院 / 监狱 / 旅馆里，棋盘上不画，见 insideOf）、
 // 出国（不在场）、乞丐（由路面层画乞丐，角色本体隐藏）。statusOf 从显示态推出，纯函数。
+import type { LotId, MapDef, TileId } from '@rich4/shared/data';
 import type { GodKind, Vehicle } from '@rich4/shared/engine';
 import type { GameView, PlayerView } from '@rich4/shared/view';
-import { Container, Graphics } from 'pixi.js';
+import { Graphics } from 'pixi.js';
 import { INK } from '../procedural/building/styles';
 
 export interface ActorStatus {
@@ -16,6 +17,8 @@ export interface ActorStatus {
   bomb: number | null;
   /** 坐牢 / 住院及剩余天数（含本回合） */
   confined: { where: 'jail' | 'hospital'; days: number } | null;
+  /** 住旅馆 */
+  hotel: boolean;
   /** 出国、被绑架：不在棋盘上 */
   away: boolean;
   /** 破产后成了乞丐：本体隐藏，由路面层画乞丐 */
@@ -30,6 +33,7 @@ export const NO_STATUS: ActorStatus = Object.freeze({
   sleepwalk: false,
   bomb: null,
   confined: null,
+  hotel: false,
   away: false,
   beggar: false,
 }) as ActorStatus;
@@ -50,6 +54,7 @@ export function statusOf(p: PlayerView, view: Pick<GameView, 'beggars'>): ActorS
     sleepwalk: p.st.sleepwalk !== 0,
     bomb: p.bomb ? p.bomb.fuse : null,
     confined: jail > 0 ? { where: 'jail', days: jail } : hospital > 0 ? { where: 'hospital', days: hospital } : null,
+    hotel: p.st.hotel !== 0,
     away: p.st.away !== 0,
     beggar: !p.alive && view.beggars.some((b) => b.seat === p.seat),
   };
@@ -64,6 +69,7 @@ export function sameStatus(a: ActorStatus, b: ActorStatus): boolean {
     a.sleepwalk === b.sleepwalk &&
     a.bomb === b.bomb &&
     a.away === b.away &&
+    a.hotel === b.hotel &&
     a.beggar === b.beggar &&
     a.confined?.where === b.confined?.where &&
     a.confined?.days === b.confined?.days
@@ -99,26 +105,32 @@ export function bombIcon(): Graphics {
   return g;
 }
 
-/** 医院 / 监狱窗口气泡：铁窗或红十字的小窗框，内容（头像、天数）由调用方放在 content 里 */
-export function confineWindow(where: 'jail' | 'hospital'): { root: Container; content: Container } {
-  const root = new Container({ label: `confine:${where}` });
-  const frame = new Graphics();
-  frame
-    .roundRect(-30, -64, 60, 56, 10)
-    .fill(where === 'jail' ? 0xd8d2c4 : 0xffffff)
-    .stroke({ width: 3, color: INK });
-  frame
-    .poly([-6, -9, 6, -9, 0, 0], true)
-    .fill(where === 'jail' ? 0xd8d2c4 : 0xffffff)
-    .stroke({ width: 3, color: INK });
-  const content = new Container();
-  const bars = new Graphics();
-  if (where === 'jail') {
-    for (const x of [-16, -6, 4, 14]) bars.rect(x, -60, 3, 44).fill(0x5a5a5a);
-  } else {
-    bars.rect(14, -60, 6, 16).fill(0xe8453c);
-    bars.rect(9, -55, 16, 6).fill(0xe8453c);
+/**
+ * 人在建筑里：坐牢 / 住院在监狱 / 医院景观里，住旅馆在旅馆里（门前格的 ref.lot 是旅馆时；死神替人付旅馆费等不在门前的情形
+ * 找不到建筑，here = 停在原格、同样不画）。原版被关时把棋子坐标写成景观 / 旅馆坐标，主阻碍计数不为 0 时不画棋子（附身神明与
+ * 身上炸弹也不画）。
+ * @source exe v2.06 0x43c369–0x43c37d（监狱取景观 2）、0x43d9f6–0x43da0a（医院取景观 1）、fcn.0040d06b（旅馆坐标）；
+ *         0x4082a5–0x4082c3（计数 +0x32 不为 0 且没有 +0x15 bit5 就不画）、0x408be6（附身物件同样跳过）
+ */
+export type Inside = { t: 'landmark'; kind: 'jail' | 'hospital' } | { t: 'lot'; lot: LotId } | { t: 'here' };
+
+/** 状态 → 所在的建筑（没在建筑里为 null）；hotelAt 给出门前格所属的旅馆 */
+export function insideOf(s: ActorStatus, node: TileId, hotelAt: (node: TileId) => LotId | null): Inside | null {
+  if (s.confined) return { t: 'landmark', kind: s.confined.where };
+  if (s.hotel) {
+    const lot = node > 0 ? hotelAt(node) : null;
+    return lot ? { t: 'lot', lot } : { t: 'here' };
   }
-  root.addChild(frame, content, bars);
-  return { root, content };
+  return null;
+}
+
+/** 门前格所属的旅馆（格的 ref.lot 是已盖成旅馆的设施地）；没有为 null */
+export function hotelAt(
+  node: TileId,
+  def: Pick<MapDef, 'tiles'> | null | undefined,
+  view: Pick<GameView, 'facilities'>,
+): LotId | null {
+  const lot = def?.tiles.find((t) => t.id === node)?.ref?.lot;
+  if (!lot) return null;
+  return view.facilities.some((f) => f.id === lot && f.type === 'hotel') ? lot : null;
 }

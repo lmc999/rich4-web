@@ -301,14 +301,14 @@ describe('handlers', () => {
     expect(calls.map((c) => c[0])).toContain('shake');
   });
 
-  it('NEWS：演出期间打开新闻弹窗（标题按编号取自 i18n），结束后关闭', async () => {
+  it('NEWS：演出期间打开新闻弹窗（标题按编号取自 i18n 的原版原文），结束后关闭', async () => {
     const seen: string[] = [];
     const off = usePopupStore.subscribe((st) => {
       if (st.current?.kind === 'news') seen.push(st.current.headline);
     });
     await run({ type: 'NEWS', id: 3, params: {}, affected: [] }, view);
     off();
-    expect(seen[0]).toBe('流感疫情升温');
+    expect(seen[0]).toBe('住院中病患延长住院几天');
     expect(usePopupStore.getState().current).toBeNull();
   });
 

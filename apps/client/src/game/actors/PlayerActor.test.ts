@@ -198,6 +198,7 @@ describe('PlayerActor 状态外观（M6）', () => {
     sleepwalk: false,
     bomb: null,
     confined: null,
+    hotel: false,
     away: false,
     beggar: false,
   } as const;
@@ -213,17 +214,104 @@ describe('PlayerActor 状态外观（M6）', () => {
     g?.destroy();
   });
 
-  it('坐牢：人物隐藏，显示监狱窗口气泡（天数）；出狱后恢复', () => {
-    const { actor } = setup();
-    actor.setStatus({ ...base, confined: { where: 'jail', days: 3 } });
-    expect(actor.root.getChildByLabel('figure', true)!.visible).toBe(false);
-    expect(actor.root.getChildByLabel('confine:jail', true)).not.toBeNull();
-    actor.setStatus({ ...base, confined: { where: 'hospital', days: 2 } });
-    expect(actor.root.getChildByLabel('confine:jail', true)).toBeNull();
-    expect(actor.root.getChildByLabel('confine:hospital', true)).not.toBeNull();
+  it('关押 / 住旅馆：人在建筑里（setInside）整个棋子不画、画点放到建筑上，没有窗口气泡；回到棋盘恢复', () => {
+    const { actor, geo } = setup();
+    actor.teleport(15);
+    actor.setStatus({ ...base, god: 2, bomb: 9, confined: { where: 'jail', days: 3 } });
+    actor.setInside({ x: 4, y: 4 });
+    expect(actor.insideBuilding).toBe(true);
+    expect(actor.offBoard).toBe(true);
+    for (const l of ['figure', 'overhead']) expect(actor.root.getChildByLabel(l, true)!.visible, l).toBe(false);
+    expect(actor.root.children.some((c) => String(c.label).startsWith('confine:'))).toBe(false);
+    expect(actor.screenPos()).toEqual(geo.toScreen({ x: 4, y: 4 }));
+    // 节点不变（仍是关押格）
+    expect(actor.tile).toBe(15);
     actor.setStatus(base);
+    actor.setInside(null);
+    expect(actor.offBoard).toBe(false);
     expect(actor.root.getChildByLabel('figure', true)!.visible).toBe(true);
-    expect(actor.root.getChildByLabel('confine:hospital', true)).toBeNull();
+    expect(actor.screenPos()).toEqual(geo.tileScreenPos(15));
+  });
+
+  it('walkOut：从建筑跳着走到格上，前半程看不见、过半出现（onShow 一次），停在格上', async () => {
+    const { clock, actor, geo } = setup();
+    actor.teleport(15);
+    const c = geo.tileCell(15);
+    const from = { x: c.x + 0.5 + 2, y: c.y + 0.5 };
+    actor.setInside(from);
+    const figure = actor.root.getChildByLabel('figure', true)!;
+    const seen: boolean[] = [];
+    let shows = 0;
+    const p = actor.walkOut(15, {
+      onShow: () => {
+        shows++;
+      },
+    });
+    let done = false;
+    void p.then(() => {
+      done = true;
+    });
+    for (let i = 0; i < 200 && !done; i++) {
+      clock.advance(16);
+      for (let k = 0; k < 6; k++) await Promise.resolve();
+      seen.push(figure.visible);
+    }
+    await p;
+    // 跳 2 下（2 格）：第 1 下落地前看不见，之后出现
+    expect(seen[0]).toBe(false);
+    expect(seen.at(-1)).toBe(true);
+    expect(seen.indexOf(true)).toBeGreaterThan(0);
+    expect(seen.slice(seen.indexOf(true)).every(Boolean)).toBe(true);
+    expect(shows).toBe(1);
+    expect(actor.insideBuilding).toBe(false);
+    expect(actor.tile).toBe(15);
+    expect(actor.screenPos()).toEqual(geo.tileScreenPos(15));
+  });
+
+  it('walkOut 中止：直接落到格上并出现；行走中收到的「在建筑里」同步收尾后套用', async () => {
+    const { clock, actor, geo } = setup();
+    actor.teleport(15);
+    const c = geo.tileCell(15);
+    actor.setInside({ x: c.x + 2.5, y: c.y + 0.5 });
+    const ac = new AbortController();
+    let shows = 0;
+    const p = actor.walkOut(15, { signal: ac.signal, onShow: () => void shows++ });
+    clock.advance(16);
+    actor.setInside(null);
+    ac.abort();
+    await p;
+    expect(shows).toBe(1);
+    expect(actor.offBoard).toBe(false);
+    expect(actor.screenPos()).toEqual(geo.tileScreenPos(15));
+    // 不在建筑里时 walkOut 直接出现
+    let again = 0;
+    await actor.walkOut(15, { onShow: () => void again++ });
+    expect(again).toBe(1);
+  });
+
+  it('walkIn（住旅馆）：前半程看得见、过半消失，走完人在旅馆里', async () => {
+    const { clock, actor, geo } = setup();
+    actor.teleport(15);
+    const c = geo.tileCell(15);
+    const hotel = { x: c.x + 0.5, y: c.y + 2.5 };
+    const figure = actor.root.getChildByLabel('figure', true)!;
+    const seen: boolean[] = [];
+    const p = actor.walkIn(hotel);
+    let done = false;
+    void p.then(() => {
+      done = true;
+    });
+    for (let i = 0; i < 200 && !done; i++) {
+      clock.advance(16);
+      for (let k = 0; k < 6; k++) await Promise.resolve();
+      seen.push(figure.visible);
+    }
+    await p;
+    expect(seen[0]).toBe(true);
+    expect(seen.at(-1)).toBe(false);
+    expect(actor.insideBuilding).toBe(true);
+    expect(actor.tile).toBe(15);
+    expect(actor.screenPos()).toEqual(geo.toScreen(hotel));
   });
 
   it('交通工具垫在脚下并抬高人物；炸弹引信数字随状态更新；冬眠换冰蓝色调', () => {

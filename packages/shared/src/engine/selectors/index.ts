@@ -5,14 +5,16 @@
  */
 import type { MapIndex } from '../../data/maps/mapIndex';
 import type { LotId, World } from '../../data/maps/types';
-import { sub32 } from '../../util/int32';
+import type { NewsId } from '../../data/tables/ids';
+import { newsDef, newsParam } from '../../data/tables/news';
+import { mul32, sub32 } from '../../util/int32';
 import { engineMap } from '../core/mapCache';
 import { daysBetween } from '../rules/calendar';
 import { facilityBuyPrice, facilityUpgradeCost, landBuyPrice, landUpgradeCost } from '../rules/purchase';
 import { limitDownPrice, limitUpPrice, tickSize } from '../rules/stock';
 import { quoteLandToll } from '../rules/toll';
 import { netWorth as netWorthRule } from '../rules/wealth';
-import { modeOf, playerOf, type RuleWorld } from '../rules/world';
+import { findPlayer, modeOf, playerOf, type RuleWorld } from '../rules/world';
 import type { TollExemptReason, TollQuote } from '../types/frames';
 import type { DateNum, SeatIndex } from '../types/ids';
 
@@ -93,6 +95,48 @@ export function stockLimitPrices(prevCents: number): { up: number; down: number 
 /** 从今天到 date 的天数（date − 今天；date 为 0 时返回 null） */
 export function daysUntil(w: Pick<RuleWorld, 'clock'>, date: DateNum): number | null {
   return date === 0 ? null : daysBetween(w.clock.date, date);
+}
+
+/**
+ * 新闻板逐人行的金额（原版新闻处理函数参数 0 分支按座位逐人 sprintf 的 %d，公布时的世界）：
+ * 11 所得税 trunc(现金 × 5%)（不乘 PI）、12 地价税 trunc(Σ(地价 + 等级 × 房价) × 5%) × PI（含设施，设施按 rateWindow[0]）、
+ * 13 证交税 trunc(Σ持股市值 × 5%) × PI、23 储金红利 trunc(存款 × 10%)（有贷款的人为 0）；其余新闻为 null。
+ * 与 effects/news 的 TAX_BASES、bonusInterest 同一公式（没有加持时的金额；客户端 realEngineM7 测试逐条对引擎实际收付）。
+ * @source exe v2.06 0x44881d–0x44888a（所得税行）、0x448a24–0x448a96（地价税行）、0x448be6–0x448c5c（证交税行）、
+ *   0x44997e–0x4499fc（储金红利行）；逐人行的格式串 0x4635ea（税）/ 0x46377f（红利）
+ */
+export function newsRowAmount(w: RuleWorld, map: MapIndex, id: NewsId, seat: SeatIndex): number | null {
+  const def = newsDef(id);
+  const p = findPlayer(w.players, seat);
+  if (!p) return null;
+  const mode = modeOf(w);
+  const pi = (n: number): number => mul32(n, w.econ.priceIndex, mode);
+  switch (def.effect) {
+    case 'incomeTax':
+      return Math.trunc(p.cash * newsParam(id, 'rate'));
+    case 'landTax': {
+      const em = engineMap(map);
+      let sum = 0;
+      w.lands.forEach((l, i) => {
+        if (l.owner === seat) sum += l.landPrice + l.level * em.lands[i]!.housePrice;
+      });
+      w.facilities.forEach((f, i) => {
+        if (f.owner === seat) sum += f.landPrice + f.level * em.facilities[i]!.rateWindow[0];
+      });
+      return pi(Math.trunc(sum * newsParam(id, 'rate')));
+    }
+    case 'stockTax': {
+      let value = 0;
+      w.stocks.forEach((st, i) => {
+        value += ((p.holdings[i]?.shares ?? 0) * st.priceCents) / 100;
+      });
+      return pi(Math.trunc(value * newsParam(id, 'rate')));
+    }
+    case 'bonusInterest':
+      return p.loan === 0 && p.deposit > 0 ? Math.trunc(p.deposit * newsParam(id, 'rate')) : 0;
+    default:
+      return null;
+  }
 }
 
 /** 贷款额度 = 总资产 − 现有贷款（M4 的柜台还要判挤兑、拒绝往来） */

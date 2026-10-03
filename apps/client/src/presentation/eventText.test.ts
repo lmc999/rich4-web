@@ -1,4 +1,4 @@
-// 新闻 / 命运 / 恶人文案参数（eventText）：命运金额的含义、加持结果、天数，与引擎命运表一致
+// 新闻 / 命运 / 恶人文案参数（eventText）：原版原文的插值（数字照 %d 不带千分位）、命运金额的含义、加持结果、天数，与引擎命运表一致
 import { fixtureRegistry, type MapIndex } from '@rich4/shared/data';
 import type { FateId } from '@rich4/shared/engine';
 import type { GameView } from '@rich4/shared/view';
@@ -7,7 +7,17 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { SoundQuery } from '../audio/cues';
 import { initI18n } from '../i18n';
 import { tx } from '../i18n/tx';
-import { eventTextParams, fateShown, fateTitle, fateVariantSlot, newsBody, villainActionText } from './eventText';
+import {
+  eventTextParams,
+  fateBaseAmount,
+  fateShown,
+  fateTitle,
+  fateVariantSlot,
+  newsHeadline,
+  newsRowLine,
+  oneLine,
+  villainActionText,
+} from './eventText';
 import { makeNames, pickMapString } from './names';
 import { SOUND_MAP } from './soundMap';
 
@@ -19,13 +29,20 @@ const map = fixtureRegistry.getMap('test');
 const n = makeNames({ t: tx, view: () => null as GameView | null, map: () => map });
 
 describe('eventText', () => {
-  it('新闻参数：地块 / 公司名、股票名、人名、金额千分位', () => {
+  it('新闻参数：地块 / 公司名、股票名、人名、金额照原版 %d（不带千分位）；标题是原文、逐人行只有税与储金红利', () => {
     const p = eventTextParams(n, { company: 'C1', stock: 0, seat: 1, fine: 10000, days: 5 });
     expect(p.company).not.toBe('C1');
-    expect(p.fine).toBe('10,000');
+    expect(p.fine).toBe('10000');
     expect(p.who).toBe('2P');
     expect(p.days).toBe(5);
-    expect(newsBody(n, 30, { company: 'C1', stock: 0, fine: 10000 })).toContain('10,000 元');
+    // 原文的金额是写死的（「罰款10000元」），%s 是公司名
+    expect(newsHeadline(n, 30, { company: 'C1' })).toBe(`${p.company}工厂排放污水\n罚款10000元`);
+    expect(newsHeadline(n, 8, { seat: 1, amount: 12345 })).toBe('公开表扬第一大地主\n2P获得12345元奖励');
+    expect(newsRowLine(n, 11, '孙小美', 1234)).toBe('孙小美缴交1234元');
+    expect(newsRowLine(n, 13, '孙小美', 1234)).toBe('孙小美缴交1234元');
+    expect(newsRowLine(n, 23, '孙小美', 500)).toBe('孙小美得到500元');
+    expect(newsRowLine(n, 5, '孙小美', 1)).toBeNull();
+    expect(oneLine('公开拍卖X\n公有土地一处')).toBe('公开拍卖X 公有土地一处');
   });
 
   it('命运金额：补偿为收入、罚金为支出、贷款与点券带说明', () => {
@@ -50,11 +67,31 @@ describe('eventText', () => {
       category: 'penalty',
     });
     expect(fateShown(n, { seat: 0, id: 25, amount: 10000, blessing: 'low' }).amountText).toBe('奖金作废（10,000）');
-    expect(fateShown(n, { seat: 0, id: 33, amount: null, blessing: 'low' }).params.days).toBe(6);
+    // 原文里的天数是加持之前的（原版先写字再判加持；「倒霉加倍」由加持消息框说明）
+    expect(fateShown(n, { seat: 0, id: 33, amount: null, blessing: 'low' }).params.days).toBe(3);
+    expect(fateShown(n, { seat: 0, id: 33, amount: null, blessing: 'low' }).text).toBe('酒醉大闹警局坐牢3天');
     expect(fateShown(n, { seat: 0, id: 33, amount: null, blessing: null }).params.days).toBe(3);
     expect(fateShown(n, { seat: 0, id: 3, amount: null, blessing: null }).params.days).toBe(30);
     expect(fateShown(n, { seat: 0, id: 4, amount: null, blessing: null }).params.pct).toBe(10);
     expect(fateShown(n, { seat: 0, id: 5, amount: null, blessing: null }).category).toBeNull();
+  });
+
+  it('命运原文：金额是加持之前的数（罚金 / 冒贷 low、奖金 high 的事件金额已 ×2），标出句中金额', () => {
+    expect(fateBaseAmount('fine', 'low', 6000)).toBe(3000);
+    expect(fateBaseAmount('fakeLoan', 'low', 20000)).toBe(10000);
+    expect(fateBaseAmount('reward', 'high', 20000)).toBe(10000);
+    expect(fateBaseAmount('reward', 'low', 10000)).toBe(10000);
+    expect(fateBaseAmount('fine', 'high', 3000)).toBe(3000);
+    expect(fateBaseAmount('fine', null, 3000)).toBe(3000);
+    const s14 = fateShown(n, { seat: 0, id: 14, amount: 6000, blessing: 'low' });
+    expect(s14).toMatchObject({ text: '行人闯越马路罚款3000元', textAmount: '3000', amountText: '-6,000' });
+    const s4 = fateShown(n, { seat: 0, id: 4, amount: null, blessing: null });
+    expect(s4).toMatchObject({ text: '侵入银行电脑\n挪用其他人存款10％', textAmount: null });
+    expect(fateShown(n, { seat: 0, id: 9, amount: 8000, blessing: null })).toMatchObject({
+      text: '变卖所有股票求现',
+      textAmount: null,
+      amountText: '存款 +8,000',
+    });
   });
 
   it('恶人作案：抢银行没有单一受害人，不出现「无人」', () => {
@@ -98,14 +135,14 @@ describe('命运 33–36 按图文案（exe v2.06 处理函数表 0x473d14 第 3
     for (const gm of [1, 2, 3]) expect(fateVariantSlot(32, gm)).toBe(32);
   });
 
-  it('每张图 33–36 的变体文案齐全（标题、正文带 {{who}} / {{days}}）', () => {
+  it('每张图 33–36 的变体文案齐全（标题、原文带 {{days}}；原文不写人名）', () => {
     for (const id of [33, 34, 35, 36]) {
       for (const gm of [1, 2, 3]) {
         const k = `fate:${id}.byMap.${gm}`;
         expect(i18next.exists(`${k}.title`), k).toBe(true);
         expect(i18next.exists(`${k}.text`), k).toBe(true);
         const text = i18next.t(`${k}.text` as never) as string;
-        expect(text).toContain('{{who}}');
+        expect(text).not.toContain('{{who}}');
         expect(text).toContain('{{days}}');
       }
     }

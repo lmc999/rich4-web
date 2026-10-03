@@ -3,7 +3,9 @@
 //   帧号 = ((8 − view + dir) & 7) · perDir + anim，行走动画约 40 ms 一帧（动画时钟）；
 // - 每格行走在节点世界坐标之间直线插值（原版忽略 via 连接格；原版速度表 [8,12,16,8] px/tick 只作参考，
 //   时长遵循 pacing 预算：每步 stepMs）；
-// - 机车 / 汽车 / 快艇（快艇节点段）/ 梦游 / 乞丐 / 住院 / 坐牢外观；工程车（k=9–11，guess）走程序化载具回退；
+// - 机车 / 汽车 / 快艇（快艇节点段）/ 梦游 / 乞丐外观；工程车（k=9–11，guess）走程序化载具回退；
+// - 关押 / 住旅馆期间人在建筑里（setInside）：画点放到景观 / 旅馆上、不画本体与名牌（附身神明、炸弹一起不画）；获释时
+//   walkOut 从建筑走一步到格上，前半程看不见、过半出现；住旅馆时 walkIn 反过来（原版 fcn.0040bb40 的 bit4 / bit5 分支）；
 // - 掷骰动作（throwDice）：等待掷骰时静止站立；收到掷骰结果后把持骰库每方向的帧逐 tick 播一遍（抱骰 → 抛出 → 空手），
 //   停在最后一帧直到开始行走（exe fcn.0040d28a case 2 0x40d43b–0x40d470；渲染 0x4083a9 帧 = 方向槽 × perDir + 计数）；
 // - 附身神明、身上的定时炸弹（原版附身物件）、冬眠 / 梦游 ZZZ、乌龟；头顶名牌与聊天 / 表情气泡；同格多人偏移；
@@ -12,6 +14,7 @@
 import { attachedObjectFrame } from '@rich4/shared/assets';
 import { GOD_KEYS, type TileId } from '@rich4/shared/data';
 import type { GodKind, Vehicle, VillainKind } from '@rich4/shared/engine';
+import { WALK_OUT, walkOutSwitchTick, walkOutTicks } from '@rich4/shared/view';
 import { CanvasSource, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
 import type { FlicPlayer } from '../../skin/flic/FlicPlayer';
 import { ORIGINAL_FONT_STACK } from '../../skin/theme';
@@ -99,6 +102,18 @@ export interface OrigWalkOptions {
   onStep?: (tile: TileId, i: number) => void;
 }
 
+/** 走出 / 走进建筑（原版 tick 匀速，见 shared/view/pacing 的 WALK_OUT） */
+export interface OrigWalkOutOptions {
+  /** 原版 tick（ms） */
+  tickMs: number;
+  signal?: AbortSignal;
+  /** 走出：画出来的那一刻（调用方据此换掉关押状态）；中止时也会调用 */
+  onShow?: () => void;
+}
+
+const samePt = (a: Pt | null, b: Pt | null): boolean =>
+  a === b || (a !== null && b !== null && a.x === b.x && a.y === b.y);
+
 export class OrigActor {
   readonly root = new Container({ label: 'actor' });
   readonly seat: number;
@@ -161,6 +176,12 @@ export class OrigActor {
   /** 名牌要让开的高度变了（冬眠 / 梦游的 ZZZ 出现或消失）：渲染器据此重排同格多人的名牌 */
   onClearanceChange: (() => void) | null = null;
   private lastClearance = -1;
+  /** 人在建筑里（关押、住旅馆）：建筑的世界坐标；画点放在这里，不画本体与名牌。null = 在棋盘上 */
+  private inside: Pt | null = null;
+  /** 走出 / 走进建筑时看不见的那半程 */
+  private veiled = false;
+  /** 行走中收到的「在建筑里」同步（undefined = 没有）：行走收尾后再套用 */
+  private insideLanding: Pt | null | undefined = undefined;
 
   constructor(o: OrigActorOptions) {
     this.o = o;
@@ -262,6 +283,21 @@ export class OrigActor {
   /** 等待开局降落（本体与名牌暂时藏起） */
   get awaitingDrop(): boolean {
     return this.dropPending;
+  }
+
+  /** 人在建筑里（关押、住旅馆） */
+  get insideBuilding(): boolean {
+    return this.inside !== null;
+  }
+
+  /** 所在建筑的世界坐标（不在建筑里为 null） */
+  get insideWorld(): Pt | null {
+    return this.inside ? { ...this.inside } : null;
+  }
+
+  /** 棋盘上看不见本体（出国、乞丐、在建筑里、走出 / 走进建筑看不见的半程）：同格多人不为它错开 */
+  get offBoard(): boolean {
+    return this.status.away || this.status.beggar || this.inside !== null || this.veiled;
   }
 
   // ───────────────────────── 设置 ─────────────────────────
@@ -402,9 +438,7 @@ export class OrigActor {
     if (this.dead || sameStatus(this.status, s)) return;
     const prev = this.status;
     this.status = s;
-    if (prev.vehicle !== s.vehicle || prev.sleepwalk !== s.sleepwalk || prev.confined?.where !== s.confined?.where) {
-      this.preload();
-    }
+    if (prev.vehicle !== s.vehicle || prev.sleepwalk !== s.sleepwalk) this.preload();
     this.applyStatusDecor();
     this.refresh();
   }
@@ -436,12 +470,28 @@ export class OrigActor {
     this.refresh();
   }
 
+  /**
+   * 人在建筑里（world = 景观 / 旅馆的世界坐标）或回到棋盘（null）：在建筑里时画点放到建筑上（镜头、气泡跟着它），
+   * 本体、名牌、附身神明与炸弹都不画；节点不变（tile 仍是关押格 / 旅馆门前的格）。行走中（含走出 / 走进建筑）先记下，收尾时套用
+   */
+  setInside(world: Pt | null): void {
+    if (this.dead) return;
+    if (this.walking) {
+      this.insideLanding = world ? { ...world } : null;
+      return;
+    }
+    if (samePt(this.inside, world)) return;
+    this.inside = world ? { ...world } : null;
+    this.relayout();
+    this.refresh();
+  }
+
   // ───────────────────────── 布局 ─────────────────────────
 
   /** 换视角或位移后重新计算棋盘位置、深度与帧 */
   relayout(): void {
     if (this.dead) return;
-    const p = this.o.proj.projectPx(this.pos);
+    const p = this.o.proj.projectPx(this.inside ?? this.pos);
     const x = p.x + this.offset.x;
     const y = p.y + this.offset.y;
     this.root.position.set(x, y);
@@ -470,11 +520,12 @@ export class OrigActor {
   private choice(mode: PoseMode): PoseChoice {
     if (this.kind.t === 'villain') return villainPose(this.kind.villain, mode, this.boat);
     if (this.kind.t === 'doll') return dollPose(mode);
+    // 关押期间棋子不画（原版 0x4082a5–0x4082c3），不再选关押姿态库；走出建筑过半出现时已换成获释后的状态
     return characterPose(this.kind.character, mode, {
       vehicle: this.status.vehicle,
       boat: this.boat,
       sleepwalk: this.status.sleepwalk,
-      confined: this.status.confined?.where ?? null,
+      confined: null,
       beggar: false,
     });
   }
@@ -519,8 +570,7 @@ export class OrigActor {
       this.headH = PLACEHOLDER_H;
     }
     this.applyOverlay(needsOverlay(choice, used));
-    const gone = this.status.away || this.status.beggar;
-    const hidden = gone || this.dropping || this.dropPending;
+    const hidden = this.offBoard || this.dropping || this.dropPending;
     this.body.visible = !hidden;
     this.tag.visible = !hidden;
     this.sprite.tint = this.status.hibernate ? ICE_TINT : 0xffffff;
@@ -705,6 +755,9 @@ export class OrigActor {
   async walk(path: readonly TileId[], o: OrigWalkOptions = {}): Promise<void> {
     if (this.dead || path.length === 0) return;
     this.landing = null;
+    this.insideLanding = undefined;
+    // 在建筑里的人不会走路（关押期间不掷骰）；万一收到行走，先回到棋盘上
+    if (this.inside) this.setInside(null);
     const last = path[path.length - 1]!;
     if (this._tile !== path[0]) this.teleport(path[0]!);
     if (path.length === 1) return;
@@ -756,11 +809,127 @@ export class OrigActor {
         { clock: this.o.clock, signal: o.signal, ease: linear },
       );
     } finally {
-      this.walking = false;
-      if (!this.dead) {
-        this.teleport(this.landing ?? last);
-        this.landing = null;
+      this.settleWalk(last);
+    }
+  }
+
+  /** 行走收尾：落到 tile（行走中收到的权威落点优先），再套用行走中收到的「在建筑里」同步 */
+  private settleWalk(tile: TileId): void {
+    this.walking = false;
+    this.veiled = false;
+    if (this.dead) return;
+    this.teleport(this.landing ?? tile);
+    this.landing = null;
+    const inside = this.insideLanding;
+    this.insideLanding = undefined;
+    if (inside !== undefined) this.setInside(inside);
+  }
+
+  /** 走出 / 走进建筑的一段：从 a 到 b 按原版 tick 匀速走，第 switchTick 个 tick 走完时调用 onSwitch（中止时直接到终点） */
+  private async walkSegment(
+    a: Pt,
+    b: Pt,
+    ticks: number,
+    o: { tickMs: number; signal?: AbortSignal; onSwitch: () => void },
+  ): Promise<void> {
+    const at = walkOutSwitchTick(ticks);
+    let switched = false;
+    // 原版行走中不改朝向（0x40befb：bit4 / bit5 时跳过按来路取朝向），朝向在获释时按建筑 → 格算好（0x40d1d5）
+    const d = dirOfWorldStep(a, b);
+    if (d !== null) this.dir = d;
+    this.applyStatusDecor();
+    this.walking = true;
+    this.walkMs = 0;
+    this.throwFrame = null;
+    this.throwToken++;
+    this.pos = { ...a };
+    this.relayout();
+    this.refresh();
+    await tweenValue(
+      0,
+      ticks,
+      ticks * o.tickMs,
+      (x) => {
+        if (this.dead) return;
+        const t = Math.min(1, x / ticks);
+        this.pos = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+        this.relayout();
+        if (!switched && x >= at - 1e-9) {
+          switched = true;
+          o.onSwitch();
+        }
+      },
+      { clock: this.o.clock, signal: o.signal, ease: linear },
+    );
+  }
+
+  /**
+   * 获释：从所在的建筑走一步到格 to（原版 fcn.0040bb40 的 bit4 分支）：起点是建筑坐标、终点是节点坐标，每 tick 8 px，
+   * tick 数 = trunc(距离 / 8)；前半程看不见，剩余 tick 少于一半时画出来（onShow，调用方在这一刻换掉关押状态），走到停在 to。
+   * 不在建筑里（找不到建筑）时直接在 to 上出现。中止时立即落到 to 并显示
+   * @source exe v2.06 0x40d184（获释：朝向 = 当前坐标 → 节点）、0x40bba3–0x40bbcc（bit4：起点当前坐标、终点节点）、
+   *         0x40bd5a（8 px / tick）、0x40bdec（fcn.0045641c 截断取整）、0x40be98–0x40beb3（过半清计数，从此画出来）
+   */
+  async walkOut(to: TileId, o: OrigWalkOutOptions): Promise<void> {
+    if (this.dead) return;
+    const from = this.walking ? null : this.inside;
+    const end = this.o.tileWorld(to);
+    if (!from || !end) {
+      if (!this.walking) {
+        this.inside = null;
+        this.teleport(to);
       }
+      o.onShow?.();
+      return;
+    }
+    const ticks = walkOutTicks(Math.hypot(end.x - from.x, end.y - from.y));
+    this.landing = null;
+    this.insideLanding = undefined;
+    this.inside = null;
+    this.veiled = true;
+    this._tile = to;
+    this.boat = this.o.boatTiles.has(to);
+    let shown = false;
+    const show = (): void => {
+      if (shown) return;
+      shown = true;
+      this.veiled = false;
+      this.refresh();
+      o.onShow?.();
+    };
+    try {
+      await this.walkSegment(from, end, ticks, { tickMs: o.tickMs, signal: o.signal, onSwitch: show });
+    } finally {
+      if (!this.dead) show();
+      this.settleWalk(to);
+    }
+  }
+
+  /**
+   * 住旅馆：从当前格走进旅馆 world（原版 fcn.0040bb40 的 bit5 分支，fcn.0040d06b 置位）：前半程看得见，剩余 tick 少于一半时
+   * 不再画（0x40bebb 清 bit5），走完人在旅馆里（setInside(world)）。已经在建筑里时不动
+   * @source exe v2.06 0x40d0d4（置 bit5、朝向 = 节点 → 旅馆）、0x40bbd1–0x40bc0b（bit5：起点节点、终点旅馆坐标）
+   */
+  async walkIn(world: Pt, o: OrigWalkOutOptions): Promise<void> {
+    if (this.dead || this.walking || this.inside || this._tile === null) return;
+    const tile = this._tile;
+    const from = this.o.tileWorld(tile) ?? this.pos;
+    const ticks = walkOutTicks(Math.hypot(world.x - from.x, world.y - from.y), WALK_OUT.hotelMaxTicks);
+    this.landing = null;
+    this.insideLanding = undefined;
+    try {
+      await this.walkSegment(from, world, ticks, {
+        tickMs: o.tickMs,
+        signal: o.signal,
+        onSwitch: () => {
+          this.veiled = true;
+          this.refresh();
+        },
+      });
+    } finally {
+      // 走完人在旅馆里；之后的同步（住旅馆的状态）给出同一个建筑坐标
+      if (this.insideLanding === undefined) this.insideLanding = { ...world };
+      this.settleWalk(tile);
     }
   }
 

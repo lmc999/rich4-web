@@ -17,16 +17,18 @@ export interface StatDelta {
 
 export interface AffectedRow extends PlayerRef {
   deltas: StatDelta[];
+  /** 原版新闻板的逐人行（只有新闻 11–13 税、23 储金红利有：「<人>繳交<n>元」「<人>得到<n>元」） */
+  line?: string;
 }
 
 export interface NewsPopupSpec {
   kind: 'news';
   id: NewsId;
-  /** 分类号 0 奇闻、1 政府公告、2 社会、3 路况、4 气象、5 财经 */
+  /** 分类号 0 無責任新聞、1 政府公告、2 社會新聞、3 路況報導、4 氣象報導、5 財經新聞（exe 0x473cd8 / 0x473cfc） */
   category: number;
   categoryLabel: string;
+  /** 原版标题原文（exe 各新闻处理函数参数 0 分支的格式串，可能含换行） */
   headline: string;
-  body: string;
   affected: AffectedRow[];
 }
 
@@ -44,8 +46,13 @@ export interface FatePopupSpec {
    * 缺省 board；程序化弹窗两段都画整张翻面卡
    */
   phase?: 'board' | 'blessing';
+  /** 我们的短标题（程序化翻面卡、日志；原版命运板不画，只给读屏） */
   title: string;
+  /** 原版原文整句（可能含换行；数是加持之前的） */
   text: string;
+  /** text 里金额那几个字（原版命运板把它标成 fate-amount；原文不带金额时缺省） */
+  textAmount?: string | null;
+  /** 程序化翻面卡的金额行（实际收付） */
   amountText: string | null;
   /** 金额行的颜色（缺省按 amountText 是否以 '-' 开头） */
   amountTone?: 'gain' | 'loss' | 'neutral';

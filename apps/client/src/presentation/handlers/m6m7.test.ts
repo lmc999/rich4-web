@@ -79,6 +79,9 @@ async function run<T extends GameEventType>(
     v?: GameView;
     me?: SeatIndex | null;
     raw?: boolean;
+    map?: PresentationContext['map'];
+    /** 舞台 syncWorld 时额外记录（缺省记路面物件数） */
+    onSync?: (view: GameView) => unknown;
     speed?: number;
     audio?: AudioPort;
     signal?: AbortSignal;
@@ -97,13 +100,18 @@ async function run<T extends GameEventType>(
   const ctx: PresentationContext = {
     signal: o.signal ?? new AbortController().signal,
     wait: (ms) => clock.wait(ms),
-    board: fakeBoard(calls, stage),
+    board: (() => {
+      const b = fakeBoard(calls, stage);
+      const onSync = o.onSync;
+      if (onSync) b.stage = { ...b.stage, syncWorld: (view) => void stage.push(['syncWorld', onSync(view)]) };
+      return b;
+    })(),
     ui: createUiPresenter({ wait: (ms, s) => clock.wait(ms, s) }),
     audio: o.audio ?? { play: () => {} },
     me,
     role: me === null ? 'spectator' : 'player',
     view: () => v,
-    map: null,
+    map: o.map ?? null,
     names: makeNames({ t: tx, view: () => v, map: () => null }),
     t: tx,
     ...(o.speed !== undefined ? { animSpeed: () => o.speed! } : {}),
@@ -368,11 +376,11 @@ describe('M6 神明与关押', () => {
     expect(a.stage.find((c) => c[0] === 'bubble')?.[2]).toBe('出国 3 天');
   });
 
-  it('CONFINED / RELEASED：警车开走后、出狱演出前立即同步关押外观（不等事件结束）', async () => {
+  it('CONFINED：警车开走后立即同步（人在监狱里、不画），不等事件结束；已经关着（加刑）不再派警车', async () => {
     const st = { ...view.players[1]!.st, jail: 5 };
     const post = { players: [{ seat: 1 as SeatIndex, set: { st, node: 14 } }] };
     const cause = { k: 'card', ref: 17, by: 0 } as const;
-    const j = await run({
+    const e = {
       type: 'CONFINED',
       actor: { t: 'seat', seat: 1 },
       where: 'jail',
@@ -380,32 +388,105 @@ describe('M6 神明与关押', () => {
       total: 5,
       cause,
       post,
-    } as GameEventOf<'CONFINED'>);
+    } as GameEventOf<'CONFINED'>;
+    const jailOf = (v: GameView) => v.players[1]!.st.jail;
+    const j = await run(e, { onSync: jailOf });
     const seq = names(j.stage);
-    // 事件前、警车之后、事件后各一次
+    // 事件前（还没关）、警车之后（已关）、事件后各一次
     expect(seq.indexOf('escort')).toBeGreaterThan(0);
+    expect(j.stage.filter((c) => c[0] === 'syncWorld').map((c) => c[1])).toEqual([0, 5, 5]);
     expect(seq.slice(seq.indexOf('escort')).filter((n) => n === 'syncWorld')).toHaveLength(2);
-    // 获释不换节点（原版 0x40d184）：post 里没有 node，棋子留在关押格 14，不重新摆放
-    const free = { players: [{ seat: 1 as SeatIndex, set: { st: { ...st, jail: 0 }, returning: true } }] };
-    const r = await run({ type: 'RELEASED', actor: { t: 'seat', seat: 1 }, from: 'jail', post: free });
-    const rs = names(r.stage);
-    expect(rs.slice(0, rs.indexOf('release')).filter((n) => n === 'syncWorld')).toHaveLength(2);
-    expect(r.calls.filter((c) => c[0] === 'placeActor')).toEqual([]);
+    // 加刑：原版只加天数、镜头移到景观（0x43c307），没有警车
+    const jailed = {
+      ...view,
+      players: view.players.map((p) => (p.seat === 1 ? { ...p, st: { ...p.st, jail: 2 } } : p)),
+    };
+    const again = await run(e, { v: jailed });
+    expect(names(again.stage)).not.toContain('escort');
+    expect(again.calls).toContainEqual(['focus', { seat: 1 }, 250]);
   });
 
-  it('RELEASED / BAIL：开门闪光', async () => {
-    expect((await run({ type: 'RELEASED', actor: { t: 'seat', seat: 1 }, from: 'jail' })).stage).toContainEqual([
-      'release',
-      1,
-    ]);
+  it('RELEASED（坐牢 / 住院 / 住旅馆）：从建筑走出来，出现那一刻才换掉关押状态；不重新摆放、没有开门闪光', async () => {
+    const jailed = {
+      ...view,
+      players: view.players.map((p) => (p.seat === 1 ? { ...p, st: { ...p.st, jail: 0x80 } } : p)),
+    };
+    // 获释不换节点（原版 0x40d184）：post 里没有 node，棋子留在关押格，不重新摆放
+    const free = {
+      players: [{ seat: 1 as SeatIndex, set: { st: { ...jailed.players[1]!.st, jail: 0 }, returning: true } }],
+    };
+    const jailOf = (v: GameView) => v.players[1]!.st.jail;
+    for (const from of ['jail', 'hospital', 'hotel'] as const) {
+      const r = await run(
+        { type: 'RELEASED', actor: { t: 'seat', seat: 1 }, from, post: free },
+        {
+          v: jailed,
+          onSync: jailOf,
+        },
+      );
+      const rs = names(r.stage);
+      expect(r.stage).toContainEqual(['walkOut', 1, from]);
+      // 走出之前只有事件前的同步（仍在关押）；出现时（onShow）与事件后换成获释
+      const before = r.stage.slice(0, rs.indexOf('walkOut')).filter((c) => c[0] === 'syncWorld');
+      expect(before.map((c) => c[1])).toEqual([0x80]);
+      const after = r.stage.slice(rs.indexOf('walkOut')).filter((c) => c[0] === 'syncWorld');
+      expect(after.length).toBeGreaterThanOrEqual(2);
+      expect(after.every((c) => c[1] === 0)).toBe(true);
+      expect(rs).not.toContain('release');
+      expect(r.calls.filter((c) => c[0] === 'placeActor')).toEqual([]);
+      expect(names(r.calls)).not.toContain('hop');
+    }
+  });
+
+  it('RELEASED（出国回来）/ BAIL：开门闪光；出国回来跳一下', async () => {
+    const away = await run({ type: 'RELEASED', actor: { t: 'seat', seat: 1 }, from: 'away' });
+    expect(away.stage).toContainEqual(['release', 1]);
+    expect(names(away.stage)).not.toContain('walkOut');
+    expect(away.calls).toContainEqual(['hop', 1]);
     const b = await run({ type: 'BAIL', by: 0, seat: 1, cost: 30 });
     expect(b.stage).toContainEqual(['release', 1]);
     expect(b.stage).toContainEqual(['beam', { seat: 0 }, { seat: 1 }, 0xffd84d]);
   });
+
+  it('TURN_STARTED：本回合获释（计数待释放 0x80）的人留在建筑里，等 RELEASED 走出来；其余不留置', async () => {
+    for (const k of ['jail', 'hospital', 'hotel'] as const) {
+      const v = {
+        ...view,
+        players: view.players.map((p) => (p.seat === 1 ? { ...p, st: { ...p.st, [k]: 0x80 } } : p)),
+      };
+      const r = await run({ type: 'TURN_STARTED', actor: { t: 'seat', seat: 1 }, turnNo: 9 }, { v });
+      expect(r.stage, k).toContainEqual(['holdInside', 1]);
+    }
+    const still = {
+      ...view,
+      players: view.players.map((p) => (p.seat === 1 ? { ...p, st: { ...p.st, jail: 3, away: 0x80 } } : p)),
+    };
+    const r = await run({ type: 'TURN_STARTED', actor: { t: 'seat', seat: 1 }, turnNo: 9 }, { v: still });
+    expect(names(r.stage)).not.toContain('holdInside');
+  });
+
+  it('RETURNED：停在格上，不再跳、不冒星光（走出来的那一步在 RELEASED）', async () => {
+    const r = await run({ type: 'RETURNED', seat: 1, node: 14 });
+    expect(r.calls).toContainEqual(['placeActor', 1, 14]);
+    expect(names(r.calls)).not.toContain('hop');
+    expect(names(r.stage)).not.toContain('burst');
+  });
+
+  it('HOTEL_STAY：站在旅馆门前才走进去（前半程看得见）；不在门前的直接不见', async () => {
+    const at = view.players[1]!.node;
+    const map = { def: { tiles: [{ id: at, ref: { lot: 'F1' } }] } } as unknown as PresentationContext['map'];
+    const placed = { ...view, players: view.players.map((p) => (p.seat === 1 ? { ...p, placed: true } : p)) };
+    const e: GameEventOf<'HOTEL_STAY'> = { type: 'HOTEL_STAY', seat: 1, lot: 'F1', days: 2 };
+    const r = await run(e, { v: placed, map });
+    expect(r.stage).toContainEqual(['walkIn', 1, 'F1']);
+    const other = await run({ ...e, lot: 'F2' }, { v: placed, map });
+    expect(names(other.stage)).not.toContain('walkIn');
+    expect(names((await run(e)).stage)).not.toContain('walkIn');
+  });
 });
 
 describe('M7 事件', () => {
-  it('NEWS：分类、打字机标题、按显示态解析的内文与受影响玩家', async () => {
+  it('NEWS：分类、原文标题（按显示态解析人名，数字照原版不带千分位）与受影响玩家', async () => {
     const e: GameEventOf<'NEWS'> = {
       type: 'NEWS',
       id: 8,
@@ -417,18 +498,19 @@ describe('M7 事件', () => {
     const p = r.popups[0];
     expect(p?.kind).toBe('news');
     if (p?.kind !== 'news') return;
-    expect(p.headline).toBe('地产大亨受表扬');
+    const who = tx(`characters:${CHARACTER_KEYS[view.players[1]!.character]}.name`);
+    expect(p.headline).toBe(`公开表扬第一大地主\n${who}获得10000元奖励`);
     expect(p.categoryLabel).toBe('政府公告');
-    expect(p.body).toContain('10,000');
-    expect(p.body).not.toContain('{{');
     expect(p.affected).toHaveLength(1);
     expect(p.affected[0]).toMatchObject({ seat: 1, deltas: [{ field: 'cash', delta: 10000 }] });
+    // 新闻 8 原版只画得奖人的头像，没有逐人行
+    expect(p.affected[0]!.line).toBeUndefined();
   });
 
   it('NEWS：缺参数时模板用中性默认值，不残留占位符', async () => {
     const r = await run({ type: 'NEWS', id: 29, params: {}, affected: [] });
     const p = r.popups[0];
-    expect(p?.kind === 'news' && p.body).toBe('某家公司的董事长 某位玩家 涉嫌违法超贷，被判入狱 几 天。');
+    expect(p?.kind === 'news' && p.headline).toBe('某家公司违法超贷\n经营者某位玩家坐牢５天');
   });
 
   it('FATE：卡片内容、金额、加持结果', async () => {

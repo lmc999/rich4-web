@@ -2,7 +2,7 @@
 // Pixi 容器，位置按格号排成一行（x = 40·格号）；行走、跳一下按动画时钟等待真实时长。配合 fakeFlics 的合成 FLIC 与
 // 真的 OrigFlics / OrigStage，在 node 里测 handler 编排下的时长（budget.test、realEngine 样本）与 FLIC、音效的选择。
 import type { GodKind, RoadObject, SeatIndex, TileId, VillainKind } from '@rich4/shared/engine';
-import { STEP_MS } from '@rich4/shared/view';
+import { STEP_MS, WALK_OUT, walkOutSwitchTick, walkOutTicks } from '@rich4/shared/view';
 import { Container } from 'pixi.js';
 import type { AudioPort } from '../../../../presentation/types';
 import { type ActorStatus, NO_STATUS } from '../../../actors/ActorStatus';
@@ -24,6 +24,13 @@ import type { FakeFlicPack } from './fakeFlics';
 
 export const tilePosOf = (id: TileId): Pt => ({ x: id * 40, y: 200 });
 
+/** 假棋盘的建筑坐标（与格同一坐标系）：监狱、医院景观在格的上方，旅馆在右上方 */
+export const FAKE_INSIDE: Readonly<Record<'jail' | 'hospital' | 'lot', Pt>> = {
+  jail: { x: 40, y: 100 },
+  hospital: { x: 120, y: 100 },
+  lot: { x: 200, y: 120 },
+};
+
 export class FakeActor implements OrigStageActor {
   readonly root = new Container({ label: 'actor' });
   tile: TileId | null;
@@ -31,6 +38,10 @@ export class FakeActor implements OrigStageActor {
   currentStatus: ActorStatus = NO_STATUS;
   god: GodKind | null = null;
   hops = 0;
+  /** 人在建筑里（setInside）；null = 在棋盘上 */
+  inside: Pt | null = null;
+  /** 走出 / 走进建筑的记录（tick 数与换显隐的 tick） */
+  readonly walks: { kind: 'out' | 'in'; ticks: number; switchAt: number }[] = [];
 
   constructor(
     readonly seat: SeatIndex,
@@ -62,6 +73,36 @@ export class FakeActor implements OrigStageActor {
   hop(signal?: AbortSignal): Promise<void> {
     this.hops++;
     return this.clock.wait(HOP_MS, signal);
+  }
+
+  setInside(world: Pt | null): void {
+    this.inside = world ? { ...world } : null;
+  }
+
+  /** 与 OrigActor.walkOut 同一时序：tick 数按距离、过半调 onShow */
+  async walkOut(to: TileId, o: { tickMs: number; signal?: AbortSignal; onShow?: () => void }): Promise<void> {
+    const from = this.inside;
+    this.tile = to;
+    if (!from) {
+      o.onShow?.();
+      return;
+    }
+    const end = tilePosOf(to);
+    const ticks = walkOutTicks(Math.hypot(end.x - from.x, end.y - from.y));
+    const at = walkOutSwitchTick(ticks);
+    this.walks.push({ kind: 'out', ticks, switchAt: at });
+    this.inside = null;
+    await this.clock.wait(at * o.tickMs, o.signal);
+    o.onShow?.();
+    await this.clock.wait((ticks - at) * o.tickMs, o.signal);
+  }
+
+  async walkIn(world: Pt, o: { tickMs: number; signal?: AbortSignal }): Promise<void> {
+    const from = tilePosOf(this.tile ?? 1);
+    const ticks = walkOutTicks(Math.hypot(world.x - from.x, world.y - from.y), WALK_OUT.hotelMaxTicks);
+    this.walks.push({ kind: 'in', ticks, switchAt: walkOutSwitchTick(ticks) });
+    await this.clock.wait(ticks * o.tickMs, o.signal);
+    this.inside = { ...world };
   }
 }
 
@@ -270,6 +311,9 @@ export function createFakeStage(o: FakeStageOptions): FakeStage {
       return { x: 400, y: 120 };
     },
     tilePos: (node) => tilePosOf(node),
+    tileWorld: (node) => tilePosOf(node),
+    insideWorld: (b) => (b.t === 'landmark' ? FAKE_INSIDE[b.kind] : b.t === 'lot' ? FAKE_INSIDE.lot : null),
+    spreadActors: () => {},
     shake: () => {
       out.shakes++;
     },
@@ -277,6 +321,7 @@ export function createFakeStage(o: FakeStageOptions): FakeStage {
     viewCenter: () => ({ x: 300, y: 200 }),
     mapDef: {
       holidays: (o.holidays ?? []).map((h) => ({ month: 1, day: 1, kind: 0, ...h })),
+      tiles: [],
     },
     characterOf: (seat) => (actors.has(seat) ? (o.characters?.[seat] ?? seat) : null),
     spawnDoll: (node) => {

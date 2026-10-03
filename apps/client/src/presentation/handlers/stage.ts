@@ -5,6 +5,7 @@ import type {
   GameEvent,
   GodKind,
   GodManifestEffect,
+  LotId,
   PostPatch,
   RoadObject,
   SeatIndex,
@@ -18,6 +19,16 @@ import type { Anchor, AudioPort, PresentationContext } from '../types';
 
 export type ConfineKind = 'jail' | 'hospital';
 export type ObjectRemoval = 'burst' | 'fade' | 'boom' | 'pickup';
+/** 获释后从哪里走出来：监狱 / 医院景观、旅馆 */
+export type WalkOutFrom = 'jail' | 'hospital' | 'hotel';
+
+/** 走出 / 走进建筑的参数 */
+export interface WalkOutOptions {
+  /** 原版 tick（ms，当前演出节奏的 DICE_TIMING.throwTickMs；原版皮肤按它匀速走，程序化按自己的步长） */
+  tickMs: number;
+  /** 走出：棋子出现的那一刻（handler 在这时把关押状态换成获释后的显示态）；中止或找不到建筑时也会调用 */
+  onShow?: () => void;
+}
 
 /** 事件开始时交给舞台的上下文（原版皮肤 A8：FLIC 的可用时长与同步音效） */
 export interface StageEventContext {
@@ -70,9 +81,22 @@ export interface StagePort {
   dogBite(seat: SeatIndex, node: TileId, knocked: boolean, signal: AbortSignal): Promise<void>;
 
   // 角色
-  /** 救护车 / 警车沿路开来接走（之后角色显示在医院 / 监狱窗口气泡里） */
+  /** 救护车 / 警车沿路开来接走（之后人在医院 / 监狱里，棋子不画，syncWorld 按关押状态给出） */
   escort(seat: SeatIndex, where: ConfineKind, signal: AbortSignal): Promise<void>;
+  /** 开门闪光（保释、出国回来） */
   release(seat: SeatIndex, signal: AbortSignal): Promise<void>;
+  /**
+   * 获释：从医院 / 监狱景观（旅馆）走一步到所在的格（关押格 / 旅馆门前的格），前半程看不见、过半出现（这时调 onShow），
+   * 停在格上（原版 fcn.0040bb40 的 bit4 分支，shared/view/pacing 的 WALK_OUT）
+   */
+  walkOut(seat: SeatIndex, from: WalkOutFrom, o: WalkOutOptions, signal: AbortSignal): Promise<void>;
+  /** 住旅馆：从门前的格走进旅馆，前半程看得见、过半消失（原版 bit5 分支） */
+  walkIn(seat: SeatIndex, lot: LotId, o: WalkOutOptions, signal: AbortSignal): Promise<void>;
+  /**
+   * 本回合获释的人：计数在回合开始（TURN_STARTED 的 post）就清掉了，但要等 RELEASED 才从建筑里走出来——在那之前的同步都让他
+   * 留在建筑里（walkOut 开始时解除）。null 解除全部（批尾整体同步、reset / 跳过时的 clear）
+   */
+  holdInside(seat: SeatIndex | null): void;
   vehicle(seat: SeatIndex, v: Vehicle, signal: AbortSignal): Promise<void>;
   wreck(seat: SeatIndex, v: Vehicle, signal: AbortSignal): Promise<void>;
   bombAttach(seat: SeatIndex, fuse: number, signal: AbortSignal): Promise<void>;
@@ -129,6 +153,12 @@ export const NULL_STAGE: StagePort = {
   dogBite: resolved,
   escort: resolved,
   release: resolved,
+  walkOut: (_seat, _from, o) => {
+    o.onShow?.();
+    return Promise.resolve();
+  },
+  walkIn: resolved,
+  holdInside: noop,
   vehicle: resolved,
   wreck: resolved,
   bombAttach: resolved,
@@ -147,7 +177,7 @@ interface StageHost {
 }
 
 /**
- * 事件中途把舞台外观（关押窗口气泡、figure 显隐等）同步到「提交前显示态 + post」：handler 在演出分段之间需要
+ * 事件中途把舞台外观（人在医院 / 监狱 / 旅馆里、figure 显隐等）同步到「提交前显示态 + post」：handler 在演出分段之间需要
  * 立即反映状态变化时调用（wrapHandler 在事件前后也会各同步一次）。
  */
 export function syncStageTo(ctx: Pick<PresentationContext, 'board' | 'view'>, post: PostPatch | undefined): void {

@@ -1,5 +1,5 @@
-// 新闻快报（design/client.md §5.4 NewsPopup）：电视框，左侧新闻主播（NPC rig），右侧分类标签 + 打字机标题 + 内文，
-// 下方列出受影响玩家的头像与金额变化。
+// 新闻快报（design/client.md §5.4 NewsPopup）：电视框，左侧新闻主播（NPC rig），右侧分类标签 + 打字机标题（原版原文，
+// 可能两行），下方列出受影响玩家的头像与金额变化（税 / 储金红利另写原版的逐人行）。
 import type { ReactNode } from 'react';
 import { useTx } from '../../i18n/tx';
 import { figureUrl } from './figureUrls';
@@ -27,19 +27,15 @@ export function NewsPopup({ spec, ms = 3400 }: { spec: NewsPopupSpec; ms?: numbe
             {typed}
             {!done && <span className={s.caret}>▌</span>}
           </div>
-          {spec.body && (
-            <p className={s.newsBody} data-testid="news-body">
-              {spec.body}
-            </p>
-          )}
         </div>
       </div>
       {spec.affected.length > 0 && (
         <ul className={s.affected} aria-label={t('events:popup.newsAffected')} data-testid="news-affected">
           {spec.affected.map((r) => (
             <li key={r.seat} data-seat={r.seat}>
-              <Person p={r} size={24}>
-                <Deltas deltas={r.deltas} />
+              {/* 税 / 储金红利：原版的逐人行（「<人>繳交<n>元」）代替名字与金额变化 */}
+              <Person p={r.line ? { ...r, name: r.line } : r} size={24}>
+                {!r.line && <Deltas deltas={r.deltas} />}
               </Person>
             </li>
           ))}

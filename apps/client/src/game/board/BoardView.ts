@@ -197,14 +197,26 @@ export class BoardView {
     return this.geometry.toScreen({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
   }
 
-  /** 医院 / 监狱建筑中心的屏幕坐标（关押气泡、救护车 / 警车的目的地）；没有时为 null */
+  /** 医院 / 监狱建筑中心的屏幕坐标（救护车 / 警车的目的地）；没有时为 null */
   landmarkScreenPos(kind: 'hospital' | 'jail'): Pt | null {
+    const c = this.landmarkCell(kind);
+    return c ? this.geometry.toScreen(c) : null;
+  }
+
+  /** 医院 / 监狱建筑中心的逻辑坐标（关押期间人在里面：棋子的画点）；没有时为 null */
+  landmarkCell(kind: 'hospital' | 'jail'): Pt | null {
     for (const v of this.landmarks.values()) {
       if (v.landmark.kind !== kind) continue;
       const r = v.rect;
-      return this.geometry.toScreen({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+      return { x: r.x + r.w / 2, y: r.y + r.h / 2 };
     }
     return null;
+  }
+
+  /** 地块矩形中心的逻辑坐标（住旅馆期间人在里面：棋子的画点）；没有时为 null */
+  lotCell(id: string): Pt | null {
+    const r = this.footprint(id)?.rect;
+    return r ? { x: r.x + r.w / 2, y: r.y + r.h / 2 } : null;
   }
 
   clearLotStates(): void {
@@ -255,7 +267,11 @@ export class BoardView {
   spreadActors(): void {
     const byTile = new Map<TileId, PlayerActor[]>();
     for (const a of this.actors.values()) {
-      if (a.tile === null || a.isWalking) continue;
+      // 看不见本体的（在医院 / 监狱 / 旅馆里、出国、乞丐）不占格子，路过的人不为它错开
+      if (a.tile === null || a.isWalking || a.offBoard) {
+        if (!a.isWalking) a.setOffset({ x: 0, y: 0 });
+        continue;
+      }
       const list = byTile.get(a.tile) ?? [];
       list.push(a);
       byTile.set(a.tile, list);

@@ -1,7 +1,9 @@
 // 生成 zh-TW 语言包（原版皮肤 A5；original-skin.md U5：原版皮肤下界面文字一律繁体）：
 // 读 apps/client/src/i18n/locales/zh-CN/*.json，用 opencc-js（cn → twp：简体 → 台湾正体并换成台湾惯用词）逐条转换，
 // 保护 {{占位符}}，再套 apps/client/src/i18n/zhTw.ts 的词汇覆盖表与键覆盖表，写到 locales/zh-TW/*.json（入库）。
-// 生成物是我们自己文案的繁体转换，不含原版内容。opencc-js 只在构建期使用（tools/extract 的 devDependency，工作区提升到根）。
+// 生成物是 zh-CN 文案的繁体转换；其中命运 / 新闻（fate / news）的 zh-CN 是原版原文经 opencc 转成的简体（2026-10-03 用户要求
+// 用原版短句，architecture §33），转回来与 exe 原文逐字相同（test/fatenews-orig-text.ts 核对）。opencc-js 只在构建期使用
+// （tools/extract 的 devDependency，工作区提升到根）。
 // 用法：npx tsx scripts/gen-zh-tw.ts [--check]（--check 只比对，不一致时退出码 1）
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';

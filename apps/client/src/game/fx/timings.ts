@@ -46,8 +46,13 @@ export const FX_MANIFEST_MS = 900;
 export const FX_BITE_MS = 700;
 /** 救护车 / 警车开来接走 */
 export const FX_ESCORT_MS = 1050;
-/** 出狱 / 出院：开门闪光 */
+/** 开门闪光（保释、出国回来） */
 export const FX_RELEASE_MS = 480;
+/**
+ * 程序化棋盘：获释时从医院 / 监狱 / 旅馆里跳着走出来（住旅馆时走进去）最多跳几下，每下 STEP_MS（建筑中心到门前的格约
+ * 1–2 格）。原版皮肤按原版 tick 匀速走（shared/view/pacing 的 WALK_OUT）
+ */
+export const WALK_OUT_HOPS_MAX = 3;
 /** 换乘交通工具 */
 export const FX_VEHICLE_MS = 450;
 /** 车毁 */

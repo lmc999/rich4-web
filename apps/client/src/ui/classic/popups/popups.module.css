@@ -71,21 +71,13 @@
   pointer-events: none;
 }
 
-.affected {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 12px;
-  margin: 4px 0 0;
+/* 新闻板逐人列出的受影响玩家：整块板面大小的定位层，行与头像按原版坐标绝对定位 */
+.list {
+  position: absolute;
+  margin: 0;
   padding: 0;
   list-style: none;
-}
-
-.gain {
-  color: #9fe39a;
-}
-
-.loss {
-  color: #ff9a8a;
+  pointer-events: none;
 }
 
 /* 转盘 / 老虎机 / 月结：纯演出层 */

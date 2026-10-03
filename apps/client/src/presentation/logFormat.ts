@@ -1,7 +1,7 @@
 // 事件 → 中文日志行（design/client.md §2 logFormat）。对 GameEvent['type'] 穷举；返回 null 表示不记日志。
 // 文案模板在 i18n events:log.<TYPE>，参数里的名字、金额已经格式化。
 import type { GameEvent, GameEventOf, GameEventType } from '@rich4/shared/engine';
-import { fateShown, fateTitle, magicEffectName, newsBody, newsHeadline, villainActionText } from './eventText';
+import { fateShown, fateTitle, magicEffectName, newsHeadline, oneLine, villainActionText } from './eventText';
 import type { NameKit } from './names';
 
 type Fmt<T extends GameEventType> = (e: GameEventOf<T>, n: NameKit) => string | null;
@@ -133,13 +133,13 @@ export const LOG_FORMAT = {
       { who: n.seat(e.seat), n: e.days },
       (e as { reason?: string }).reason === 'sunday' ? 'sunday' : undefined,
     ),
-  NEWS: (e, n) => L(n, 'NEWS', { text: newsHeadline(n, e.id, e.params), body: newsBody(n, e.id, e.params) }),
+  NEWS: (e, n) => L(n, 'NEWS', { text: oneLine(newsHeadline(n, e.id, e.params)) }),
   FATE: (e, n) => {
     const shown = fateShown(n, e);
     return L(n, 'FATE', {
       who: n.seat(e.seat),
       title: fateTitle(n, e.id),
-      text: shown.text,
+      text: oneLine(shown.text),
     });
   },
   MAGIC_CONDITION: (e, n) =>

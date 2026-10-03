@@ -1,6 +1,6 @@
 // 测试用舞台（只在单测里使用）：记录调用；timed 模式下每个阻塞方法按 timings.ts 的常数在给定时钟上等待，
 // 用来在假时钟下测 handler 的真实时长（handlers/budget.test.ts）。
-import { STEP_MS } from '@rich4/shared/view';
+import { STEP_MS, WALK_OUT, walkOutSwitchTick } from '@rich4/shared/view';
 import type { AnimClock } from '../../game/anim/AnimClock';
 import {
   FX_BEAM_MS,
@@ -27,8 +27,9 @@ import {
   FX_TELEPORT_MS,
   FX_VEHICLE_MS,
   FX_WRECK_MS,
+  WALK_OUT_HOPS_MAX,
 } from '../../game/fx/timings';
-import type { StagePort } from './stage';
+import type { StagePort, WalkOutOptions } from './stage';
 
 export type StageCall = [string, ...unknown[]];
 
@@ -75,6 +76,22 @@ export function recordingStage(calls: StageCall[], clock?: AnimClock): StagePort
     dogBite: rec('dogBite', FX_BITE_MS),
     escort: rec('escort', FX_ESCORT_MS),
     release: rec('release', FX_RELEASE_MS),
+    // 走出建筑：按两种皮肤里较长的一种（原版皮肤最远的 tick 数 × tick，程序化最多跳 WALK_OUT_HOPS_MAX 下），过半时 onShow
+    walkOut: async (seat, from, o, signal) => {
+      calls.push(['walkOut', seat, from]);
+      const ticks = from === 'hotel' ? WALK_OUT.hotelMaxTicks : WALK_OUT.maxTicks;
+      const total = Math.max(ticks * o.tickMs, WALK_OUT_HOPS_MAX * STEP_MS);
+      const at = Math.min(total, walkOutSwitchTick(ticks) * o.tickMs);
+      if (clock && at > 0) await clock.wait(at, signal);
+      o.onShow?.();
+      if (clock && total > at) await clock.wait(total - at, signal);
+    },
+    holdInside: sync('holdInside'),
+    walkIn: (seat, lot, o: WalkOutOptions, signal) => {
+      calls.push(['walkIn', seat, lot]);
+      const total = Math.max(WALK_OUT.hotelMaxTicks * o.tickMs, WALK_OUT_HOPS_MAX * STEP_MS);
+      return clock ? clock.wait(total, signal) : Promise.resolve();
+    },
     vehicle: rec('vehicle', FX_VEHICLE_MS),
     wreck: rec('wreck', FX_WRECK_MS),
     bombAttach: rec('bombAttach', FX_BOMB_ATTACH_MS),

@@ -84,7 +84,9 @@ export class BoardController {
       if (a.root.visible) a.settleAt(p.node);
     }
     this.board.spreadActors();
-    // 舞台（路面物件 / 神明 / 恶人 / 状态外观）随显示态一起同步：reset、快照、instant 模式与 TIME_REWOUND 之后立即追上
+    // 舞台（路面物件 / 神明 / 恶人 / 状态外观）随显示态一起同步：reset、快照、instant 模式与 TIME_REWOUND 之后立即追上；
+    // 批尾 / 快照：本回合获释的留置一律解除（演出都已播完或被跳过）
+    this.stage?.holdInside(null);
     this.stage?.syncWorld(view);
   }
 

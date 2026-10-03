@@ -5,9 +5,9 @@
 //    ClassicLotteryDraw（venues/a）。每个弹窗按素材判定一次：
 //    所需逻辑键全部就绪（sceneKeysStatus = ready）才用原版画面，否则整个弹窗用程序化版本（legacy），不半原版半程序化；
 //    挂载时把这个判定登记给 handler（popupStore.opensClassic：原版亮卡不叠网页版的气泡、粒子与光束），正以原版画面显示的
-//    弹窗记在 popupStore.classicShown（原版亮卡期间缺省位置的 toast 暂缓）；亮卡与命运板照原版任意鼠标键 / 按键放开就结束
-//    （anyInputSkips；原版亮卡 fcn.00450f9a、命运板 fcn.00452c39 都没有最短时间）；新闻板、命运板盖着工具列，板面上接住
-//    指针、暂停经典快捷键（boardShield），点板子不会点到下面看不见的工具列钮；
+//    弹窗记在 popupStore.classicShown（原版亮卡期间缺省位置的 toast 暂缓）；亮卡、新闻板与命运板照原版任意鼠标键 / 按键
+//    放开就结束（anyInputSkips；原版亮卡 fcn.00450f9a、新闻板与命运板 fcn.00452c39 都没有最短时间，DEV-35）；新闻板、
+//    命运板盖着工具列，板面上接住指针、暂停经典快捷键（boardShield），点板子不会点到下面看不见的工具列钮；
 // 2) 事件后演出：轮盘、月结颁奖（./eventPopups，监听显示态日志）；
 // 3) 工具列打开的原版界面：资产表（工具列「查询」→ uiStore 打开 info 面板时改开原版资产表）、托管设置
 //    （openTrusteeSettings → 改开原版托管对话框）、存读档（工具列 LOAD / SAVE 经 ./screenRequests 请求 → 原版风格的 Data#479 窗）。
@@ -156,7 +156,7 @@ export function classicPopupReady(p: PopupSpec): boolean {
 function ClassicPopupBody({ p }: { p: OpenPopup }): ReactNode {
   switch (p.kind) {
     case 'news':
-      return <NewsBoard spec={p} ms={p.realMs} />;
+      return <NewsBoard spec={p} />;
     case 'god':
       return <GodPopup spec={p} ms={p.realMs} />;
     case 'cardCast':
@@ -241,7 +241,7 @@ function PopupSwitch({ p, legacy }: { p: OpenPopup; legacy: LegacyPopup }): Reac
       label={title}
       minMs={p.minMs}
       onSkip={() => usePopupStore.getState().skip(p.popupId)}
-      anyInputSkips={p.kind === 'cardCast' || p.kind === 'fate'}
+      anyInputSkips={p.kind === 'cardCast' || p.kind === 'fate' || p.kind === 'news'}
       shield={boardShield(p)}
       backdrop={p.kind === 'gameOver' ? 'opaque' : 'none'}
     >

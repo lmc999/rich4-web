@@ -1,5 +1,6 @@
 // 回合与移动类事件演出（design/client.md §4.5）：回合横幅 + 镜头飞向玩家、跳伞、骰子、逐格行走（镜头跟随）、
 // 四大恶人的棋子行走、撞上路障、回到棋盘。出狱 / 出院（RELEASED）见 status.ts。
+import { ECON } from '@rich4/shared/data';
 import { DICE_TIMING } from '@rich4/shared/view';
 import { DICE_KNOCK } from '../soundMap';
 import type { EventHandler } from '../types';
@@ -29,6 +30,12 @@ export const TURN_STARTED: EventHandler<'TURN_STARTED'> = async (e, ctx) => {
     return;
   }
   const seat = e.actor.seat;
+  // 本回合获释（坐牢 / 住院 / 住旅馆的计数是待释放 0x80）：计数在这个事件的 post 里就清掉了，但人要等 RELEASED 才从建筑里
+  // 走出来（原版获释后当回合才走出来、过半才画出来），在那之前留在建筑里
+  const p = ctx.view().players.find((x) => x.seat === seat);
+  if (p && (['jail', 'hospital', 'hotel'] as const).some((k) => p.st[k] === ECON.COUNTER_PENDING)) {
+    stageOf(ctx).holdInside(seat);
+  }
   ctx.board.follow(seat);
   const who = ctx.names.seat(seat);
   const title = ctx.me === seat ? ctx.t('events:show.turnYou') : ctx.t('events:show.turn', { who });
@@ -62,12 +69,14 @@ export const TURN_BLOCKED: EventHandler<'TURN_BLOCKED'> = async (e, ctx) => {
   ctx.board.setActorPose(e.seat, 'idle');
 };
 
+/**
+ * 走回棋盘（获释的那一回合，不掷骰）：人已经在 RELEASED 里从建筑走到格上（消失的在那里跳过一下），这里只确认停在格上、
+ * 稍停一下。原版走出这一步后回合就结束了，没有别的演出（exe v2.06 fcn.0040d7e5 只走 1 步、不触发落点事件）
+ */
 export const RETURNED: EventHandler<'RETURNED'> = async (e, ctx) => {
   ctx.board.placeActor(e.seat, e.node);
   ctx.board.setActorPose(e.seat, 'idle');
-  stageOf(ctx).burst({ seat: e.seat }, 0xfff3b0, 10);
-  await ctx.board.hop(e.seat, ctx.signal);
-  await ctx.wait(300);
+  await ctx.wait(200);
 };
 
 export const TURN_ENDED: EventHandler<'TURN_ENDED'> = async () => {};

@@ -135,7 +135,7 @@ describe('M6/M7 特效与舞台（Chromium + WebGL）', () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 
-  it('整合：syncView 同步舞台（无需事件）；头顶聊天气泡跟随角色、按时消失；关押时窗口气泡画在建筑之上', async () => {
+  it('整合：syncView 同步舞台（无需事件）；头顶聊天气泡跟随角色、按时消失；关押期间人在建筑里、棋子不画', async () => {
     const { ctrl, view } = await setup();
     // BoardController.stage 与 fx.stageFor 是同一个舞台；syncView 末尾同步路面物件
     expect(ctrl.stage).toBe(ctrl.fx.stageFor(ctrl));
@@ -157,14 +157,63 @@ describe('M6/M7 特效与舞台（Chromium + WebGL）', () => {
     expect(actor.root.children.some((c) => c.label === 'speech')).toBe(false);
 
     const z0 = actor.root.zIndex;
+    const onTile = actor.screenPos();
     const jailed: GameView = {
       ...view,
       players: view.players.map((p) => (p.seat === seat ? { ...p, st: { ...p.st, jail: 3 } } : p)),
     };
     ctrl.syncView(jailed);
-    expect(actor.root.children.some((c) => String(c.label).startsWith('confine:'))).toBe(true);
-    expect(actor.root.zIndex).toBeGreaterThan(z0 + 100_000);
+    // 原版关押期间不画棋子：整个棋子（人物、头顶挂件、影子、名牌）不画，画点在监狱上，没有窗口气泡
+    expect(actor.insideBuilding).toBe(true);
+    for (const c of actor.root.children) expect(c.visible && c.label !== 'speech', String(c.label)).toBe(false);
+    expect(actor.root.children.some((c) => String(c.label).startsWith('confine:'))).toBe(false);
+    expect(actor.screenPos()).toEqual(ctrl.renderer.board.landmarkScreenPos('jail'));
     ctrl.syncView(view);
+    expect(actor.insideBuilding).toBe(false);
+    expect(actor.screenPos()).toEqual(onTile);
     expect(actor.root.zIndex).toBe(z0);
+  });
+
+  it('获释：从监狱跳着走到所在的格，前半程看不见、过半出现（onShow），停在格上；住旅馆走进去后看不见', async () => {
+    const { clock, ctrl, view } = await setup();
+    const stage = ctrl.stage as BoardStage;
+    ctrl.syncView(view);
+    const seat = view.players.find((p) => p.placed && p.node > 0 && p.st.jail === 0 && p.st.hospital === 0)!.seat;
+    const actor = ctrl.renderer.board.actor(seat)!;
+    const node = actor.tile!;
+    const onTile = actor.screenPos();
+    const jailed: GameView = {
+      ...view,
+      players: view.players.map((p) => (p.seat === seat ? { ...p, st: { ...p.st, jail: 0x80 } } : p)),
+    };
+    ctrl.syncView(jailed);
+    const figure = actor.root.getChildByLabel('figure', true)!;
+    expect(figure.visible).toBe(false);
+    const seen: boolean[] = [];
+    let shown = -1;
+    const off = clock.onFrame(() => seen.push(figure.visible));
+    await drive(
+      clock,
+      stage.walkOut(
+        seat,
+        'jail',
+        {
+          tickMs: 80,
+          onShow: () => {
+            shown = seen.length;
+          },
+        },
+        new AbortController().signal,
+      ),
+    );
+    off();
+    expect(seen[0]).toBe(false);
+    expect(seen.at(-1)).toBe(true);
+    expect(shown).toBeGreaterThan(0);
+    expect(seen.slice(0, shown).every((v) => !v)).toBe(true);
+    expect(actor.tile).toBe(node);
+    expect(actor.screenPos()).toEqual(onTile);
+    expect(actor.insideBuilding).toBe(false);
+    expect(consoleError).not.toHaveBeenCalled();
   });
 });

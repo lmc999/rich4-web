@@ -1,7 +1,8 @@
 // zh-TW 语言包管线的核心（纯函数；opencc 由调用方注入）：scripts/gen-zh-tw.ts 用 opencc-js 的 cn → twp
 // （简体 → 台湾正体，含台湾惯用词）把 locales/zh-CN/*.json 转成 locales/zh-TW/*.json 并入库；
 // 转换时保护插值占位符 {{x}}，转换后先套「词汇覆盖表」修正台湾用语差异，再套「键覆盖表」逐条改写。
-// 生成物是我们自己文案的繁体转换，可以入库（original-skin.md U5：原版皮肤下界面文字一律繁体）。
+// 生成物可以入库（original-skin.md U5：原版皮肤下界面文字一律繁体）；命运 / 新闻的 zh-CN 是原版原文转成的简体，转回来须与
+// 原文逐字相同（键覆盖表补 opencc 的个别差异，architecture §33）。
 
 export type TextConverter = (s: string) => string;
 
@@ -33,8 +34,17 @@ export const ZH_TW_PHRASES: readonly (readonly [string, string])[] = [
   ['托管', '託管'],
 ];
 
-/** 键覆盖表：`<命名空间>:<键路径>` → 整条文案（opencc 与词汇表都处理不好的个别条目） */
-export const ZH_TW_KEY_OVERRIDES: Readonly<Record<string, string>> = {};
+/**
+ * 键覆盖表：`<命名空间>:<键路径>` → 整条文案（opencc 与词汇表都处理不好的个别条目）。
+ * 命运 / 新闻是原版原文（zh-CN 由原文经 opencc tw → cn 得来，再转回繁体须与原文逐字相同，test/fatenews-orig-text.ts
+ * 核对）：twp 把「电线杆」「污水」转成「電線杆」「汙水」，原文是「電線桿」「污水」。
+ */
+export const ZH_TW_KEY_OVERRIDES: Readonly<Record<string, string>> = {
+  // @source exe v2.06 0x463ab4（命运 11 的格式串，#0196）
+  'fate:11.text': '汽車撞電線桿全毀',
+  // @source exe v2.06 0x463833（新闻 30 的格式串，#0179）
+  'news:30.headline': '{{company}}工廠排放污水\n罰款10000元',
+};
 
 /** 插值占位符（{{x}}、{{x, format}}） */
 const PLACEHOLDER_RE = /(\{\{[^{}]*\}\})/g;

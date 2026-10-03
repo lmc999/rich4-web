@@ -140,6 +140,7 @@
   font-family: var(--font-title);
   font-size: 24px;
   line-height: 1.25;
+  white-space: pre-line;
   color: var(--c-white);
   text-shadow:
     0 2px 0 var(--c-ink),
@@ -153,15 +154,6 @@
   display: inline-block;
   width: 0.5em;
   animation: blink 0.7s steps(1) infinite;
-}
-
-.newsBody {
-  margin: 0;
-  padding: var(--space-2);
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--c-ink);
-  border-radius: 8px;
-  font-size: 14px;
 }
 
 .affected {
@@ -254,6 +246,7 @@
 .fateText {
   margin: 0;
   font-size: 15px;
+  white-space: pre-line;
 }
 
 .amount {

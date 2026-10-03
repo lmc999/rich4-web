@@ -1,13 +1,23 @@
-// 事件格演出（design/client.md §4.5、§5.4）：新闻（NewsPopup：主播 + 打字机标题 + 受影响玩家）、命运（FatePopup 卡片翻面；
-// 原版皮肤是原版命运板 + 插图）、魔法屋（女巫挥杖 + 魔法阵 + 结果条）、四大恶人（雇用、作案、回家）、乞丐施舍。
-// 新闻、命运文案按编号取自 i18n（news / fate，自拟概括扩写，不照抄原版）；插值参数与命运的金额含义见 ../eventText。
+// 事件格演出（design/client.md §4.5、§5.4）：新闻（NewsPopup：主播 + 打字机标题 + 受影响玩家；原版皮肤是原版新闻板）、
+// 命运（FatePopup 卡片翻面；原版皮肤是原版命运板 + 插图）、魔法屋（女巫挥杖 + 魔法阵 + 结果条）、四大恶人（雇用、作案、
+// 回家）、乞丐施舍。新闻、命运文案按编号取自 i18n（news / fate：原版原文，zh-TW 为 exe 格式串、zh-CN 由 opencc 转成）；
+// 插值参数与命运的金额含义见 ../eventText。
+// 新闻的节拍按房间节奏取 shared/view/pacing 的 newsShowMs（original 照原版新闻板 fcn.0044a173：停到语音播完、不足
+// 2.4 秒补足，任意键跳过并停掉语音，之后没有停顿；compact 3.4 秒）。
 // 命运的节拍按房间节奏取 shared/view/pacing 的 fateShowMs（original 照原版命运板 fcn.0044c4a0：板子停到语音播完、不足
 // 1.6 秒补足 → 效果与加持消息框 1.5 秒 → 停 0.8 秒；compact 沿用 2.25 秒），服务器按同一张表算截止时间；板子之后是
 // 重画地图还是留着板子，按各条命运的处理函数（FATE_AFTER_BOARD）。
 import { NEWS_TABLE } from '@rich4/shared/data';
-import type { PostPatch, SeatIndex, VillainKind } from '@rich4/shared/engine';
-import { fateShowMs } from '@rich4/shared/view';
 import {
+  type GameEventOf,
+  newsRowAmount,
+  type PostPatch,
+  type SeatIndex,
+  type VillainKind,
+} from '@rich4/shared/engine';
+import { fateShowMs, newsShowMs } from '@rich4/shared/view';
+import {
+  type AffectedRow,
   type FatePopupSpec,
   type MagicPopupSpec,
   type NewsPopupSpec,
@@ -19,13 +29,13 @@ import {
   fateTitle,
   fateVariantSlot,
   magicEffectName,
-  newsBody,
   newsCategory,
   newsHeadline,
+  newsRowLine,
   villainActionText,
 } from '../eventText';
 import { formatEvent } from '../logFormat';
-import { FATE_FLIP_SFX } from '../soundMap';
+import { FATE_FLIP_SFX, NEWS_STING_SFX } from '../soundMap';
 import type { EventHandler, PresentationContext } from '../types';
 import { currentPacing } from './budget';
 import { showAllDeltas, syncFromPost } from './common';
@@ -33,12 +43,11 @@ import { affectedRows, playerRef, showPopup } from './popups';
 import { stageOf } from './stage';
 import { blessingText } from './status';
 
-/** 新闻分类（exe newsCategories；0 奇闻、1 政府公告、2 社会、3 路况、4 气象、5 财经），取自 shared 新闻表 */
+/** 新闻分类（exe 0x473cd8；0 無責任新聞、1 政府公告、2 社會新聞、3 路況報導、4 氣象報導、5 財經新聞），取自 shared 新闻表 */
 export const NEWS_CATEGORY: readonly number[] = NEWS_TABLE.map((d) => d.category);
 
 export { newsCategory };
 
-export const NEWS_POPUP_MS = 3400;
 /** compact 节奏的命运弹窗时长（original 节奏见 shared/view/pacing 的 FATE_SHOW） */
 export const FATE_POPUP_MS = 2250;
 export const MAGIC_COND_POPUP_MS = 1500;
@@ -71,6 +80,28 @@ export function postShowsEffect(post: PostPatch | undefined): boolean {
   return [post.players, post.lands, post.facilities, post.companies, post.stocks].some((x) => (x?.length ?? 0) > 0);
 }
 
+/**
+ * 受影响玩家（原版新闻板参数 0 分支逐人列出的那些）：新闻 11–13 税、23 储金红利另带原版的逐人行「<人>繳交<n>元」，
+ * 金额按公布时的显示态算（selectors.newsRowAmount，与引擎同一公式；税在 NEWS 之后才逐人收，NEWS 的 post 里还没有）
+ */
+function newsAffected(ctx: PresentationContext, e: GameEventOf<'NEWS'>): AffectedRow[] {
+  const rows = affectedRows(ctx, e, e.affected);
+  const map = ctx.map;
+  if (!map) return rows;
+  const view = ctx.view();
+  return rows.map((r) => {
+    if (!e.affected.includes(r.seat)) return r;
+    const amount = newsRowAmount(view, map, e.id, r.seat);
+    const line = amount === null ? null : newsRowLine(ctx.names, e.id, r.name, amount);
+    return line === null ? r : { ...r, line };
+  });
+}
+
+/**
+ * 新闻：原版皮肤（新闻板就绪，popupStore.opensClassic）照原版新闻板停 holdMs（语音 ≥ 2.4 秒），任意键跳过、连语音一起停，
+ * 没有网页版的跳过钮与最短时间（fcn.00452c39）；原版新闻板没有音效，只有语音。程序化弹窗：提示音 + 打字机标题，
+ * 最短 1.5 秒后可点跳过。之后同步显示态、飘字。
+ */
 export const NEWS: EventHandler<'NEWS'> = async (e, ctx) => {
   const category = newsCategory(e.id);
   const spec: NewsPopupSpec = {
@@ -79,13 +110,16 @@ export const NEWS: EventHandler<'NEWS'> = async (e, ctx) => {
     category,
     categoryLabel: ctx.t(`news:category.${category}`),
     headline: newsHeadline(ctx.names, e.id, e.params),
-    body: newsBody(ctx.names, e.id, e.params),
-    affected: affectedRows(ctx, e, e.affected),
+    affected: newsAffected(ctx, e),
   };
-  await showPopup(ctx, spec, NEWS_POPUP_MS, 1500);
+  const t = newsShowMs(e.id, currentPacing());
+  const classic = opensClassic(spec);
+  if (!classic) ctx.audio.cue?.(NEWS_STING_SFX);
+  const skipped = await showPopup(ctx, spec, t.holdMs, classic ? 0 : Math.min(1500, t.holdMs));
+  if (skipped && classic) ctx.audio.stopVoice?.();
   syncFromPost(ctx, e.post);
   showAllDeltas(ctx, e);
-  await ctx.wait(200);
+  await ctx.wait(t.endMs);
 };
 
 /**
@@ -118,6 +152,7 @@ export const FATE: EventHandler<'FATE'> = async (e, ctx) => {
         phase: 'board',
         title: fateTitle(ctx.names, e.id),
         text: shown.text,
+        textAmount: shown.textAmount,
         amountText: shown.amountText,
         amountTone: shown.amountTone,
         tone: shown.tone,

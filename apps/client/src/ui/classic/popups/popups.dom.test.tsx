@@ -86,9 +86,8 @@ const news: NewsPopupSpec = {
   id: 11,
   category: 1,
   categoryLabel: '政府公告',
-  headline: '所得税',
-  body: '全员缴纳现金的 5%。',
-  affected: [{ ...player, deltas: [{ field: 'cash', delta: -500 }] }],
+  headline: '所有人缴交所得税５％',
+  affected: [{ ...player, deltas: [], line: '孙小美缴交500元' }],
 };
 
 const fate: FatePopupSpec = {
@@ -96,7 +95,8 @@ const fate: FatePopupSpec = {
   player,
   id: 25,
   title: '继承遗产',
-  text: '远房亲戚留给你一笔遗产。',
+  text: '意外获得遗产10000元',
+  textAmount: '10000',
   amountText: '+10,000',
   tone: 'good',
   blessingText: null,
@@ -160,7 +160,7 @@ describe('演出弹窗：原版 / 程序化逐个判定', () => {
     expect(classicPopupReady(magic)).toBe(true);
   });
 
-  it('新闻：原版新闻板（data-news、插图框、打字机标题、受影响玩家），根元素 testid=popup 与 data-kind', () => {
+  it('新闻：原版新闻板（data-news、插图框、原文标题、逐人行），根元素 testid=popup 与 data-kind', () => {
     const p = open(news);
     render(<Host current={p} />);
     const scene = screen.getByTestId('popup');
@@ -169,8 +169,8 @@ describe('演出弹窗：原版 / 程序化逐个判定', () => {
     const board = within(scene).getByTestId('news-popup');
     expect(board).toHaveAttribute('data-news', '11');
     expect(board.querySelector('[data-sprite="ui.newsBoard/0"]')).not.toBeNull();
-    expect(within(board).getByTestId('news-headline')).toHaveTextContent('所得税');
-    expect(within(board).getByTestId('news-affected')).toHaveTextContent('孙小美');
+    expect(within(board).getByTestId('news-headline')).toHaveTextContent('所有人缴交所得税５％');
+    expect(within(board).getByTestId('news-affected')).toHaveTextContent('孙小美缴交500元');
     expect(screen.queryByTestId('legacy-popup')).toBeNull();
   });
 
@@ -476,8 +476,8 @@ describe('亮卡：卡片 id → 素材键 card.<k> → Data#(529+k) 的插画�
     }
   });
 
-  it('其他原版演出弹窗照旧：最短时间之后出现跳过钮，页面上的点击不跳过', async () => {
-    const p = open(news, 1000);
+  it('其他原版演出弹窗照旧（新闻板、命运板、亮卡之外，例如神明老虎机）：最短时间之后出现跳过钮，页面上的点击不跳过', async () => {
+    const p = open(god, 1000);
     const onSkip = vi.fn();
     const off = onPopupSkip(p.popupId, onSkip);
     vi.useFakeTimers();

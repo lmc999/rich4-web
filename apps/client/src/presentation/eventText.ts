@@ -1,9 +1,13 @@
 // 新闻、命运、魔法屋、恶人的文案参数（日志行与演出弹窗共用；M7 真实引擎载荷对齐）：
+// - 新闻、命运的文案是原版原文（i18n news / fate：zh-TW 为 exe v2.06 各处理函数参数 0 分支的格式串，zh-CN 由它经
+//   opencc 转成简体；原版格式串的 %s / %d 换成同位置的 {{占位符}}，见 test/fatenews-orig-text.ts）。数字照原版 sprintf
+//   的 %d 写成不带千分位的整数。
 // - 新闻：引擎 NEWS.params 只给 id / 数值（lot / company → 地块 id，stock → 股票下标，seat → 座位，
-//   amount / fine / gain / loss → 元，days / pct → 数字），这里解析成名字与千分位金额；缺失的常用键给中性默认值，
-//   模板里不会残留 {{…}}。
+//   amount / fine / gain / loss → 元，days / pct → 数字），这里解析成名字与金额；缺失的常用键给中性默认值，
+//   模板里不会残留 {{…}}。新闻 11–13、23 的逐人行（「<人>繳交<n>元」）金额按公布时的显示态算（selectors.newsRowAmount）。
 // - 命运：FATE 事件只带 {seat, id, amount, blessing}；天数、百分比、金额的含义（补偿 / 罚金 / 贷款 / 点券）
-//   与加持类别读 shared 的命运表（data/tables/fate.ts，与引擎同一份），不在客户端另记一份。
+//   与加持类别读 shared 的命运表（data/tables/fate.ts，与引擎同一份），不在客户端另记一份。命运板上的数是加持之前的
+//   （原版先 sprintf 再判加持；事件金额在罚金 / 冒贷 low、奖金 high 时已经加倍）。
 import {
   type BlessingClass,
   type FateEffect,
@@ -27,14 +31,19 @@ import type { NameKit } from './names';
 
 // ───────────────────────── 新闻 ─────────────────────────
 
-/** 新闻分类（exe newsCategories：0 奇闻、1 政府公告、2 社会、3 路况、4 气象、5 财经），读 shared 新闻表 */
+/** 新闻分类（exe 0x473cd8 字节表；名称表 0x473cfc：0 無責任新聞、1 政府公告、2 社會新聞、3 路況報導、4 氣象報導、5 財經新聞），读 shared 新闻表 */
 export function newsCategory(id: NewsId): NewsCategory {
   return newsDef(id).category;
 }
 
+/** 原版 sprintf 的 %d：不带千分位的整数 */
+export function origInt(v: number): string {
+  return String(Math.trunc(v));
+}
+
 /**
- * 文案插值参数：lot / company → 地块名，stock → 股票名，seat / who → 人名（统一写到 who），tile / node → 格名（写到 tile），
- * amount / price / fine / reward / subsidy / loan / gain / loss → 千分位金额；其余原样。
+ * 文案插值参数：lot / company → 地块原名（不加同名序号），stock → 股票名，seat / who → 人名（统一写到 who），tile / node → 格名（写到 tile），
+ * amount / price / fine / reward / subsidy / loan / gain / loss → 金额（原版 %d，不带千分位）；其余原样。
  */
 export function eventTextParams(n: NameKit, params: EventParams | null | undefined): Record<string, unknown> {
   const out: Record<string, unknown> = {
@@ -55,7 +64,8 @@ export function eventTextParams(n: NameKit, params: EventParams | null | undefin
     switch (k) {
       case 'lot':
       case 'company':
-        out[k] = typeof v === 'string' ? n.lot(v as LotId) : v;
+        // 原文的 %s 是地产 / 企业记录里的名字（不加我们为同名地块编的序号）
+        out[k] = typeof v === 'string' ? (n.lotName?.(v as LotId) ?? n.lot(v as LotId)) : v;
         break;
       case 'stock':
         out[k] = typeof v === 'number' ? n.stock(v) : v;
@@ -76,7 +86,7 @@ export function eventTextParams(n: NameKit, params: EventParams | null | undefin
       case 'loan':
       case 'gain':
       case 'loss':
-        out[k] = typeof v === 'number' ? n.money(v) : v;
+        out[k] = typeof v === 'number' ? origInt(v) : v;
         break;
       default:
         out[k] = v;
@@ -89,8 +99,18 @@ export function newsHeadline(n: NameKit, id: NewsId, params: EventParams | null 
   return n.t(`news:${id}.headline`, { ...eventTextParams(n, params), defaultValue: n.t('events:show.news') });
 }
 
-export function newsBody(n: NameKit, id: NewsId, params: EventParams | null | undefined): string {
-  return n.t(`news:${id}.body`, { ...eventTextParams(n, params), defaultValue: '' });
+/**
+ * 新闻板的逐人行（原版只有 11–13 税「%s繳交%d元」0x4635ea、23 储金红利「%s得到%d元」0x46377f；其余新闻没有，返回 null）。
+ * amount：selectors.newsRowAmount 按公布时的显示态算出的金额
+ */
+export function newsRowLine(n: NameKit, id: NewsId, who: string, amount: number): string | null {
+  const line = n.t(`news:${id}.row`, { who, amount: origInt(amount), defaultValue: '' });
+  return line === '' ? null : line;
+}
+
+/** 日志里的一行：原文的换行换成空格 */
+export function oneLine(text: string): string {
+  return text.replace(/\s*\n\s*/g, ' ');
 }
 
 // ───────────────────────── 命运 ─────────────────────────
@@ -163,18 +183,35 @@ export interface FateShown {
   tone: FateTone;
   /** 加持类别（null：这张命运不查加持） */
   category: BlessingClass | null;
-  /** 文案参数：who / amount / days / pct（已格式化） */
+  /** 原文的插值参数：who / amount / days / pct（命运板上的数：加持之前的金额与天数，金额为不带千分位的整数） */
   params: Record<string, unknown>;
-  /** 正文（按当前地图选变体，缺变体时回退通用文案；都没有为空串） */
+  /** 原文整句（按当前地图选变体，缺变体时回退通用文案；都没有为空串；可能含换行） */
   text: string;
-  /** 金额行（没有金额时 null）与颜色 */
+  /** 原文里金额那几个字（params.amount；原文不带金额时 null）：原版命运板把它标出来供测试与读屏定位 */
+  textAmount: string | null;
+  /** 金额行（程序化翻面卡另起一行写实际的收付：加持加倍后的数、免付 / 作废；没有金额时 null）与颜色 */
   amountText: string | null;
   amountTone: 'gain' | 'loss' | 'neutral';
 }
 
 /**
+ * 事件金额里加持之前的数：罚金、冒贷的 low 与奖金的 high 引擎已把金额 ×2（effects/fate 的 x2），原版命运板上 sprintf 的是
+ * 加倍之前的数（参数 0 分支先写字，参数 1 分支才判加持再加倍，例如命运 14：0x44b7a6–0x44b7d2 写字、0x44b897–0x44b89f 加倍）
+ */
+export function fateBaseAmount(effect: FateEffect, blessing: BlessingResult | null, amount: number): number {
+  const doubled =
+    (blessing === 'low' && (effect === 'fine' || effect === 'fakeLoan')) ||
+    (blessing === 'high' && effect === 'reward');
+  return doubled ? Math.trunc(amount / 2) : amount;
+}
+
+/** 判断原文带不带金额用的记号（私用区字符，不会出现在文案里） */
+const AMOUNT_MARK = '\uE000';
+
+/**
  * 一张命运的显示信息。blessing：FATE 事件的加持结果（引擎对只处理「免付 / 逃过」的命运已把 low 归为 none）：
- * 罚金、劫难类 high 为免付 / 逃过（改为中性色调），奖金类 low 为作废；劫难类 low 天数 ×2。
+ * 罚金、劫难类 high 为免付 / 逃过（改为中性色调），奖金类 low 为作废。原文里的金额、天数是加持之前的（劫难 low 的
+ * 天数 ×2、奖金 high 的金额 ×2 由之后的加持消息框说明，与原版相同）；金额行写实际收付。
  */
 export function fateShown(
   n: NameKit,
@@ -185,12 +222,11 @@ export function fateShown(
   const b = e.blessing ?? 'none';
   const escaped = b === 'high' && (category === 'penalty' || category === 'misfortune');
   const voided = b === 'low' && category === 'reward';
-  const baseDays = def.params.days;
-  const days = baseDays === undefined ? null : b === 'low' && def.blessing?.handlesDouble ? baseDays * 2 : baseDays;
+  const baseAmount = e.amount === null ? null : origInt(fateBaseAmount(def.effect, e.blessing, e.amount));
   const params: Record<string, unknown> = {
     who: n.seat(e.seat),
-    amount: e.amount === null ? n.t('events:param.amount') : n.money(e.amount),
-    days: days ?? n.t('events:param.days'),
+    amount: baseAmount ?? n.t('events:param.amount'),
+    days: def.params.days ?? n.t('events:param.days'),
     pct: def.params.pct ?? n.t('events:param.pct'),
   };
   const kind = AMOUNT_KIND[def.effect];
@@ -209,9 +245,15 @@ export function fateShown(
   if (escaped) tone = 'neutral';
   if (voided) tone = 'neutral';
   const k = fateKeyBase(n, e.id);
-  const common = n.t(`${k.base}.text`, { ...params, defaultValue: '' });
-  const text = k.variant ? n.t(`${k.variant}.text`, { ...params, defaultValue: common }) : common;
-  return { tone, category, params, text, amountText, amountTone };
+  const pick = (p: Record<string, unknown>): string => {
+    const common = n.t(`${k.base}.text`, { ...p, defaultValue: '' });
+    return k.variant ? n.t(`${k.variant}.text`, { ...p, defaultValue: common }) : common;
+  };
+  const text = pick(params);
+  // 原文带不带金额：用一个不会出现在文案里的记号再取一次
+  const textAmount =
+    baseAmount !== null && pick({ ...params, amount: AMOUNT_MARK }).includes(AMOUNT_MARK) ? baseAmount : null;
+  return { tone, category, params, text, textAmount, amountText, amountTone };
 }
 
 /** 命运标题（按当前地图选变体，缺变体时回退通用标题，再缺时为「命运 #n」） */

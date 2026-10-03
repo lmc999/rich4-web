@@ -3,7 +3,8 @@
 // - 新闻板 / 命运板：Panel#66 = ui.newsBoard 图0（蓝 NEWS）/ 图1（紫 ?），440×480 贴 (0,0)；插图框在 (25,44)、388×251
 //   （框内近白像素的包围盒），新闻插图 Data#400+i = illustration.news.<i>（36 条逐一目视对上；exe 0x44a200
 //   lea edi,[ebx+0x190]）；命运插图 = Data#FATE_ART_TABLE[slot] = illustration.fate.<表值 − 436>（exe 0x473dd8，见下方
-//   「命运板」），文字左上 (24,330)、表情头像 (390,344)（exe fcn.0044c4a0 与各处理函数参数 0 分支）。
+//   「命运板」），文字左上 (24,330)、表情头像 (390,344)（exe fcn.0044c4a0 与各处理函数参数 0 分支）；新闻板分类名 (24,8)、
+//   标题 (24,310)、逐人名单与小头像见下方「新闻板」（exe fcn.0044a173 与各新闻处理函数参数 0 分支）。
 // - 神明老虎机：Panel#67 = ui.godSlot，图0 4 位机身 193×183（锚点 96,98）、图1 3 位 156×183（锚点 78,98）、图2/3 拉杆
 //   上 / 下、图4–23 滚轮条 38×36（图 4+2d = 数字 d 居中、5+2d = d 与 d+1 之间），滚轮窗左上 (21,97)、步距 37（目视）。
 // - 轮盘：Panel#68–71 = ui.roulette.0–3，图0/1 天使（挥杖两态）、图2–13 转盘每帧顺时针转 30°。按盘面数值与
@@ -41,12 +42,67 @@ export function newsArtKey(id: number): string {
  */
 export const BOARD_UNDERLAY = '#000';
 
+/**
+ * 新闻板（exe fcn.0044a173）：Panel#66 图0 整张 440×480 拷到 (0,0)；插图 Data#400+i 不透明贴 (25,44)；字体
+ * fcn.0044e200(28, #F0F0F0, #101010, 3, 0)（0x44a1dd–0x44a1ed：28px 粗体、#101010 的 (1,1) 阴影、字距 −1）；
+ * 分类名（表 0x473cfc[0x473cd8[i]]）写在 (24,8)（0x44a236–0x44a255），标题（处理函数参数 0 的格式串）写在 (24,310)
+ * （各处理函数 push 0x136 / push 0x18），都是 fcn.0044e2e3 的左上对齐 DrawText（不自动换行，原文里的 \n 换行）。
+ * 没有打字机：整块画好之后才一次拷上屏幕（0x44a2ba fcn.00454a55 → 0x44a305 BltFast）。
+ */
 export const NEWS_BOARD = {
   w: 440,
   h: 480,
   art: { x: 25, y: 44, w: 388, h: 251 },
-  text: { x: 28, y: 304, w: 384, h: 164 },
+  category: { x: 24, y: 8 },
+  headline: { x: 24, y: 310 },
 } as const;
+
+/**
+ * 新闻板上逐人列出的受影响玩家（各新闻处理函数参数 0 分支，按座位顺序，只列受影响的人）：
+ * - rows：名单行 fcn.0044e200(24, …) 24px（样式同标题）写在 (24, 346 + 32·i)，讲话头像图 face 按锚点画在 (390, 358 + 32·i)
+ *   ——11–13 税「%s繳交%d元」（0x4487b8 mov edi,0x15a … 0x4488b9 add edi,0x20；头像 +0x30 = 图3）、23 储金红利「%s得到%d元」
+ *   （0x449922–0x449a2c，头像 +0x3c = 图4）；
+ * - 只画头像：0–3 在押 / 住院的人从 (390,328) 起每人 +42（0x447aaa mov esi,0x148 … 0x447af6 add esi,0x2a；获释图4、
+ *   延长图3）；16 / 17 步行 / 乘车的人 (390, 358 + 32·i)（0x449076–0x4490ee，图2）；8–10 得奖的一人 (390,328)
+ *   （0x44854c–0x448570，图4）。其余新闻不画人。
+ * @source exe v2.06 各新闻处理函数（表 0x473c48）参数 0 分支的 fcn.0044e2e3 / fcn.00454905 调用
+ */
+export interface NewsBoardList {
+  /** 讲话头像（portrait.speaker.<角色>）的图号 */
+  face: 1 | 2 | 3 | 4;
+  /** 第一个头像的锚点 y */
+  faceY0: number;
+  /** 每人往下的步距 */
+  dy: number;
+  /** 有没有名单行（24px，左上 (24, faceY0 − 12 + dy·i)） */
+  rows: boolean;
+}
+
+export const NEWS_LIST_FACE_X = 390;
+export const NEWS_LIST_TEXT_X = 24;
+/** 名单行的左上 y 比同一行头像的锚点高 12（346 / 358） */
+export const NEWS_LIST_TEXT_DY = -12;
+
+const stack = (face: 3 | 4): NewsBoardList => ({ face, faceY0: 328, dy: 42, rows: false });
+const rows = (face: 3 | 4): NewsBoardList => ({ face, faceY0: 358, dy: 32, rows: true });
+const winner: NewsBoardList = { face: 4, faceY0: 328, dy: 0, rows: false };
+const walkers: NewsBoardList = { face: 2, faceY0: 358, dy: 32, rows: false };
+
+export const NEWS_BOARD_LISTS: Readonly<Partial<Record<number, NewsBoardList>>> = Object.freeze({
+  0: stack(4),
+  1: stack(3),
+  2: stack(4),
+  3: stack(3),
+  8: winner,
+  9: winner,
+  10: winner,
+  11: rows(3),
+  12: rows(3),
+  13: rows(3),
+  16: walkers,
+  17: walkers,
+  23: rows(4),
+});
 
 // ───────────────────────── 命运板 ─────────────────────────
 
@@ -84,19 +140,18 @@ export const FATE_FACE: readonly number[] = Object.freeze([
 ]);
 
 /**
- * 命运板（exe fcn.0044c4a0）：Panel#66 图1 整张 440×480 拷到 (0,0)；插图 388×251 不透明贴 (25,44)；文字从 (24,330) 起
- * 左上对齐（fcn.0044e200(28, #F0F0F0, #101010, 3, 0)：28px 粗体、#101010 的 (1,1) 阴影、字距 −1）；表情头像按锚点画在
- * (390,344)。原版的文字只有一两行 28px 的整句；我们的标题照原版 28px 写在 (24,330)，正文与金额另起一块（避开头像）。
+ * 命运板（exe fcn.0044c4a0）：Panel#66 图1 整张 440×480 拷到 (0,0)；插图 388×251 不透明贴 (25,44)；处理函数参数 0 分支
+ * 把原文整句（一两行，\n 换行）从 (24,330) 起左上对齐写出（fcn.0044e200(28, #F0F0F0, #101010, 3, 0) 0x44c51e：28px 粗体、
+ * #101010 的 (1,1) 阴影、字距 −1；各处理函数 push 0x14a / push 0x18 → fcn.0044e2e3，例如 0x44b7da–0x44b7f1），表情头像按
+ * 锚点画在 (390,344)。金额、天数都在原文里（sprintf 的 %d），没有另起的标题与金额行。
  */
 export const FATE_BOARD = {
   frame: 1,
   w: 440,
   h: 480,
   art: NEWS_BOARD.art,
-  title: { x: 24, y: 330 },
+  text: { x: 24, y: 330 },
   face: { x: 390, y: 344 },
-  /** 我们的正文与金额：标题下方到板底、头像左侧 */
-  body: { x: 24, y: 366, w: 344, h: 102 },
 } as const;
 
 // ───────────────────────── 老虎机 ─────────────────────────

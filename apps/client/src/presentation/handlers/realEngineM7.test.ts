@@ -34,8 +34,8 @@ import {
   tagOf,
   viewOf,
 } from '../../test/realEngineHarness';
-import { usePopupStore } from '../../ui/popups/popupStore';
-import { fateShown, newsBody, newsHeadline } from '../eventText';
+import { type NewsPopupSpec, usePopupStore } from '../../ui/popups/popupStore';
+import { fateShown, newsHeadline, oneLine } from '../eventText';
 import { makeNames } from '../names';
 
 beforeAll(() => {
@@ -212,10 +212,51 @@ describe('M7 真实引擎事件 × handler（定向覆盖）', { timeout: 120_00
     for (const s of all) {
       if (s.e.type !== 'NEWS') continue;
       const n = makeNames({ t: tx, view: () => s.before, map: () => map });
-      const text = `${newsHeadline(n, s.e.id, s.e.params)} ${newsBody(n, s.e.id, s.e.params)}`;
+      const text = oneLine(newsHeadline(n, s.e.id, s.e.params));
       expect(text, tagOf(s.e)).not.toMatch(PLACEHOLDER);
     }
     await expectClean(all);
+  });
+
+  it('新闻板逐人行（11–13 税、23 储金红利）：金额按公布时的显示态算（selectors.newsRowAmount），与引擎随后实际收付相同', async () => {
+    for (const id of [11, 12, 13, 23] as NewsId[]) {
+      const sc = eventArena();
+      // 每人都有存款（储金红利要有人领；资金守恒：同额记为铸造）
+      sc.edit((s) => {
+        for (const p of s.players) {
+          const add = 1234 * (p.seat + 1);
+          s.econ.ledger.minted += add;
+          p.deposit += add;
+        }
+      });
+      const r = new Recorder(sc);
+      r.apply({ type: 'SYS_DEBUG', op: { op: 'stackDeck', deck: 'news', ids: [id] } });
+      stepOnto(r, NEWS_TILE - 1, 18);
+      r.settle();
+      const at = r.samples.findIndex((x) => x.e.type === 'NEWS');
+      expect(at, `news ${id}`).toBeGreaterThanOrEqual(0);
+      const news = r.samples[at]!.e as Extract<GameEvent, { type: 'NEWS' }>;
+      expect(news.affected.length, `news ${id}`).toBeGreaterThan(0);
+      // 引擎随后的收付：税 = MONEY{from seat, reason tax}，红利 = MONEY{to seat, reason reward}
+      const paid = new Map<SeatIndex, number>();
+      for (const x of r.samples.slice(at + 1)) {
+        if (x.e.type !== 'MONEY') continue;
+        if (id === 23 && x.e.reason === 'reward' && x.e.to.t === 'seat') paid.set(x.e.to.seat, x.e.amount);
+        if (id !== 23 && x.e.reason === 'tax' && x.e.from.t === 'seat') paid.set(x.e.from.seat, x.e.amount);
+      }
+      usePopupStore.getState().clear();
+      const played = await play(r.samples[at]!, map);
+      const spec = played.popups.find((x) => (x as { kind?: string }).kind === 'news') as NewsPopupSpec;
+      expect(spec.affected.map((a) => a.seat)).toEqual(news.affected);
+      for (const row of spec.affected) {
+        const amount = paid.get(row.seat);
+        expect(amount, `news ${id} seat ${row.seat}`).toBeGreaterThan(0);
+        expect(row.line, `news ${id} seat ${row.seat}`).toBe(
+          tx(`news:${id}.row`, { who: row.name, amount: String(amount) }),
+        );
+      }
+    }
+    usePopupStore.getState().clear();
   });
 
   it('命运 37 条逐条（10–16 按座驾换号）：金额含义、天数、加持文案完整', async () => {
@@ -268,7 +309,8 @@ describe('M7 真实引擎事件 × handler（定向覆盖）', { timeout: 120_00
     // 命运 0：强拆，补偿 = 等级 × 房价（收入）
     expect(spec.amountText).toMatch(/^\+/);
     expect(spec.amountTone).toBe('gain');
-    expect(spec.text).toContain('补偿');
+    // 原文「強制拆除房屋一棟」不带补偿金额（补偿只在程序化翻面卡的金额行与随后的 MONEY 里）
+    expect(spec.text).toBe('强制拆除房屋一栋');
   });
 
   it('魔法屋 12 种效果逐一施放：条件名单、效果名、目标与后续子帧（命运、关押、拍卖、选设施）', async () => {

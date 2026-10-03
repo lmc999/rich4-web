@@ -787,8 +787,7 @@ describe('演出弹窗', () => {
     id: 8,
     category: 1,
     categoryLabel: '政府公告',
-    headline: '地产大亨受表扬',
-    body: '孙小美 名下地产最多，获颁奖金 10,000 元。',
+    headline: '公开表扬第一大地主\n孙小美获得10000元奖励',
     affected: [],
   };
 

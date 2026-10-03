@@ -3,10 +3,10 @@
 // 两种节奏（original / compact）都要满足；棋盘端口按真实特效时长等待。handler 包装的封顶与 EventPlayer 的告警跟随房间节奏。
 // 原版舞台（A8，original-skin.md §3 修正 1）：真的 OrigStage（假棋盘 + 合成 FLIC，帧数与帧间隔同原版）下同样不超预算；
 // original 节奏下 FLIC 原速完整播放（handler 用时 ≥ FLIC 原长 + FLIC 之外的等待），compact 节奏下 playFit 加速或截取。
-import type { GameEvent, GameEventOf } from '@rich4/shared/engine';
+import type { GameEvent, GameEventOf, SeatIndex } from '@rich4/shared/engine';
 import { defaultRoomSettings, type GameBatchMsg } from '@rich4/shared/net';
 import type { GameView, PacingProfile } from '@rich4/shared/view';
-import { DEFAULT_PACING, eventBudgetMs, flicMs, PACING_PROFILES, STEP_MS } from '@rich4/shared/view';
+import { DEFAULT_PACING, DICE_TIMING, eventBudgetMs, flicMs, PACING_PROFILES, STEP_MS } from '@rich4/shared/view';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AnimClock } from '../../game/anim/AnimClock';
 import { COIN_FLIGHT_MS, FLAG_MS, HOP_MS, ORIG_FLIC_WAITS, POP_MS } from '../../game/fx/timings';
@@ -171,6 +171,9 @@ function m6m7Events(): GameEvent[] {
     { type: 'CONFINED', actor: { t: 'seat', seat: 2 }, where: 'away', days: 3, total: 3, cause },
     { type: 'CONFINED', actor: { t: 'villain', kind: 'thief' }, where: 'jail', days: 3, total: 3, cause },
     { type: 'RELEASED', actor: { t: 'seat', seat: 1 }, from: 'jail' },
+    { type: 'RELEASED', actor: { t: 'seat', seat: 1 }, from: 'hospital' },
+    { type: 'RELEASED', actor: { t: 'seat', seat: 1 }, from: 'hotel' },
+    { type: 'RELEASED', actor: { t: 'seat', seat: 1 }, from: 'away' },
     { type: 'RETURNED', seat: 1, node: 14 },
     { type: 'BLESSING', seat: 0, category: 'misfortune', result: 'high' },
     { type: 'STATUS_SET', actor: { t: 'seat', seat: 1 }, status: 'hibernate', value: 5 },
@@ -478,6 +481,29 @@ describe.each(PACING_PROFILES)('原版舞台 OrigStage：handler 用时 ≤ EVEN
     expect(bench.fake.flics!.flicMap).not.toBeNull();
     expect(new Set(pack.loads).size).toBeGreaterThan(25);
     expect(bench.fake.sounds.filter((k) => k.startsWith('sfx.')).length).toBeGreaterThan(20);
+  });
+
+  it('获释走出建筑：按原版 tick 匀速走完（最远 16 tick，过半出现），不超预算；住旅馆走进去同理', async () => {
+    const base = selfPlay({ seed: 1, steps: 2 }).initial.view;
+    // 1 号关在监狱里（待释放），站在关押格 3（假棋盘的建筑坐标见 FAKE_INSIDE：到 3 号格 128 px = 16 tick）
+    const view: GameView = {
+      ...base,
+      players: base.players.map((p) =>
+        p.seat === 1 ? { ...p, placed: true, node: 3, prevNode: 3, st: { ...p.st, jail: 0x80 } } : p,
+      ),
+    };
+    const free = {
+      players: [{ seat: 1 as SeatIndex, set: { st: { ...view.players[1]!.st, jail: 0 }, returning: true } }],
+    };
+    const bench = new StageBench({ profile, flics: null });
+    const e: GameEvent = { type: 'RELEASED', actor: { t: 'seat', seat: 1 }, from: 'jail', post: free };
+    const { used } = await bench.run(e, view);
+    within(e, used, profile);
+    const tick = DICE_TIMING[profile].throwTickMs;
+    expect(bench.fake.actors.get(1)!.walks).toEqual([{ kind: 'out', ticks: 16, switchAt: 9 }]);
+    expect(used).toBeGreaterThanOrEqual(16 * tick);
+    // 获释后人在格上（舞台同步到获释后的状态：不在建筑里）
+    expect(bench.fake.actors.get(1)!.inside).toBeNull();
   });
 
   it('素材包没有 FLIC 时全部回退 FxSystem，同样不超预算', async () => {

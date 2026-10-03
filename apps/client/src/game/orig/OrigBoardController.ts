@@ -89,6 +89,14 @@ export class OrigBoardController implements BoardControllerLike {
         actor: (seat) => this.actor(seat),
         anchorPos: (at, lift) => this.anchorPos(at, lift),
         tilePos: (node) => this.renderer.boardView?.tilePos(node) ?? null,
+        tileWorld: (node) => this.renderer.boardView?.tileWorld(node) ?? null,
+        insideWorld: (b) => {
+          const v = this.renderer.boardView;
+          if (!v) return null;
+          if (b.t === 'landmark') return v.landmarkWorld(b.kind);
+          return b.t === 'lot' ? v.lotWorld(b.lot) : null;
+        },
+        spreadActors: () => this.renderer.spreadActors(),
         shake: (amp, ms) => this.shake(amp, ms),
         get world() {
           return self.renderer.layers.world;
@@ -153,7 +161,7 @@ export class OrigBoardController implements BoardControllerLike {
       const visible = p.placed && p.node > 0;
       if (visible && !a.root.visible && !a.isWalking) {
         // reset / 快照之后：朝向按来路，缺失时用确定性默认
-        a.setFacing(defaultFacing(p.seat, p.prevNode > 0 ? tileWorld(p.prevNode) : null, tileWorld(p.node)));
+        a.setFacing(defaultFacing(p.seat, this.facingFrom(p.node, p.prevNode), tileWorld(p.node)));
       }
       a.root.visible = visible;
       a.root.alpha = p.alive ? 1 : 0.45;
@@ -164,9 +172,23 @@ export class OrigBoardController implements BoardControllerLike {
       // 批尾（或快照）：掷骰动作都已播完、行走也已结束，持骰姿态一律收起，等待掷骰时是静止的站姿
       a.clearThrow();
     }
-    // 先同步状态外观（交通工具、冬眠 ZZZ 会改变身高与名牌要让开的高度），再按同格多人错开
+    // 先同步状态外观（交通工具、冬眠 ZZZ 会改变身高与名牌要让开的高度），再按同格多人错开。
+    // 批尾 / 快照：本回合获释的留置一律解除（演出都已播完或被跳过）
+    this.stageObj.holdInside(null);
     this.stageObj.syncWorld(view);
     this.renderer.spreadActors();
+  }
+
+  /**
+   * 快照后定朝向用的「来处」：来路格；获释后还没走（来路 = 关押格本身）时是监狱 / 医院景观——原版获释时朝向 = 景观 → 关押格
+   * （exe v2.06 0x40d184），走出来以后不改朝向
+   */
+  private facingFrom(node: TileId, prev: TileId): Pt | null {
+    const v = this.renderer.boardView;
+    if (!v || prev <= 0) return null;
+    if (prev !== node) return v.tileWorld(prev);
+    const hold = this.renderer.mapDef?.tiles.find((t) => t.id === node)?.holdFor;
+    return hold ? v.landmarkWorld(hold) : null;
   }
 
   private applyLot(lot: LotId, look: OrigLotLook): void {

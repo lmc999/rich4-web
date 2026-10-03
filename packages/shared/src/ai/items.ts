@@ -8,7 +8,7 @@ import type { ItemId, SeatIndex, TileId, TurnMenuItemRow, UseTarget } from '../e
 import { inViewWindow } from '../geom/viewWindow';
 import { BAD_GODS } from './cards';
 import { MONEY_FLOOR } from './constants';
-import type { AiContext } from './types';
+import type { AiContext, AiRng } from './types';
 import type { AiLot, AiView } from './view';
 
 export type ItemJudge = (v: AiView, row: TurnMenuItemRow, ctx: AiContext) => UseTarget | null;
@@ -19,6 +19,17 @@ const NUKE_HALF = 220;
 
 function nodeCands(row: TurnMenuItemRow): TileId[] {
   return row.targets.t === 'node' ? row.targets.nodes : [];
+}
+
+/**
+ * 后瞻选格（路障阶段二、地雷、定时炸弹三处相同）：先 lookbehind(6)（往回第 2–7 格），再按候选表的顺序逐个看候选格
+ * 是不是 out[0..5] 之一——遍历的是候选、不是后瞻输出，所以顺序是屏幕行序、同一格只出现一次（后瞻原路返回时会重复）。
+ * 原版候选表是视野内的格按屏幕行序（0x409ef9）；这里用回合菜单的合法格 ∩ 视野，按视角 0 的投影行序（tilesInView）。
+ * @source exe v3.11 0x4212a4–0x4212f8（路障）、0x4213d7–0x421431（地雷）、0x421586–0x4215dc（炸弹）
+ */
+function behindCands(v: AiView, row: TurnMenuItemRow, rng: AiRng): TileId[] {
+  const behind = v.lookbehind(6, rng).nodes;
+  return v.tilesInView(nodeCands(row)).filter((n) => behind.includes(n));
 }
 
 /** 格上有坏神、恶犬或坏物件（地雷、地面炸弹） */
@@ -63,10 +74,9 @@ const roadblock: ItemJudge = (v, row, ctx) => {
       break; // 只看第一个空格
     }
   }
-  const behind = v.lookbehind(6, ctx.turnRng('item:2b'));
+  // 阶段二：后瞻 6 格里我的住宅，路段过路费 > 6000 × PI 取最高（严格大于才替换，同额取候选顺序靠前的）
   let best: { node: TileId; toll: number } | null = null;
-  for (const node of behind.nodes) {
-    if (!cands.includes(node) || !v.tileInView(node)) continue;
+  for (const node of behindCands(v, row, ctx.turnRng('item:2b'))) {
     const l = v.lotAt(node);
     if (l?.kind !== 'land' || l.owner !== v.seat) continue;
     const toll = v.streetToll(l);
@@ -77,10 +87,9 @@ const roadblock: ItemJudge = (v, row, ctx) => {
 
 function trapJudge(item: 3 | 4): ItemJudge {
   return (v, row, ctx) => {
-    const cands = nodeCands(row);
-    const behind = v.lookbehind(6, ctx.turnRng(`item:${item}`));
-    const nodes = behind.nodes.filter((n) => cands.includes(n) && v.tileInView(n));
-    // 监狱 / 医院门口：里面有人时优先
+    const nodes = behindCands(v, row, ctx.turnRng(`item:${item}`));
+    // 监狱 / 医院：里面有人时优先（按候选顺序第一个命中的直接返回）。原版比的是关押格（v3.11 0x421446 / 0x421469
+    // 读 0x48bae0 / 0x48bae2，即 0x43d621 / 0x43eccd 关押时写入的节点），这里比的是 kind 为 jail / hospital 的格，未改（docs/TODO.md）
     const jailed = v.view.players.some((p) => p.alive && p.st.jail !== 0);
     const hospitalized = v.view.players.some((p) => p.alive && p.st.hospital !== 0);
     for (const n of nodes) {

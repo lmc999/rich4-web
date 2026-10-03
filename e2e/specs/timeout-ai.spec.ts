@@ -1,5 +1,5 @@
 // 超时代决（design/client.md §12.2 用例 3；DEV-09）：P2 不操作，截止后服务器执行 defaultIntent，
-// 所有页面弹 toast「…超时，已由电脑代为决定」，游戏继续（又轮回 P1）。
+// 所有页面弹 toast「…超时，已由电脑代为决定」，游戏继续（两个电脑走完、进入下一天）。
 // 这里用 fast 档的真实时限（TURN_MENU 15 秒 + 0.8 秒宽限）。服务器支持 RICH4_TIMER_SCALE（测试模式）缩放计时，但 E2E 不开：
 // P1 的回合要先做几次 debug:act 再掷骰，缩短后 P1 自己也可能超时，用例就不稳定了。
 import type { Page } from '@playwright/test';
@@ -58,14 +58,21 @@ test('P2 不操作：超时后电脑代为决定，游戏继续', async ({ fourP
   await playTurn(a, 0);
   // 轮到 P2：按钮可用，但 P2 什么都不做
   await waitMyTurn(b);
+  // biome-ignore lint/suspicious/noExplicitAny: 测试钩子
+  const day0 = await a.evaluate(() => (window as any).__rich4.store.game.getState().view.clock.date as number);
   await expect(b.getByTestId('waiting-banner')).toHaveCount(0);
   await expect(a.getByTestId('waiting-banner')).toHaveAttribute('data-seat', '1');
   // 15 秒截止 + 0.8 秒宽限后服务器代决
   const toast = zh('2P 超时，已由电脑代为决定', '2P 超時，已由電腦代為決定');
   await expect(b.getByTestId('toast').filter({ hasText: toast })).toBeVisible({ timeout: 30_000 });
   await expect(a.getByTestId('toast').filter({ hasText: toast })).toBeVisible({ timeout: 5_000 });
-  // 游戏继续：两个电脑走完后又轮到 P1
-  await waitMyTurn(a, 60_000);
+  // 游戏继续：两个电脑走完、进入下一天（P1 可能被电脑的魔法屋「入狱」等送进监狱而跳过回合，所以不等 P1 的回合，只等日期前进）
+  await a.waitForFunction(
+    // biome-ignore lint/suspicious/noExplicitAny: 测试钩子
+    (d) => ((window as any).__rich4.store.game.getState().view?.clock.date ?? 0) > d,
+    day0,
+    { timeout: 60_000 },
+  );
   for (const p of [p1!, p2!]) {
     expect(
       p.errors.filter((e) => !e.includes('WebGL') && !e.includes('favicon')),

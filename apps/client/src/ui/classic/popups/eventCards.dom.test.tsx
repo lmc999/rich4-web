@@ -1,6 +1,7 @@
-// 随机事件的原版画面（client-dom）：命运板（Panel#66 图1 + 命运插图表 exe 0x473dd8 选的插图 + 表情头像，加持消息框）、
-// 卡片格 / 聖誕節得卡亮卡（卡片插画 + 宝石消息框；私密手牌下别人只有消息框）、魔法屋消息框，以及空闲预取（新闻 / 命运板
-// 图集页与插图）。每类弹窗断言用到的素材键与帧、插图文件与画点。
+// 随机事件的原版画面（client-dom）：命运板（Panel#66 图1 + 命运插图表 exe 0x473dd8 选的插图 + 原文整句 + 表情头像，加持消息框）、
+// 新闻板（Panel#66 图0 + 插图 + 分类名 / 原文标题 + 逐人名单与小头像，任意键跳过）、卡片格 / 聖誕節得卡亮卡（卡片插画 +
+// 宝石消息框；私密手牌下别人只有消息框）、魔法屋消息框，以及空闲预取（新闻 / 命运板图集页与插图）。每类弹窗断言用到的
+// 素材键与帧、插图文件、文字与画点（exe v2.06 fcn.0044c4a0 / fcn.0044a173 与各处理函数参数 0 分支的坐标）。
 import type { CardId } from '@rich4/shared/engine';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MotionGlobalConfig } from 'motion/react';
@@ -13,6 +14,7 @@ import {
   type CardCastPopupSpec,
   type FatePopupSpec,
   type MagicPopupSpec,
+  type NewsPopupSpec,
   type OpenPopup,
   onPopupSkip,
   type PopupSpec,
@@ -24,8 +26,8 @@ import { a11FakeSheets } from '../dialogs/testing';
 import { shouldHandleHotkey } from '../keyboard';
 import { cardShowMode } from './CardCast';
 import ClassicPopupHost, { boardShield, fateArtPrefetchKeys, NEWS_ART_KEYS, popupKeys } from './ClassicPopupHost';
-import { fateBodySize } from './FateBoard';
-import { FATE_ART_TABLE, FATE_BOARD, FATE_FACE, fateArtKey } from './layout';
+import { splitFateText } from './FateBoard';
+import { FATE_ART_TABLE, FATE_BOARD, FATE_FACE, fateArtKey, NEWS_BOARD, NEWS_BOARD_LISTS } from './layout';
 
 installResizeObserver();
 
@@ -101,7 +103,8 @@ const fate = (id: number, slot = id, extra: Partial<FatePopupSpec> = {}): FatePo
   slot,
   phase: 'board',
   title: '继承遗产',
-  text: '远房亲戚留给孙小美一笔遗产：10,000 元。',
+  text: '意外獲得遺產10000元',
+  textAmount: '10000',
   amountText: '+10,000',
   tone: 'good',
   blessingText: null,
@@ -146,10 +149,16 @@ describe('命运插图表（exe 0x473dd8）与表情表', () => {
 });
 
 describe('命运板画面', () => {
-  it('Panel#66 图1 贴 (0,0)；插图是 images/data/<表值>.png 不透明贴 (25,44) 388×251；标题 28px 在 (24,330)；头像图 FATE_FACE 画在 (390,344)', async () => {
+  it('Panel#66 图1 贴 (0,0)；插图是 images/data/<表值>.png 不透明贴 (25,44) 388×251；原文整句 28px 在 (24,330)；头像图 FATE_FACE 画在 (390,344)', async () => {
     await bindPack();
-    // 日本图第 35 条 → slot 43 → Data#466
-    render(<Host current={open(fate(35, 43, { title: '走私被查獲', amountText: null, tone: 'bad' }))} />);
+    // 日本图第 35 条 → slot 43 → Data#466（原文「走私毒品坐牢%d天」0x463d91）
+    render(
+      <Host
+        current={open(
+          fate(35, 43, { title: '走私毒品', text: '走私毒品坐牢7天', textAmount: null, amountText: null, tone: 'bad' }),
+        )}
+      />,
+    );
     const board = screen.getByTestId('fate-popup');
     expect(board.closest('[data-classic="true"]')).toHaveAttribute('data-kind', 'fate');
     expect(board).toHaveAttribute('data-fate', '35');
@@ -174,11 +183,25 @@ describe('命运板画面', () => {
       '388px',
       '251px',
     ]);
+    // 原文整句：fcn.0044e2e3(板, 文, 24, 330, 0)，fcn.0044e200(28, #F0F0F0, #101010, 3, 0)
+    const text = within(board).getByTestId('fate-text');
+    expect(text.textContent).toBe('走私毒品坐牢7天');
+    expect(text.style.margin).toBe('0px');
+    expect([text.style.left, text.style.top, text.style.fontSize, text.style.lineHeight]).toEqual([
+      `${FATE_BOARD.text.x}px`,
+      `${FATE_BOARD.text.y}px`,
+      '28px',
+      '28px',
+    ]);
+    expect(text.style.color).toBe('rgb(240, 240, 240)');
+    expect(text.style.fontWeight).toBe('700');
+    expect(text.style.textShadow).toMatch(/#101010|rgb\(16, 16, 16\)/);
+    expect(text.style.letterSpacing).toBe('-1px');
+    expect(text.style.whiteSpace).toBe('pre');
+    // 我们的短标题只给读屏（原版没有标题）
     const title = within(board).getByTestId('fate-title');
-    expect(title).toHaveTextContent('走私被查獲');
-    expect([title.style.left, title.style.top, title.style.fontSize]).toEqual(['24px', '330px', '28px']);
-    expect(title.style.color).toBe('rgb(240, 240, 240)');
-    expect(title.style.letterSpacing).toBe('-1px');
+    expect(title).toHaveTextContent('走私毒品');
+    expect(title.className).toMatch(/srOnly/);
     // 讲话头像 portrait.speaker.9 的图3（34×34，锚点 17,17 → 左上 373,327）
     const face = await within(board).findByTestId('fate-face');
     expect(face).toHaveAttribute('data-sprite', 'portrait.speaker.9/3');
@@ -187,23 +210,19 @@ describe('命运板画面', () => {
     expect(screen.queryByTestId('legacy-popup')).toBeNull();
   });
 
-  it('正文与金额在标题下方、头像左侧；字色可读（#F0F0F0 + #101010 阴影），金额按正负上色', async () => {
+  it('原文两行（\\n 换行）照原样写，句中金额标成 fate-amount（同色，原版没有另起的金额行）', async () => {
     await bindPack();
-    render(<Host current={open(fate(25))} />);
+    render(<Host current={open(fate(15, 15, { text: '騎機車未戴安全帽\n罰款3000元', textAmount: '3000' }))} />);
     const board = screen.getByTestId('fate-popup');
     const text = within(board).getByTestId('fate-text');
-    const body = text.parentElement!;
-    expect([body.style.left, body.style.top, body.style.width]).toEqual([
-      `${FATE_BOARD.body.x}px`,
-      `${FATE_BOARD.body.y}px`,
-      `${FATE_BOARD.body.w}px`,
-    ]);
-    expect(FATE_BOARD.body.x + FATE_BOARD.body.w).toBeLessThan(FATE_BOARD.face.x - 17);
-    expect(body.style.color).toBe('rgb(240, 240, 240)');
-    expect(body.style.textShadow).toMatch(/#101010|rgb\(16, 16, 16\)/);
-    expect(within(board).getByTestId('fate-amount')).toHaveTextContent('+10,000');
-    expect(fateBodySize('短句', true)).toBe(20);
-    expect(fateBodySize('一'.repeat(60), true)).toBe(16);
+    expect(text.textContent).toBe('騎機車未戴安全帽\n罰款3000元');
+    const amount = within(text).getByTestId('fate-amount');
+    expect(amount.textContent).toBe('3000');
+    expect(amount.getAttribute('style')).toBeNull();
+    expect(board.textContent).not.toContain('+10,000');
+    expect(splitFateText('意外獲得遺產10000元', '10000')).toEqual(['意外獲得遺產', '10000', '元']);
+    expect(splitFateText('強制拆除房屋一棟', null)).toBeNull();
+    expect(splitFateText('強制拆除房屋一棟', '400')).toBeNull();
   });
 
   it('插图还没取到 URL 时画原版的白框（不回退程序化翻面卡）', async () => {
@@ -329,49 +348,157 @@ describe('命运板画面', () => {
   });
 });
 
-describe('新闻板：同样盖着工具列（fcn.0044a173 等待也是 fcn.00452c39）', () => {
-  it('板面接住指针：最短时间之前点板子不跳过也不往下传，之后点板子等于点跳过钮；快捷键暂停', async () => {
+describe('新闻板（exe fcn.0044a173 与各新闻处理函数参数 0 分支）', () => {
+  const P1 = { seat: 1 as const, character: 0 as const, name: '阿土伯' };
+  const news = (id: number, extra: Partial<NewsPopupSpec> = {}): NewsPopupSpec => ({
+    kind: 'news',
+    id: id as never,
+    category: 1,
+    categoryLabel: '政府公告',
+    headline: '所有人繳交所得稅５％',
+    affected: [],
+    ...extra,
+  });
+  const rect = (el: HTMLElement): string[] => [el.style.left, el.style.top];
+
+  it('图0 贴 (0,0)、插图 (25,44)；分类名 (24,8)、原文标题 (24,310) 都是 28px #F0F0F0 粗体、阴影、字距 −1；没有打字机', async () => {
     await bindPack();
-    const spec: PopupSpec = {
-      kind: 'news',
-      id: 11,
-      category: 1,
-      categoryLabel: '政府公告',
-      headline: '所得税',
-      body: '全员缴纳现金的 5%。',
-      affected: [],
+    render(
+      <Host
+        current={open(
+          news(29, { category: 5, categoryLabel: '財經新聞', headline: '某公司違法超貸\n經營者阿土伯坐牢５天' }),
+          3400,
+        )}
+      />,
+    );
+    const board = screen.getByTestId('news-popup');
+    expect(board.closest('[data-classic="true"]')).toHaveAttribute('data-kind', 'news');
+    expect(within(board).getByTestId('news-board')).toHaveAttribute('data-sprite', 'ui.newsBoard/0');
+    const art = within(board).getByTestId('news-art');
+    expect(art.style.backgroundImage).toBe('url("/pack/images/data/429.png")');
+    expect(rect(art)).toEqual(['25px', '44px']);
+    const cat = within(board).getByTestId('news-category');
+    expect(cat.textContent).toBe('財經新聞');
+    expect(rect(cat)).toEqual([`${NEWS_BOARD.category.x}px`, `${NEWS_BOARD.category.y}px`]);
+    const head = within(board).getByTestId('news-headline');
+    // 整句一次画好（原版整块拷上屏幕），读屏与画面是同一个元素
+    expect(head.textContent).toBe('某公司違法超貸\n經營者阿土伯坐牢５天');
+    expect(head).not.toHaveAttribute('aria-hidden');
+    expect(rect(head)).toEqual(['24px', '310px']);
+    for (const el of [cat, head]) {
+      // 左上角就在画点上（<p> / <h2> 的默认外边距会把字往下推）
+      expect(el.style.margin).toBe('0px');
+      expect(el.style.fontSize).toBe('28px');
+      expect(el.style.lineHeight).toBe('28px');
+      expect(el.style.color).toBe('rgb(240, 240, 240)');
+      expect(el.style.fontWeight).toBe('700');
+      expect(el.style.letterSpacing).toBe('-1px');
+      expect(el.style.whiteSpace).toBe('pre');
+      expect(el.style.textShadow).toMatch(/#101010|rgb\(16, 16, 16\)/);
+    }
+    expect(board.textContent).not.toContain('▌');
+    // 新闻 29 原版不画人
+    expect(within(board).queryByTestId('news-affected')).toBeNull();
+  });
+
+  it('税（11–13）：逐行 24px「<人>繳交<n>元」写在 (24, 346 + 32·i)，讲话头像图3 画在 (390, 358 + 32·i)', async () => {
+    await bindPack();
+    const rows = [
+      { ...player, deltas: [], line: '孫小美繳交1234元' },
+      { ...P1, deltas: [], line: '阿土伯繳交567元' },
+    ];
+    render(<Host current={open(news(11, { affected: rows }))} />);
+    const board = screen.getByTestId('news-popup');
+    const list = within(board).getByTestId('news-affected');
+    const lines = within(list).getAllByTestId('news-row');
+    expect(lines.map((l) => l.textContent)).toEqual(['孫小美繳交1234元', '阿土伯繳交567元']);
+    expect(lines.map(rect)).toEqual([
+      ['24px', '346px'],
+      ['24px', '378px'],
+    ]);
+    for (const l of lines) {
+      expect(l.style.fontSize).toBe('24px');
+      expect(l.style.lineHeight).toBe('24px');
+      expect(l.style.color).toBe('rgb(240, 240, 240)');
+      expect(l.style.letterSpacing).toBe('-1px');
+    }
+    const faces = await within(list).findAllByTestId('news-face');
+    // 头像 34×34、锚点 17,17：锚点 (390,358) → 左上 (373,341)
+    expect(faces.map((f) => f.getAttribute('data-sprite'))).toEqual(['portrait.speaker.9/3', 'portrait.speaker.0/3']);
+    expect(faces.map(rect)).toEqual([
+      ['373px', '341px'],
+      ['373px', '373px'],
+    ]);
+    expect(NEWS_BOARD_LISTS[12]).toEqual(NEWS_BOARD_LISTS[11]);
+    expect(NEWS_BOARD_LISTS[13]).toEqual(NEWS_BOARD_LISTS[11]);
+    // 储金红利（23）同样的行，头像图4
+    expect(NEWS_BOARD_LISTS[23]).toEqual({ face: 4, faceY0: 358, dy: 32, rows: true });
+  });
+
+  it('只画头像的新闻：获释（0）从 (390,328) 起每人 +42 图4；豪雨（16）(390,358) 起 +32 图2；得奖（8）一人 (390,328) 图4；其余不画人', async () => {
+    await bindPack();
+    const two = [
+      { ...player, deltas: [] },
+      { ...P1, deltas: [] },
+    ];
+    const faces = async (id: number): Promise<{ sprite: string | null; at: string[] }[]> => {
+      cleanup();
+      render(<Host current={open(news(id, { affected: two }))} />);
+      const board = screen.getByTestId('news-popup');
+      if (!within(board).queryByTestId('news-affected')) return [];
+      expect(within(board).queryAllByTestId('news-row')).toHaveLength(0);
+      const fs = await within(board).findAllByTestId('news-face');
+      return fs.map((f) => ({ sprite: f.getAttribute('data-sprite'), at: rect(f) }));
     };
+    expect(await faces(0)).toEqual([
+      { sprite: 'portrait.speaker.9/4', at: ['373px', '311px'] },
+      { sprite: 'portrait.speaker.0/4', at: ['373px', '353px'] },
+    ]);
+    expect((await faces(3)).map((f) => f.sprite)).toEqual(['portrait.speaker.9/3', 'portrait.speaker.0/3']);
+    expect(await faces(16)).toEqual([
+      { sprite: 'portrait.speaker.9/2', at: ['373px', '341px'] },
+      { sprite: 'portrait.speaker.0/2', at: ['373px', '373px'] },
+    ]);
+    cleanup();
+    render(<Host current={open(news(8, { affected: [{ ...P1, deltas: [] }] }))} />);
+    const w = await within(screen.getByTestId('news-popup')).findAllByTestId('news-face');
+    expect(w.map((f) => [f.getAttribute('data-sprite'), ...rect(f)])).toEqual([
+      ['portrait.speaker.0/4', '373px', '311px'],
+    ]);
+    expect(await faces(4)).toEqual([]);
+    expect(await faces(29)).toEqual([]);
+  });
+
+  it('跳过照原版（fcn.00452c39(2400) 没有最短时间）：不画跳过钮，任意放开就结束；板面照样接住指针、暂停快捷键', async () => {
+    await bindPack();
+    const spec = news(11);
     expect(boardShield(spec)).toEqual({ x: 0, y: 0, w: 440, h: 480 });
-    let p: OpenPopup | null = null;
-    act(() => {
-      usePopupStore.getState().open(spec, 3400, 1500);
-      p = usePopupStore.getState().current;
-    });
+    const p = open(spec, 3400);
     const onSkip = vi.fn();
-    const off = onPopupSkip(p!.popupId, onSkip);
+    const off = onPopupSkip(p.popupId, onSkip);
     onTestFinished(off);
     const below = vi.fn();
-    vi.useFakeTimers();
-    try {
-      // biome-ignore lint/a11y/noStaticElementInteractions: 测试替身（模拟板子下面会响应点击的元素）
-      // biome-ignore lint/a11y/useKeyWithClickEvents: 同上
-      render(<div onClick={below}>{<Host current={p} />}</div>);
-      const shield = screen.getByTestId('popup-shield');
-      expect(shield.closest('[data-scene="classic"]')).toHaveAttribute('data-input-shield', 'true');
-      fireEvent.click(shield);
-      expect(onSkip).not.toHaveBeenCalled();
-      expect(below).not.toHaveBeenCalled();
-      expect(shouldHandleHotkey(new KeyboardEvent('keydown', { key: 'm' }))).toBe(false);
-      act(() => {
-        vi.advanceTimersByTime(1501);
-      });
-      expect(screen.getByTestId('popup-skip')).toBeInTheDocument();
-      fireEvent.click(screen.getByTestId('popup-shield'));
-      expect(onSkip).toHaveBeenCalledTimes(1);
-      expect(below).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
+    // biome-ignore lint/a11y/noStaticElementInteractions: 测试替身（模拟板子下面会响应点击的元素）
+    // biome-ignore lint/a11y/useKeyWithClickEvents: 同上
+    render(<div onClick={below}>{<Host current={p} />}</div>);
+    const scene = screen.getByTestId('news-popup').closest('[data-scene="classic"]')!;
+    expect(scene).toHaveAttribute('data-skippable', 'true');
+    expect(scene).toHaveAttribute('data-input-shield', 'true');
+    expect(screen.queryByTestId('popup-skip')).toBeNull();
+    expect(shouldHandleHotkey(new KeyboardEvent('keydown', { key: 'm' }))).toBe(false);
+    // 点板子：放开即跳过，不往下传
+    const shield = screen.getByTestId('popup-shield');
+    fireEvent.pointerDown(shield, { button: 0, pointerId: 11 });
+    fireEvent.pointerUp(shield, { button: 0, pointerId: 11 });
+    fireEvent.click(shield);
+    expect(onSkip).toHaveBeenCalledTimes(1);
+    expect(below).not.toHaveBeenCalled();
+    // 板面之外（资料栏、日历）放开同样结束；按键放开也是
+    fireEvent.pointerDown(document.body, { button: 2, pointerId: 12 });
+    fireEvent.pointerUp(document.body, { button: 2, pointerId: 12 });
+    fireEvent.keyDown(document.body, { key: 'x', code: 'KeyX' });
+    fireEvent.keyUp(document.body, { key: 'x', code: 'KeyX' });
+    expect(onSkip).toHaveBeenCalledTimes(3);
   });
 });
 

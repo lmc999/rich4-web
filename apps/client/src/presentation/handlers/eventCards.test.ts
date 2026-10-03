@@ -1,7 +1,15 @@
-// 随机事件的原版画面（handler 层）：命运板的节拍与加持消息框、卡片格 / 聖誕節得卡亮卡（含私密手牌下别人的消息框）、
-// 董事长赠品的文案。原版皮肤由登记的弹窗判定（popupStore.registerClassicPopupProbe）模拟，记录打开的弹窗、舞台与音频调用。
+// 随机事件的原版画面（handler 层）：命运板的节拍、原文与加持消息框、新闻板的节拍与跳过、卡片格 / 聖誕節得卡亮卡
+// （含私密手牌下别人的消息框）、董事长赠品的文案。原版皮肤由登记的弹窗判定（popupStore.registerClassicPopupProbe）模拟，记录打开的弹窗、舞台与音频调用。
 import { cardDef, type GameEvent, type GameEventOf, type GameEventType, type SeatIndex } from '@rich4/shared/engine';
-import { CARD_GAIN_FOCUS_MS, CARD_SHOW_MS, FATE_VOICE_MS, fateShowMs, type GameView } from '@rich4/shared/view';
+import {
+  CARD_GAIN_FOCUS_MS,
+  CARD_SHOW_MS,
+  FATE_VOICE_MS,
+  fateShowMs,
+  type GameView,
+  NEWS_VOICE_MS,
+  newsShowMs,
+} from '@rich4/shared/view';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AnimClock } from '../../game/anim/AnimClock';
 import { initI18n } from '../../i18n';
@@ -10,7 +18,7 @@ import { useUiStore } from '../../store/uiStore';
 import { selfPlay } from '../../test/selfPlay';
 import { type OpenPopup, registerClassicPopupProbe, usePopupStore } from '../../ui/popups/popupStore';
 import { makeNames } from '../names';
-import { CARD_SHOW_SFX, cardGainVoice, SOUND_MAP } from '../soundMap';
+import { CARD_SHOW_SFX, cardGainVoice, NEWS_STING_SFX, SOUND_MAP } from '../soundMap';
 import type { AudioPort, BoardPort, PresentationContext } from '../types';
 import { createUiPresenter } from '../UiPresenter';
 import { RAW_HANDLERS } from '.';
@@ -75,8 +83,8 @@ async function run<T extends GameEventType>(
       popups.push(st.current);
       order.push(`popup:${tag(st.current)}`);
       trace.push(`popup:${tag(st.current)}`);
-      // 模拟玩家在命运板上按键跳过
-      if (o.skipBoard && st.current.kind === 'fate' && st.current.phase === 'board') {
+      // 模拟玩家在命运板 / 新闻板上按键跳过
+      if (o.skipBoard && ((st.current.kind === 'fate' && st.current.phase === 'board') || st.current.kind === 'news')) {
         const id = st.current.popupId;
         queueMicrotask(() => usePopupStore.getState().skip(id));
       }
@@ -343,6 +351,84 @@ describe('FATE：原版命运板（fcn.0044c4a0）', () => {
     unprobe = null;
     const proc = await run({ type: 'FATE', seat: 0, id: 25, amount: 10000, blessing: 'high' });
     expect(proc.popups.map((p) => p.ms)).toEqual([2250]);
+  });
+});
+
+describe('FATE：原版原文（exe 各命运处理函数参数 0 分支的格式串）', () => {
+  it('正文是原文整句，金额 / 天数是加持之前的（奖金 high、罚金 low 时事件金额已加倍）；金额行写实际收付', async () => {
+    const r = await run({ type: 'FATE', seat: 0, id: 25, amount: 20000, blessing: 'high' });
+    expect(r.popups[0]).toMatchObject({
+      kind: 'fate',
+      title: '继承遗产',
+      text: '意外获得遗产10000元',
+      textAmount: '10000',
+      amountText: '+20,000',
+    });
+    const fine = await run({ type: 'FATE', seat: 0, id: 15, amount: 6000, blessing: 'low' });
+    expect(fine.popups[0]).toMatchObject({ text: '骑机车未戴安全帽\n罚款3000元', textAmount: '3000' });
+    const jail = await run({ type: 'FATE', seat: 0, id: 33, amount: null, blessing: 'low' });
+    expect(jail.popups[0]).toMatchObject({ text: '酒醉大闹警局坐牢3天', textAmount: null });
+    // 日本图的第 33 条（slot 41）
+    const jp = await run({ type: 'FATE', seat: 0, id: 33, amount: null, blessing: null }, { gm: 2 });
+    expect(jp.popups[0]).toMatchObject({ slot: 41, text: '诱骗未成年少女拘役3天' });
+    // 原文不带金额的（第 0 条拆屋）：金额只在程序化翻面卡的金额行
+    const demolish = await run({ type: 'FATE', seat: 0, id: 0, amount: 4000, blessing: null });
+    expect(demolish.popups[0]).toMatchObject({ text: '强制拆除房屋一栋', textAmount: null, amountText: '+4,000' });
+  });
+});
+
+// ───────────────────────── 新闻板 ─────────────────────────
+
+describe('NEWS：原版新闻板（fcn.0044a173：fcn.00452c39(2400)，之后没有停顿）', () => {
+  const news = (id: number): GameEventOf<'NEWS'> => ({ type: 'NEWS', id: id as never, params: {}, affected: [] });
+
+  it('原版皮肤 · original：停「语音 ≥ 2.4 秒」、没有最短时间（任意键跳过）、不放提示音；之后收尾 0.2 秒', async () => {
+    setPacingOverride('original');
+    classicSkin();
+    const r = await run(news(29));
+    expect(r.popups).toHaveLength(1);
+    expect(r.popups[0]).toMatchObject({ kind: 'news', id: 29, ms: NEWS_VOICE_MS[29], minMs: 0 });
+    expect(r.audio.filter((a) => a[0] === 'cue')).toEqual([]);
+    const i = r.trace.indexOf('close:news:');
+    expect(r.trace.slice(i)).toEqual(['close:news:', `wait:${newsShowMs(29, 'original').endMs}`]);
+    const short = await run(news(11));
+    expect(short.popups[0]!.ms).toBe(2400);
+  });
+
+  it('跳过新闻板时连语音一起停；没跳过不停', async () => {
+    setPacingOverride('original');
+    classicSkin();
+    const r = await run(news(11), { skipBoard: true });
+    expect(r.audio).toContainEqual(['stopVoice']);
+    const n = await run(news(11));
+    expect(n.audio).not.toContainEqual(['stopVoice']);
+  });
+
+  it('程序化新闻弹窗：开头放 ZzFX news（soundMap 标 timed，事件开始时不放）、最短 1.5 秒；compact 3.4 秒', async () => {
+    expect(SOUND_MAP.NEWS.sfx).toBe(NEWS_STING_SFX);
+    expect(NEWS_STING_SFX).toMatchObject({ zzfx: 'news', timed: true });
+    setPacingOverride('original');
+    const proc = await run(news(5));
+    expect(proc.audio.filter((a) => a[0] === 'cue')).toEqual([['cue', 'zzfx:news']]);
+    expect(proc.popups[0]).toMatchObject({ ms: NEWS_VOICE_MS[5], minMs: 1500 });
+    setPacingOverride('compact');
+    const c = await run(news(5));
+    expect(c.popups[0]).toMatchObject({ ms: 3400, minMs: 1500 });
+    classicSkin();
+    const cc = await run(news(5));
+    expect(cc.popups[0]).toMatchObject({ ms: 3400, minMs: 0 });
+  });
+
+  it('标题是原文（%s / %d 照原位插值，数字不带千分位）；分类名是原版的', async () => {
+    const who = makeNames({ t: tx, view: () => view, map: () => null }).seat(1);
+    const r = await run({ type: 'NEWS', id: 8, params: { seat: 1, amount: 12000 }, affected: [1] });
+    expect(r.popups[0]).toMatchObject({
+      kind: 'news',
+      categoryLabel: '政府公告',
+      headline: `公开表扬第一大地主\n${who}获得12000元奖励`,
+    });
+    const s = await run(news(16));
+    expect(s.popups[0]).toMatchObject({ categoryLabel: '路况报导', headline: '豪雨特报\n行人休息一回合' });
   });
 });
 

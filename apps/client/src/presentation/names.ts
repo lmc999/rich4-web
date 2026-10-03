@@ -26,6 +26,8 @@ export interface NameKit {
   t: LooseT;
   seat(seat: SeatIndex | null): string;
   lot(lot: LotId): string;
+  /** 地块的原名（地图文案本身，不加同名序号）：原版新闻标题 sprintf 的 %s 是地产 / 企业记录里的名字（例如新闻 6 0x4480f6） */
+  lotName?(lot: LotId): string;
   tile(tile: TileId): string;
   card(id: CardId | null): string;
   /** null：私密手牌模式下别人的道具种类（「道具」） */
@@ -125,10 +127,16 @@ export function makeNames(d: NameDeps): NameKit {
     if (!m) return id;
     return lotLabels(m, (k) => mapString(k) ?? k, d.lang?.() ?? 'zh-CN').get(id) ?? id;
   };
+  const lotName = (id: LotId): string => {
+    const def = d.map()?.def;
+    const l = def?.lots.find((x) => x.id === id) ?? def?.companies.find((x) => x.id === id);
+    return l ? (mapString(l.nameKey) ?? lot(id)) : lot(id);
+  };
   const kit: NameKit = {
     t: d.t,
     seat,
     lot,
+    lotName,
     tile: (id: TileId) => {
       const m = d.map();
       try {

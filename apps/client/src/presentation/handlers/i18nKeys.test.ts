@@ -22,22 +22,27 @@ beforeAll(() => {
 const has = (k: string): boolean => i18next.exists(k);
 
 describe('M6/M7 文案键', () => {
-  it('新闻：分类与每条的标题 / 内文（标题 ≤ 15 字、不带插值）', () => {
+  it('新闻：分类与每条的原文标题（原版一两行、只用引擎给的插值键）；逐人行只有 11–13 税与 23 储金红利', () => {
     for (const c of new Set(NEWS_CATEGORY)) expect(has(`news:category.${c}`), `category ${c}`).toBe(true);
     expect(NEWS_CATEGORY).toHaveLength(NEWS_IDS.length);
+    const allowed = new Set(['{{lot}}', '{{who}}', '{{amount}}', '{{days}}', '{{stock}}', '{{company}}']);
     for (const id of NEWS_IDS) {
       expect(has(`news:${id}.headline`), `news ${id}`).toBe(true);
-      expect(has(`news:${id}.body`), `news ${id}`).toBe(true);
-      const h = i18next.t(`news:${id}.headline` as never) as string;
-      expect([...h].length, h).toBeLessThanOrEqual(15);
-      expect(h).not.toContain('{{');
+      expect(has(`news:${id}.body`), `news ${id}`).toBe(false);
+      const h = i18next.getResource('zh-CN', 'news', `${id}.headline`) as string;
+      expect(h.split('\n').length, h).toBeLessThanOrEqual(2);
+      for (const m of h.match(/\{\{[^{}]*\}\}/g) ?? []) expect(allowed.has(m), `${id} ${m}`).toBe(true);
+      expect(has(`news:${id}.row`), `news ${id} row`).toBe([11, 12, 13, 23].includes(id));
     }
   });
 
-  it('命运：每条的标题与内容', () => {
+  it('命运：每条的标题与原文（原文一两行、不写人名）', () => {
     for (const id of FATE_IDS) {
       expect(has(`fate:${id}.title`), `fate ${id}`).toBe(true);
       expect(has(`fate:${id}.text`), `fate ${id}`).toBe(true);
+      const text = i18next.getResource('zh-CN', 'fate', `${id}.text`) as string;
+      expect(text.split('\n').length, text).toBeLessThanOrEqual(2);
+      expect(text, `fate ${id}`).not.toContain('{{who}}');
     }
   });
 

@@ -86,7 +86,7 @@
     "ALLIANCE_EXPIRED": "{{a}} 与 {{b}} 的同盟到期",
     "BANK_REJECTED": "银行拒绝与 {{who}} 往来 {{n}} 天",
     "BANK_REJECTED_sunday": "星期日银行休息，{{who}} 只能下次再来",
-    "NEWS": "新闻「{{text}}」：{{body}}",
+    "NEWS": "新闻「{{text}}」",
     "FATE": "命运「{{title}}」：{{text}}",
     "MAGIC_CONDITION": "{{who}} 走进魔法屋，女巫点名「{{cond}}」：{{targets}}",
     "MAGIC_CAST": "{{who}} 选择魔法「{{effect}}」，作用于 {{targets}}",

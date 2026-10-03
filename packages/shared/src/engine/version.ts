@@ -12,7 +12,9 @@
  *        百货道具一次买一个、每次进店每种只能买一次、真人货架只列进店时有库存的（V-R30；电脑本来如此，golden 不变）；
  *        监狱 / 医院获释不再搬到保释格：留在关押格、来路 = 关押格，下一回合在全部未封邻格里随机选方向（V-M7，
  *        exe v2.06 0x40d184 / 0x40bc10；台湾两条只能从关押格走出的支线因此可达，四张图 golden 刷新）。
- *        PlayerState.savedPrevNode 不再写入（恒为 null，字段保留），state 结构不变
+ *        PlayerState.savedPrevNode 不再写入（恒为 null，字段保留），state 结构不变。
+ *        同版本另含电脑放置类道具选格按原版（architecture §31，只改 AI、引擎规则不变）：路障阶段二、地雷、定时炸弹的后瞻
+ *        从往回第 2 格起（exe v3.11 0x40b343，来路格本身不算），候选按屏幕行序逐个与后瞻比对；四张图 golden 再次刷新
  */
 export const ENGINE_VERSION = '0.5.0';
 export const STATE_SCHEMA_VERSION = 1;

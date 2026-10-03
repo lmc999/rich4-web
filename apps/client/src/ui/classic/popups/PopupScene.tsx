@@ -1,6 +1,6 @@
 // 原版演出弹窗的外壳：Stage4x3 的只读场景（不抢焦点、不挡棋盘与工具列；与舞台同一落点与倍率，经 portal 挂到经典舞台），
 // 根元素 data-testid="popup"、data-kind 与程序化弹窗层一致（E2E 两种皮肤共用）；最短展示时间之后出现「点一下跳过」
-// （网页版的钮）。亮卡照原版：不画跳过钮，从一开始任意鼠标键放开或按键放开就结束（anyInputSkips）。
+// （网页版的钮）。亮卡、新闻板、命运板照原版：不画跳过钮，从一开始任意鼠标键放开或按键放开就结束（anyInputSkips）。
 // 整块盖住工具列与棋盘视窗的板子（新闻板、命运板）在板面上接住指针、暂停经典快捷键（shield），不让输入穿到看不见的
 // 工具列钮上。
 // 另有 useTicker（演出用的真实时间节拍，减少动态时不走）。
@@ -27,8 +27,9 @@ export interface PopupSceneProps {
   minMs: number;
   onSkip: () => void;
   /**
-   * 原版的跳过方式（亮卡）：不画跳过钮、没有最短时间，页面上任意鼠标左 / 右键放开或按键放开（焦点在输入框里打字时除外）
-   * 就结束——exe 亮卡的等待 fcn.00450f9a(1500) 在 PeekMessage 循环里遇到 WM_LBUTTONUP / WM_RBUTTONUP / WM_KEYUP 即返回。
+   * 原版的跳过方式（亮卡、新闻板、命运板）：不画跳过钮、没有最短时间，页面上任意鼠标左 / 右键放开或按键放开（焦点在
+   * 输入框里打字时除外）就结束——exe 亮卡的等待 fcn.00450f9a(1500)、新闻板 / 命运板的 fcn.00452c39(2400 / 1600) 在
+   * PeekMessage 循环里遇到 WM_LBUTTONUP / WM_RBUTTONUP / WM_KEYUP 即返回（0x452c7b–0x452c97）。
    * 只是监听、不拦截：点到的工具列、棋盘照常响应（盖住工具列的板子另用 shield 接住板面上的输入）；只算亮卡出现之后
    * 按下的（出卡确认那一下的放开不算）
    */
@@ -39,7 +40,7 @@ export interface PopupSceneProps {
    * 「说明」开说明框、「托管」直接切换托管）或棋盘；原版板子期间程序停在等待循环里（fcn.00452c39），点不到工具列。
    * 接住的指针不往下传（stopPropagation，右键不弹浏览器菜单）；经典快捷键暂停（keyboard.useSwallowHotkeys，场景根另标
    * data-input-shield 供 shouldHandleHotkey 认），按 M、< > 跳过板子时不会顺带切大地图、转视角。
-   * 跳过：anyInputSkips 时放开即跳过（useAnyInputSkip）；否则可跳过之后（最短时间到了）点板子等于点跳过钮
+   * 跳过：anyInputSkips 时放开即跳过（useAnyInputSkip，新闻板、命运板都是）；否则可跳过之后（最短时间到了）点板子等于点跳过钮
    */
   shield?: SceneRect;
   backdrop?: SceneBackdrop;

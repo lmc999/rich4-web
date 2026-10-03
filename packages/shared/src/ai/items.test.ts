@@ -70,11 +70,30 @@ describe('items（AI 用道具判据）', () => {
     expect(judge(setup([]), ITEM.ROADBLOCK)).toBeNull();
   });
 
+  it('2 路障阶段二：后瞻是往回第 2–7 格（来路格不算）；同额按候选的屏幕行序取第一个（v3.11 0x4212ad）', () => {
+    // 0 号在 8、来路 7：前瞻第一个空格 9 是魔法屋（阶段一不放）；7 号格 L3 是我的高租金地，但它是来路格，不在后瞻里
+    const prevOnly = setup([], (s) => own(s, 'L3', 0, 4));
+    prevOnly.teleport(0, 8, 7);
+    expect(judge(prevOnly, ITEM.ROADBLOCK)).toBeNull();
+    // 0 号在 4、来路 5（逆着走）：前瞻第一个空格 3 是命运（阶段一不放）；后瞻 [6, 7, 8, 9, 10, 11]，L2（6）与 L3（7）同街同额 →
+    // 取候选行序靠前的 7（视角 0 里横街右高左低，x 大的先扫到），不是后瞻里更近的 6
+    const tie = setup([], (s) => {
+      own(s, 'L2', 0, 3);
+      own(s, 'L3', 0, 3);
+    });
+    tie.teleport(1, 16, 15).teleport(0, 4, 5);
+    expect(judge(tie, ITEM.ROADBLOCK)).toEqual({ t: 'node', node: 7 });
+  });
+
   it('3 地雷：后瞻 6 格内对手的地块格随机取一；没有则不用', () => {
     const yes = setup([], (s) => own(s, 'L5', 1, 1));
     yes.teleport(0, 10, 11);
     expect(judge(yes, ITEM.MINE)).toEqual({ t: 'node', node: 12 });
     expect(judge(setup([]), ITEM.MINE)).toBeNull();
+    // 来路格本身不在后瞻里：0 号在 10、来路 11（L4 是对手的），后瞻从 12 开始
+    const prevOnly = setup([], (s) => own(s, 'L4', 1, 1));
+    prevOnly.teleport(0, 10, 11);
+    expect(judge(prevOnly, ITEM.MINE)).toBeNull();
   });
 
   it('4 定时炸弹：后瞻 6 格内任一空格', () => {

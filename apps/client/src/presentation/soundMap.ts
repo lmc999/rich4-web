@@ -47,6 +47,13 @@ export const CARD_SHOW_SFX: SfxCue = Object.freeze({ cue: 'card.use', zzfx: 'mag
 export const FATE_FLIP_SFX: SfxCue = Object.freeze({ zzfx: 'card', timed: true });
 
 /**
+ * 程序化新闻弹窗开头的「新闻快报」提示音（ZzFX 预设 news，没有原版音效）。原版新闻板 fcn.0044a173（0x44a173–0x44a33b，
+ * 含处理函数参数 0 分支）只播标题开头 #NNNN 的语音，没有音效；标 timed：事件开始时不放，NEWS 的 handler 只在程序化
+ * 新闻弹窗时放，原版新闻板不放
+ */
+export const NEWS_STING_SFX: SfxCue = Object.freeze({ zzfx: 'news', timed: true });
+
+/**
  * 得卡后按卡价说的事件槽台词（原版卡片格 0x41ac13、聖誕節 0x450e3c 调 fcn.0044db5f(座位, 卡价)）：卡价 > 100 用槽 0
  * （pointsHigh），51–100 在槽 0 / 1 里随机（rand & 1），1–50 用槽 2（pointsLow）。标 timed：亮卡结束后由 handler 说出
  */
@@ -328,7 +335,8 @@ export const SOUND_MAP = {
   ALLIANCE_EXPIRED: {},
   BANK_REJECTED: { sfx: z('sad') },
   // ── event
-  NEWS: { sfx: z('news'), voice: (e) => [{ k: 'news', key: `news.${e.id}` }] },
+  // 提示音只属于程序化新闻弹窗（timed，见 NEWS_STING_SFX），原版新闻板只有语音
+  NEWS: { sfx: NEWS_STING_SFX, voice: (e) => [{ k: 'news', key: `news.${e.id}` }] },
   // 命运 33–36 在大陆 / 日本 / 美国图换成表项 37–48 的语音（voice 0222–0233，见 eventText.fateVariantSlot）；
   // 翻牌声只属于程序化翻面卡（timed，见 FATE_FLIP_SFX），原版命运板只有语音
   FATE: {

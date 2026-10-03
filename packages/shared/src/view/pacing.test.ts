@@ -31,12 +31,22 @@ import {
   flicMs,
   flicReserveOf,
   GOD_ARRIVAL_FLICS,
+  NEWS_SHOW,
+  NEWS_SHOW_EVENT_TYPES,
+  NEWS_VOICE_MS,
+  newsShowMs,
   ORIGINAL_BUDGET_MS,
   ORIGINAL_FLICS,
   PACING_PROFILES,
   PARACHUTE_FLICS,
   type PacingProfile,
   STEP_MS,
+  WALK_OUT,
+  WALK_OUT_EVENT_TYPES,
+  WALK_OUT_TAIL_MS,
+  walkOutMs,
+  walkOutSwitchTick,
+  walkOutTicks,
 } from './pacing';
 
 /** 任意事件类型的替身：函数型预算与 FLIC 预留读到的字段都给上（与 logFormat.test 同一做法） */
@@ -78,7 +88,13 @@ describe('pacing：两种节奏的预算表', () => {
   });
 
   it('穷举：每种事件在两种节奏下都是非负整数，original ≥ compact；没有 FLIC 预留、也不亮卡的完全相同', () => {
-    const flicTypes = new Set<string>([...FLIC_EVENT_TYPES, ...CARD_SHOW_EVENT_TYPES, ...FATE_SHOW_EVENT_TYPES]);
+    const flicTypes = new Set<string>([
+      ...FLIC_EVENT_TYPES,
+      ...CARD_SHOW_EVENT_TYPES,
+      ...FATE_SHOW_EVENT_TYPES,
+      ...NEWS_SHOW_EVENT_TYPES,
+      ...WALK_OUT_EVENT_TYPES,
+    ]);
     for (const t of GAME_EVENT_TYPES) {
       const e = stub(t);
       const c = eventBudgetMs(e, 'compact');
@@ -376,6 +392,90 @@ describe('pacing：命运板（原版 fcn.0044c4a0：语音 ≥ 1.6 秒 → 效�
         );
       }
     }
+  });
+});
+
+describe('pacing：新闻板（原版 fcn.0044a173：fcn.00452c39(2400) 等语音 ≥ 2.4 秒，之后没有停顿）', () => {
+  const news = (id: number): GameEvent => ({ type: 'NEWS', id, params: {}, affected: [] }) as GameEvent;
+
+  it('语音时长表 36 项（Speaking#149–184），1346–3935 ms', () => {
+    expect(NEWS_VOICE_MS).toHaveLength(36);
+    expect(Math.min(...NEWS_VOICE_MS)).toBe(1346);
+    expect(Math.max(...NEWS_VOICE_MS)).toBe(3935);
+    expect(NEWS_VOICE_MS.indexOf(3935)).toBe(29);
+  });
+
+  it('original：停留 = max(2.4 秒, 语音)、收尾 0.2 秒；compact 沿用 3.4 秒', () => {
+    expect(NEWS_SHOW.original).toEqual({ minHoldMs: 2400, endMs: 200 });
+    expect(newsShowMs(11, 'original')).toEqual({ holdMs: 2400, endMs: 200 });
+    expect(newsShowMs(5, 'original')).toEqual({ holdMs: 3068, endMs: 200 });
+    expect(newsShowMs(29, 'original').holdMs).toBe(3935);
+    for (const id of [0, 11, 29, 35]) expect(newsShowMs(id, 'compact')).toEqual({ holdMs: 3400, endMs: 200 });
+  });
+
+  it('original 预算 = max(compact 3.8 秒, 停留 + 收尾 + 余量)；只有语音超过 3.5 秒的新闻 29 放宽', () => {
+    expect(eventBudgetMs(news(11), 'original')).toBe(COMPACT_BUDGET_MS.NEWS);
+    expect(eventBudgetMs(news(29), 'original')).toBe(3935 + 200 + FLIC_SLACK_MS);
+    for (let id = 0; id < 36; id++) {
+      const t = newsShowMs(id, 'original');
+      const o = eventBudgetMs(news(id), 'original');
+      expect(o, `${id}`).toBeGreaterThanOrEqual(eventBudgetMs(news(id), 'compact'));
+      expect(o, `${id}`).toBeGreaterThanOrEqual(t.holdMs + t.endMs);
+      expect(eventBudgetMs(news(id), 'compact')).toBe(3800);
+    }
+  });
+});
+
+describe('pacing：获释走出建筑（原版 fcn.0040bb40 bit4 分支：8 px / tick，过半才画出来）', () => {
+  const released = (from: 'jail' | 'hospital' | 'hotel' | 'away'): GameEvent => ({
+    type: 'RELEASED',
+    actor: seat(1),
+    from,
+  });
+
+  it('tick 数 = trunc(距离 / 8)、至少 1、不超过上限；过半（剩余 < tick 数 >> 1）时换显隐', () => {
+    expect(WALK_OUT.pxPerTick).toBe(8);
+    // 四张图的实际距离（景观 → 关押格，世界像素）：台湾监狱 110.2 / 医院 92.6、美国监狱 130.0
+    expect(walkOutTicks(110.2)).toBe(13);
+    expect(walkOutTicks(92.6)).toBe(11);
+    expect(walkOutTicks(130)).toBe(16);
+    expect(walkOutTicks(0)).toBe(1);
+    expect(walkOutTicks(500)).toBe(WALK_OUT.maxTicks);
+    expect(walkOutTicks(500, WALK_OUT.hotelMaxTicks)).toBe(10);
+    // 16 tick：剩余 7 < 8 在第 9 个 tick；13 tick：剩余 5 < 6 在第 8 个；3 tick 以内走到才换
+    expect(walkOutSwitchTick(16)).toBe(9);
+    expect(walkOutSwitchTick(13)).toBe(8);
+    expect(walkOutSwitchTick(4)).toBe(3);
+    expect(walkOutSwitchTick(3)).toBe(3);
+    expect(walkOutSwitchTick(1)).toBe(1);
+  });
+
+  it('tick 与掷骰动作同一个（original 80 ms、compact 40 ms）', () => {
+    for (const p of PACING_PROFILES) expect(walkOutMs(p, 1)).toBe(DICE_TIMING[p].throwTickMs);
+    expect(walkOutMs('original')).toBe(16 * 80);
+    expect(walkOutMs('compact')).toBe(16 * 40);
+  });
+
+  it('RELEASED：坐牢 / 住院 / 住旅馆 = max(1 秒, 走出 + 收尾 + 余量)；消失与恶人 1 秒；RETURNED 只剩落定的停顿', () => {
+    // compact 是常数 1 秒：最远的走出也放得下
+    expect(COMPACT_BUDGET_MS.RELEASED).toBe(1000);
+    expect(walkOutMs('compact') + WALK_OUT_TAIL_MS + FLIC_SLACK_MS).toBeLessThanOrEqual(COMPACT_BUDGET_MS.RELEASED);
+    for (const p of PACING_PROFILES) {
+      for (const from of ['jail', 'hospital'] as const) {
+        expect(eventBudgetMs(released(from), p)).toBe(
+          Math.max(1000, walkOutMs(p, WALK_OUT.maxTicks) + WALK_OUT_TAIL_MS + FLIC_SLACK_MS),
+        );
+      }
+      expect(eventBudgetMs(released('hotel'), p)).toBe(
+        Math.max(1000, walkOutMs(p, WALK_OUT.hotelMaxTicks) + WALK_OUT_TAIL_MS + FLIC_SLACK_MS),
+      );
+      expect(eventBudgetMs(released('away'), p)).toBe(1000);
+      const villain: GameEvent = { type: 'RELEASED', actor: { t: 'villain', kind: 'thief' }, from: 'jail' };
+      expect(eventBudgetMs(villain, p)).toBe(1000);
+      expect(eventBudgetMs({ type: 'RETURNED', seat: 1, node: 14 }, p)).toBe(400);
+    }
+    expect(eventBudgetMs(released('jail'), 'original')).toBe(1480);
+    expect(eventBudgetMs(released('jail'), 'compact')).toBe(1000);
   });
 });
 

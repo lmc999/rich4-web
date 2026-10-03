@@ -1,10 +1,12 @@
 // M6 / M7 的棋盘舞台（presentation/handlers/stage.ts 的 StagePort 的 Pixi 实现）：
-// 路面物件、路上神明、恶人、乞丐与角色状态外观的同步（RoadObjectView + PlayerActor.setStatus），
-// 以及各事件的演出原语（爆炸、飞弹 / 核弹、光柱、光束、神明降临与离身、救护车 / 警车、女巫魔法阵……）。
+// 路面物件、路上神明、恶人、乞丐与角色状态外观的同步（RoadObjectView + PlayerActor.setStatus；关押 / 住旅馆期间人在
+// 医院 / 监狱 / 旅馆里，棋子不画，PlayerActor.setInside），以及各事件的演出原语（爆炸、飞弹 / 核弹、光柱、光束、
+// 神明降临与离身、救护车 / 警车、获释时从建筑里跳出来、女巫魔法阵……）。
 // 每个阻塞方法的时长都是 timings.ts 里的常数，handler 据此编排、不超预算；中止（signal）时立即落到终态。
 import type {
   GodKind,
   GodManifestEffect,
+  LotId,
   RoadObject,
   SeatIndex,
   StrikeKind,
@@ -14,9 +16,15 @@ import type {
 } from '@rich4/shared/engine';
 import type { GameView } from '@rich4/shared/view';
 import { Container, Graphics, Sprite } from 'pixi.js';
-import type { ConfineKind, ObjectRemoval, StagePort } from '../../presentation/handlers/stage';
+import type {
+  ConfineKind,
+  ObjectRemoval,
+  StagePort,
+  WalkOutFrom,
+  WalkOutOptions,
+} from '../../presentation/handlers/stage';
 import type { Anchor } from '../../presentation/types';
-import { statusOf } from '../actors/ActorStatus';
+import { hotelAt, type Inside, insideOf, statusOf } from '../actors/ActorStatus';
 import { figureSvg, GOD_PALETTES } from '../actors/figures';
 import { GOD_SCALE, GodSprite } from '../actors/GodSprite';
 import { STEP_MS } from '../actors/PlayerActor';
@@ -69,9 +77,6 @@ export function isStageHost(x: unknown): x is StageBoardHost {
   return typeof h.anchorPos === 'function' && typeof h.renderer === 'object' && h.renderer !== null;
 }
 
-/** 关押窗口气泡相对医院 / 监狱建筑中心的抬高（像素，约一层楼顶） */
-const CONFINE_LIFT = 96;
-
 /** 原版世界像素（范围半宽）→ 屏幕像素：台湾图约 48 像素一格，等角一格对角约 90 像素 */
 export function strikeRadiusPx(half: number): number {
   return Math.max(120, (Math.max(0, half) / 48) * 90);
@@ -88,6 +93,8 @@ function particleLimitOf(r: GameRenderer): number {
 
 export class BoardStage implements StagePort {
   private dead = false;
+  /** 本回合获释、还没走出来的人（holdInside）：同步时留在建筑里 */
+  private readonly held = new Set<SeatIndex>();
 
   /** 从 BoardController（或同形对象）创建；不满足条件返回 null */
   static fromHost(host: unknown, fx: FxSystem): BoardStage | null {
@@ -144,20 +151,31 @@ export class BoardStage implements StagePort {
   syncWorld(view: GameView): void {
     if (!this.ready) return;
     this.board.roads.sync(view);
+    const def = this.board.def;
     for (const p of view.players) {
       const a = this.board.actor(p.seat);
       if (!a) continue;
       const s = statusOf(p, view);
-      if (s.confined) {
-        // 关押气泡挂到医院 / 监狱建筑上（相对角色脚底），同楼多人按座位错开
-        const lm = this.board.landmarkScreenPos(s.confined.where);
-        const at = a.screenPos();
-        // 窗口气泡在楼顶上方（建筑中心往上约一层楼高），同楼多人按座位左右错开
-        if (lm) a.setConfineAnchor({ x: lm.x - at.x + (p.seat - 1.5) * 64, y: lm.y - at.y - CONFINE_LIFT });
-      }
       a.exhaust ??= (pt) => this.puff(pt);
       a.setStatus(s);
+      if (this.held.has(p.seat)) continue;
+      // 关押 / 住旅馆：人在医院 / 监狱 / 旅馆里，棋子不画（找不到建筑时停在原格、同样不画）
+      const inside = p.placed && p.node > 0 ? insideOf(s, p.node, (n) => hotelAt(n, def, view)) : null;
+      a.setInside(inside ? (this.insideCell(inside) ?? this.tileCenter(p.node)) : null);
     }
+    this.board.spreadActors();
+  }
+
+  /** 建筑中心的逻辑坐标（医院 / 监狱景观、旅馆地块；停在原格的为 null） */
+  private insideCell(b: Inside): Pt | null {
+    if (b.t === 'landmark') return this.board.landmarkCell(b.kind);
+    return b.t === 'lot' ? this.board.lotCell(b.lot) : null;
+  }
+
+  private tileCenter(node: TileId): Pt | null {
+    if (!this.board.geometry.hasTile(node)) return null;
+    const c = this.board.geometry.tileCell(node);
+    return { x: c.x + 0.5, y: c.y + 0.5 };
   }
 
   /** 排气小烟团 */
@@ -168,7 +186,13 @@ export class BoardStage implements StagePort {
   }
 
   clear(): void {
-    // 演出节点都登记在 Fx 里（BoardPort.clearFx → fx.clear 已清）；这里没有额外的临时对象
+    // 演出节点都登记在 Fx 里（BoardPort.clearFx → fx.clear 已清）；这里只清本回合获释的留置
+    this.held.clear();
+  }
+
+  holdInside(seat: SeatIndex | null): void {
+    if (seat === null) this.held.clear();
+    else this.held.add(seat);
   }
 
   dispose(): void {
@@ -591,6 +615,34 @@ export class BoardStage implements StagePort {
     if (!a) return;
     this.fx.sparkles(a.headPos(), 0xfff3b0, 14);
     await this.fx.shockwave(a.screenPos(), 70, 0xffffff, FX_RELEASE_MS, signal);
+  }
+
+  /** 获释：从医院 / 监狱 / 旅馆里跳着走到所在的格（前半程看不见，出现时冒一小把星光），停在格上 */
+  async walkOut(seat: SeatIndex, _from: WalkOutFrom, o: WalkOutOptions, signal: AbortSignal): Promise<void> {
+    this.held.delete(seat);
+    const a = this.actor(seat);
+    if (!a || a.tile === null) {
+      o.onShow?.();
+      return;
+    }
+    await a.walkOut(a.tile, {
+      stepMs: STEP_MS,
+      signal,
+      onShow: () => {
+        if (!signal.aborted && !a.destroyed) this.fx.sparkles(a.headPos(), 0xfff3b0, 10);
+        o.onShow?.();
+      },
+    });
+    this.board.spreadActors();
+  }
+
+  /** 住旅馆：从门前的格跳着走进旅馆，过半后看不见 */
+  async walkIn(seat: SeatIndex, lot: LotId, _o: WalkOutOptions, signal: AbortSignal): Promise<void> {
+    const a = this.actor(seat);
+    const c = this.ready ? this.board.lotCell(lot) : null;
+    if (!a || !c) return;
+    await a.walkIn(c, { stepMs: STEP_MS, signal });
+    this.board.spreadActors();
   }
 
   async vehicle(seat: SeatIndex, v: Vehicle, signal: AbortSignal): Promise<void> {

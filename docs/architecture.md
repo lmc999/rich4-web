@@ -1805,6 +1805,7 @@ RICH4_ASSETS_ALLOW_UNGATED=0     # 仅本机调试：非 production + PUBLIC_URL
   RETURNED `placeActor(座位, 关押格)`；之后 MOVE_SEGMENT 从关押格起步。逐一核对过 `handlers/status.ts`、`handlers/turn.ts`、`game/orig/**`（OrigBoardView / OrigActor / poses / OrigStage）
   与程序化棋盘（BoardStage、PlayerActor、LandmarkView），没有「获释跳到保释格」的逻辑（旧位置完全来自引擎的 post）。
 - 关押期间的显示保持现状（原版皮肤画关押姿态、程序化画关押窗口气泡，与同格棋子错开）；原版其实不画，登记 DEV-29。
+  （2026-10-03 已按原版改：关押期间不画、获释时从景观走一步出来，§32。）
 
 ### 29.5 测试
 
@@ -1833,10 +1834,10 @@ RICH4_ASSETS_ALLOW_UNGATED=0     # 仅本机调试：非 production + PUBLIC_URL
 
 ### 29.7 遗留
 
-- DEV-29：原版关押期间不画棋子、获释时从景观走一步出来；要不要照做由用户决定。
+- ~~DEV-29：原版关押期间不画棋子、获释时从景观走一步出来；要不要照做由用户决定。~~（2026-10-03 用户要求照做，已按原版改，§32）
 - V-M7 ③：关押格能否放物件、能否作跳伞落点仍待核。
 - ~~AI `lookbehind` 在来路 = 关押格时的起点~~、~~关押期间被魔法屋「转向」改过来路~~：审查时核实两条都与原版无差异，已关闭（§29.9）。
-- AI `lookbehind` 一般情形与原版差一格（与获释无关，复核时发现，docs/TODO.md，§29.9）。
+- ~~AI `lookbehind` 一般情形与原版差一格~~（与获释无关，复核时发现，§29.9）：已按原版改，见 §31。
 
 ### 29.8 整体验证（2026-10-03）
 
@@ -2000,3 +2001,270 @@ skin-classic-dialogs、skin-classic-cards、skin-classic-venues-b、hand-privacy
   skin-original-stage，加 skin-original-board）15 例全过；把接住层临时去掉时 skin-classic-event-cards 失败（另一名玩家点板子把托管切成
   开），确认这条 E2E 能抓住回归。浏览器测试（client-browser）本机的 Playwright Chromium 版本对不上，`npm test` 不跑，用
   `RICH4_CHROMIUM_PATH=<本机 Chromium>` 单独跑 `src/ui` 4 个文件 13 例全过。
+
+## 31. AI 后瞻（lookbehind）与放置类道具选格按原版（2026-10-03）
+
+用户要求修 §29.9 复核时发现的「AI `lookbehind` 一般情形与原版差一格」。只改电脑策略（`packages/shared/src/ai`），引擎规则、state 结构、
+mapHash 都不变；ENGINE_VERSION 仍是 0.5.0（尚未上线，`engine/version.ts` 的 0.5.0 说明补了一句），四张图 golden 再刷新一次。
+
+### 31.1 取证（radare2；AI 以 v3.11 为基线，v2.06 核对）
+
+- **前瞻 / 后瞻是同一段循环**：v3.11 前瞻 0x40b221 与后瞻 0x40b343 只有开头两条读取互换——前瞻起点 = 节点 0x496b74、排除 = 来路 0x496b76；
+  后瞻起点 = 来路（0x40b376）、排除 = 节点（0x40b381）。n > 8 截成 8（0x40b360，输出缓冲 0x48b8b4 是 8 个 u16，先清零）。每一步
+  （0x40b397–0x40b450）取节点记录 +0x18 的 4 个邻接槽，跳过 0、跳过排除格、跳过静态封路（+0x24 & (0x40000000 >> 槽)）：0 个候选 → 输出排除格；
+  1 个 → 直接取，不调 rand；≥2 个 → `rand() % n`（0x456f2d）并置「遇到过岔路」；然后排除格 = 当前、当前 = 输出。所以后瞻的 out[0] 是来路格的
+  下一格（往回第 2 格），来路格本身不在输出里；来路格是死路时 out[0] 回落为当前格。
+- **获释特例**：被关时来路写 0（v3.11 0x43d630 / 0x43ecdc；v2.06 0x43c35b / 0x43d9e8），获释不改。起点 0 是全 0 哨兵节点（没有邻接），
+  0 个候选 → out[0] = 关押格；之后排除 0，即全部未封邻格。我们来路 = 节点 = 关押格，结果同为 [关押格, 未封邻格…]（§29.9 已核，这次保持）。
+- **三个调用方**（v3.11 路障阶段二 0x4212ad、地雷 0x4213e0、定时炸弹 0x42158f）都是 lookbehind(6)，不看返回的岔路标记，接着调 0x409ef9 取候选表
+  （0x48b8c4）：视野内、+0x24 & 0xffff00 为 0 的节点按投影后的像素位置写进 440×440 缓冲（下标 sy × 440 + sx，0x40a028–0x40a046），再逐行、
+  行内从左到右扫出（0x40a05c–0x40a09e）。随后**遍历候选**、候选等于 out[0..5] 之一才往下看——路障：我的住宅，路段过路费（0x419744）> 6000 × PI
+  且严格大于当前最高；地雷：先看是不是监狱 / 医院关押格且有人在押（0x421446 / 0x421469 比 0x48bae0 / 0x48bae2，命中直接选），再把对手的
+  住宅 / 设施格放进池；炸弹：命中的都放进池；池非空取 `rand() % n`。
+- **v2.06 没有后瞻**：同三处（0x420a1e / 0x420b6c / 0x420d19）调用的是前瞻 0x40ae1d(6)，候选表 0x409b04（同一算法，写 0x488650），比对是排除语义——
+  路障阶段二要求前方 6 格里没有同一块地的格，地雷是对手的地且不在前方 6 格里（没有监狱 / 医院优先），炸弹在视野内除前方 6 格外随机取。
+  项目的 AI 以 v3.11 为基线（research/g_arbitration「实现时以 v3.11 为基线」，design/minigames-ai.md 的地址也都是 v3.11），照 v3.11 改；
+  版本差异记入 docs/TODO.md，要不要改由用户决定。
+
+### 31.2 实现
+
+- `ai/view.ts`：前瞻 / 后瞻共用 `walk(at, excl, n, rng)`（最多 8 格，at = 0 视为哨兵、0 个候选）；`origPrev()` 把我们在关押 / 获释时写的
+  「来路 = 节点」换回原版的 0。`lookbehind = walk(origPrev, node)`、`lookahead = walk(node, origPrev)`。前瞻行为不变：
+  `test/lookbehind-equivalence.ts` 在四张原版图与 fixture 图的全部 (节点, 来路) 组合 × 25 个种子上比对，新 lookahead 与旧实现逐项相同；
+  新 lookbehind(6) 一般情形 = 旧 lookbehind(7) 去掉第一格，来路 = 节点时与旧实现相同，随机数的消耗也相同。
+- `AiView.tilesInView(tiles)`：只留视野内的格，按视角 0 的线性投影排序——sy = 25·y − 11·x、sx = 34·x + 14·y（亚格矩阵 v3.11 0x474910 视角 0
+  = [−34, 11, −14, −25]，v2.06 0x4727bc 相同，与逐格表 0x46ccf0 每格的增量一致，只差表里的舍入），同一位置按 id。视野仍是世界坐标方窗（DEV-04）。
+  视角 0 里世界坐标的同一行是右高左低，同一条横街上 x 大的格先扫到。`lotsInView` 仍按世界坐标先 y 后 x（没改，横街上与原版行序相反，
+  留给 V-E10 / A11 换投影版时一起改）。
+- `ai/items.ts behindCands`：lookbehind(6) 后按 `tilesInView(回合菜单的合法格)` 的顺序留下在后瞻里的格；路障阶段二、地雷、定时炸弹都改用它。
+  带来的变化：同额路障取行序靠前的格（原来取后瞻里更近的格）；池里同一格只算一次（原来后瞻原路返回时同一格会重复计权）；
+  监狱 / 医院优先按候选顺序。随机数派生（`turnRng('item:2b' / 'item:3' / 'item:4' / 'item:<n>:pick')`）与取数时机不变。
+- 文档：`DEVIATIONS.md` DEV-04 补「AI 按屏幕行序遍历候选」一句；`design/minigames-ai.md` §8.2 的 lookahead / lookbehind 与 §9.6 道具表 2、3 同步。
+
+### 31.3 测试
+
+- `ai/view.test.ts`（新）：一般情形 5 号格来路 4 → [3, 2, 1, 18, 17, 16]（4 → 19 静态封路不算候选、不取随机数；n = 10 截成 8 格）；
+  岔路 14 号格来路 13 → 候选 [20, 12]，脚本 rng 断言取数次数与 n（[2] / [2, 2]）；获释（来路 = 节点 = 14）→ [14, 15, …] / [14, 13, …]，
+  第二格起才取随机数；0 个候选（test-allkinds 死路 26）→ 第一格回落为当前格 [25, 24, 23, 22, 21, 8]，外推途中原路返回 [24, 25, 26, 25, 24, 23]；
+  lookahead 获释时在全部邻格里随机、没落地时都为空；`tilesInView` 的视角 0 行序。
+- `ai/items.test.ts`：路障阶段二——来路格上我的高租金地不放（来路格不在后瞻里）；逆着走时 L2（6）/ L3（7）同街同额取行序靠前的 7，不是后瞻里更近的 6；
+  地雷——来路格上对手的地不放。
+- 变异：把旧 lookbehind 临时换回，view / items 共 5 例失败（获释那一例照样通过——它本来就与原版一致）；只把遍历顺序换回后瞻输出顺序，路障同额 1 例失败；
+  排序换成世界坐标先 y 后 x，2 例失败。都已恢复。
+
+### 31.4 golden（四张图刷新）
+
+`RICH4_UPDATE_GOLDEN=1 RICH4_GOLDEN_MAPS=taiwan,china,japan,usa RICH4_DATA_DIR=./rich4-data npx vitest run --project shared src/engine/golden`，
+再不带 UPDATE 跑两遍均通过、四个快照 sha256 不变；mapHash 不变，16 局 AI intent 被拒 0 次。每局在第 0 个 400 事件检查点内就分歧（开局第 0 天
+就有人放炸弹）。各局 事件数 / 路障 / 地雷 / 炸弹 放置次数（旧 → 新；`test/lookbehind-golden-places.ts` 按 golden 的同一组对局重放，终局哈希与快照一致，
+`test/lookbehind-golden-diff.ts` 比较）：
+
+| 图 | 一个月 | 三个月 | 半年 | 一年 |
+|---|---|---|---|---|
+| 台湾 | 833→800 / 1→0 / 3→2 / 2→2 | 2457→2671 / 3→2 / 3→3 / 4→5 | 5199→5167 / 6→5 / 7→4 / 10→5 | 9744→9053 / 11→9 / 7→7 / 8→8（365 天 timeLimit → 357 天 lastStanding） |
+| 大陆 | 832→833 / 1→1 / 3→3 / 3→4 | 2472→2457 / 2→3 / 3→4 / 4→6 | 5086→4985 / 7→2 / 5→4 / 5→5 | 10106→9580 / 4→9 / 9→8 / 10→8 |
+| 日本 | 871→858 / 2→2 / 3→3 / 3→4 | 2610→2538 / 2→2 / 4→5 / 4→7 | 5166→5030 / 8→5 / 6→8 / 6→8 | 9486→7846 / 13→9 / 10→8 / 11→11（365 天 timeLimit → 294 天 lastStanding） |
+| 美国 | 835→840 / 2→2 / 3→3 / 3→3 | 2556→2440 / 1→1 / 4→4 / 4→4 | 5026→5011 / 5→4 / 6→6 / 7→5 | 8529→8803 / 9→9 / 5→7 / 8→10（334 天 lastStanding → 365 天 timeLimit） |
+
+位置：改前后瞻类放置（地雷、炸弹、路障阶段二）落在「往回第 1 格 = 来路格」的四张图共 17 / 11 / 15 / 13 次，改后 0 次，全部落在往回第 2–7 格
+（美国一年局出现往回第 7 格）。按「同局、同天、同座、同种」对得上的放置里，四张图分别有 10 / 15 / 12 / 19 次落格不同
+（例：日本一个月局第 0 天 2 号的炸弹 60（往回第 1 格）→ 57（往回第 4 格），美国同局 2 号 58（往回第 1 格）→ 60（往回第 3 格），
+大陆同局 3 号 88（往回第 2 格）→ 92（往回第 6 格）），其余随对局走向不同而无从对照。路障阶段一（前方 4 格）不受影响，
+次数变化来自对局走向不同。
+
+### 31.5 自对弈
+
+`npm run sim -- --engine-only --map <图> --data-dir rich4-data --games 500 --policy original --workers 8 --stats` 与
+`--games 200 --policy random --check-fold --workers 8`，四张图各跑两遍（`test/lookbehind-sim.sh`，输出在 `.cache/lookbehind/sim/`）：
+全部 finished = 局数、rejects / invariantErrors / errors 都是 0，两遍 finalHash 与 journalHash 都相同。
+
+| 图 | original 500 局 finalHash（平均天数；OBJECT_PLACED / ROADBLOCK_HIT / BOMB_ATTACHED） | random 200 局 finalHash（--check-fold） |
+|---|---|---|
+| 台湾 | `0aec5587ae6ff8d4`（381.7 天；14332 / 4667 / 3837） | `a980c4513d7e62e0` |
+| 大陆 | `3c3f4621cc90de45`（517.8 天，42 局 timeLimit；18580 / 6132 / 4986） | `9646d6170b534826` |
+| 日本 | `686b17518710dccb`（306.8 天；13673 / 4402 / 3645） | `26dcd8bad624f431` |
+| 美国 | `c37d5bbeb275d4f5`（383.1 天；15674 / 5036 / 4271） | `2ba641cec6a3760c` |
+
+（random 策略不经过电脑道具判据，只证明引擎侧没有被带坏；跑自对弈期间 `ai/view.ts`、`ai/items.ts` 与开始时逐字节相同。）
+
+### 31.6 验证
+
+- `npm run typecheck`、`npm run lint`（1295 个文件）EXIT 0；`npm run check:determinism` OK（193 个文件）；`npm run check:no-original` OK。
+- `npx vitest run --project shared`：88 个文件通过 1 跳过，869 例通过 20 跳过；`RICH4_DATA_DIR=./rich4-data` 时 89 个文件 889 例全过
+  （含四张图 golden）。自对弈同时跑时曾有 2 例（items 5 / 6、12）因机器负载超时，负载降下来后重跑通过。
+- `npx vitest run --project server --project server-real`：69 个文件 411 例全过。
+- `test/lookbehind-equivalence.ts`：全部一致。没有跑 E2E（AI 改动不涉及客户端；E2E 由主会话统一跑）。
+
+### 31.7 遗留
+
+- v2.06 / v3.11 的后瞻差异（31.1 末条），要不要改由用户决定（docs/TODO.md）。
+- 地雷 / 定时炸弹的监狱 / 医院优先：原版比关押格，我们比 kind 为 jail / hospital 的格（保释格 / 出院格）；我们的引擎不许在关押格放物件，
+  照原版改这条分支就永远不命中，和 V-M7 ③ 一起定（docs/TODO.md）。
+- 原版候选表不看占用（0x409ef9 只按 +0x24 & 0xffff00 过滤），我们用回合菜单的合法格（空道路格 ∩ 范围），原版选中被占格时的结果没核；
+  `lotsInView` 的行序见 31.2。
+
+## 32. 用户反馈修复：关押期间不画棋子、获释时从建筑里走出来（2026-10-03）
+
+用户要求按原版修：被关期间不画棋子，获释时从建筑里走一步出来（§29.4 当时保留现状、登记 DEV-29）。本节只改表现层与演出预算：
+**引擎规则、golden、ENGINE_VERSION 不变**；素材包没有新登记的键，`rich4-assets/` 没有重建。
+
+### 32.1 取证（v2.06 radare2 复核；玩家记录基址 0x493910、步长 0x68，与 §29.9 同一记法）
+
+- 绘制循环 0x4082a5–0x4082c3：坐标 +0x08 为 0 不画；主阻碍计数 +0x32 按 dword 比较（住旅馆 +0x32、消失 +0x33、坐牢 +0x34、
+  住院 +0x35 四个字节）不为 0、且 +0x15 没有 bit5 就跳过。附身物件循环 0x408be6 只看这个 dword，不为 0 一律不画（附身神明、身上炸弹）。
+- 被关：监狱 0x43c34c–0x43c37d（节点写关押格、来路 0、+0x1b = 0xf、坐标写景观表 [0x495c20] + 0x38 即景观 2），医院 0x43d9d9–0x43da0a
+  （+0x1c 即景观 1）。已经关着时（0x43c307 / 0x43d994 计数不为 0）只加天数、镜头移到人所在处（fcn.0041cc56），不再播警车 / 救护车。
+- 住旅馆 fcn.0040d06b（0x41a0be）：站在门前且是当前玩家时置 bit5、朝向 = 节点 → 旅馆，当回合走进去；否则坐标直接写成旅馆坐标
+  （设施表 [0x495c3c] + 56·idx）。
+- 回合开始 fcn.0041c058 按计数 0x80 获释：住旅馆 0x41c09e → fcn.0040d184；消失 0x41c0ce → fcn.0040cfab（直接清计数、放回节点，
+  播 Data#492 / #517 的 UFO / 飞机动画，不走出来）；坐牢 0x41c105 → fcn.0043c4ea、住院 0x41c139 → fcn.0043db7a，都调 fcn.0040d184。
+  保释对话框也调 fcn.0043c4ea（0x43bf94）。恶人（座位 ≥ 4）在 0x43c50b 之后直接放在关押格（0x43c525–0x43c572），不走出来。
+- fcn.0040d184：+0x15 |= 0x10，朝向 = fcn.00453614(节点坐标 − 当前坐标)，不改节点与来路。fcn.0040d7e5：bit4 / bit5 时只走 1 步（0x40d7fd–0x40d806）。
+- fcn.0040bb40：bit4 分支起点 = 当前坐标、终点 = 节点坐标（0x40bba3–0x40bbcc）；bit5 起点 = 节点、终点 = 设施坐标（0x40bbd1–0x40bc0b）；
+  有 bit4 / bit5 时每 tick 走距离 × 0.125 分之一（0x40bd5a，即 8 px / tick；平常按速度表 0x472884 [8,12,16,8]），tick 数 = 距离 / 8 经
+  fcn.0045641c 截断取整（0 记 1，0x40be03）；每 tick 先减剩余再走，剩余 < tick 数 >> 1 时 bit4 清计数 dword（0x40beb1，从此画出来）、
+  bit5 清 bit5（0x40bebb，从此不画）；剩余 ≤ 0 落到终点；bit4 / bit5 时不按来路改朝向（0x40befb）。走到关押格不触发落点事件（§29.1）。
+- tick = 20 ms × 分频表 0x46a9d0 [6,4,2][速度]（与掷骰同一个 tick，original 节奏 80 ms、compact 40 ms）。
+- 四张图的走出距离（景观 → 关押格，世界像素）：台湾监狱 110 / 医院 93、大陆 91 / 96、日本 66 / 91、美国 130 / 86，即 8–16 tick；
+  旅馆到门前格 74–80 px（9–10 tick）。
+
+### 32.2 实现
+
+- 状态（`game/actors/ActorStatus.ts`）：ActorStatus 加 `hotel`；`insideOf` / `hotelAt` 给出人在哪栋建筑里——坐牢 / 住院在景观里，
+  住旅馆在门前格（`TileDef.ref.lot`）所属的旅馆里；找不到旅馆（死神替人付费、旅馆被拆）时为 `here`（停在原格、同样不画）。
+- 原版皮肤：`OrigActor.setInside(world)` 把画点放到景观 / 旅馆上（镜头跟随、气泡锚点都在这里），本体、名牌、附身神明、炸弹与引信都不画，
+  节点不变；`walkOut(to, {tickMs, onShow})` 按原版 tick 匀速走、朝向 = 景观 → 格、前 `walkOutSwitchTick` 个 tick 不画、过半出现并调 onShow，
+  走到停在格上；`walkIn(world)` 反过来。棋盘上不再选原版关押姿态库（char.<c>.hospital / jail）。`OrigStage.syncWorld` 按状态 setInside
+  （景观坐标取 `OrigBoardView.landmarkWorld`，旅馆取 `lotWorld`）；同格错开（`OrigRenderer.spreadActors`）跳过看不见的人（出国、乞丐同样跳过）；
+  快照之后获释还没走的人（来路 = 关押格本身）朝向按景观 → 关押格（`OrigBoardController.facingFrom`）。
+- 程序化皮肤：删掉关押窗口气泡；`PlayerActor.setInside(cell)` 整个棋子（人物、载具、头顶挂件、影子、名牌）不画，画点放在建筑中心；
+  `walkOut` 从建筑中心跳 1–3 下到格上（每下 STEP_MS，`fx/timings` 的 `WALK_OUT_HOPS_MAX`），过半出现、冒一小把星光；`walkIn` 反过来。
+- StagePort（`presentation/handlers/stage.ts`）新增 `walkOut` / `walkIn` / `holdInside`，两种舞台与测试舞台都实现。
+- handler：
+  - CONFINED：已经关着（加刑）时不再派警车 / 救护车，只移镜头、冒气泡；
+  - TURN_STARTED：本回合获释（坐牢 / 住院 / 住旅馆计数为 0x80）时 `holdInside(seat)`——引擎在 TURN_STARTED 之前推进计数，清零写在
+    TURN_STARTED 的 post 里，留置让人在 RELEASED 走出之前一直留在建筑里；`walkOut` 开始、批尾整体同步（`syncView`）、reset / 跳过（`clear`）时解除；
+  - RELEASED：坐牢 / 住院 / 住旅馆调 `walkOut`，出现那一刻才把舞台同步到获释后的显示态；出国 / 航空回来仍是开门闪光，加跳一下（从 RETURNED 挪来）；
+  - RETURNED：只确认停在格上、停 0.2 秒（原版走出这一步后回合就结束）；
+  - HOTEL_STAY：站在门前时 `walkIn`，否则直接不见。
+- pacing（`shared/view/pacing.ts`）：`WALK_OUT`（8 px / tick；监狱 / 医院最多 16 tick、旅馆 10 tick）、`walkOutTicks` / `walkOutSwitchTick` /
+  `walkOutMs`；RELEASED 的 original 预算 = max(1 秒, 走出 + 0.1 秒收尾 + 余量)，坐牢 / 住院 1480 ms，住旅馆、消失与恶人 1 秒；compact 仍是常数
+  1 秒（最远 16 × 40 ms 加收尾也放得下）；RETURNED 800 → 400 ms。服务器截止时间按同一张表；新闻 / 命运条目没有动。
+
+### 32.3 测试
+
+- `shared/view/pacing.test.ts`：tick 数（截断、至少 1、上限）、换显隐的 tick、两种节奏的 RELEASED / RETURNED 预算；穷举测试把 RELEASED 列为 original 放宽的事件。
+- `game/actors/ActorStatus.test.ts`（新）：insideOf / hotelAt / statusOf 的 hotel。
+- `game/actors/PlayerActor.test.ts`：在建筑里整个棋子不画、没有窗口气泡；walkOut 前半程不画、过半出现（onShow 一次）；中止直接落到格上；walkIn。
+- `presentation/handlers/m6m7.test.ts`：CONFINED（警车之后才同步成关押；加刑不派警车）、RELEASED（出现那一刻才换掉关押状态、没有开门闪光、
+  不重新摆放）、出国回来与保释、RETURNED、TURN_STARTED 的留置、HOTEL_STAY 门前才走进去。
+- `presentation/handlers/release.test.ts`：真实引擎（坐牢 26、环路医院 20）下被关之后到获释之前舞台看到的都是关押状态，RELEASED 先 walkOut
+  再同步成获释，观战者同一套调用；新增「真实引擎 × 真 OrigStage」：经事件前后同步（同 wrap），被关之后一直在景观里——包括获释那一回合
+  TURN_STARTED 已清计数之后——RELEASED 走出来一次，之后在格上（去掉 TURN_STARTED 的留置时这一例失败）。
+- `presentation/handlers/budget.test.ts`：RELEASED 四种来源都在预算内；原版舞台按原版 tick 走完 16 tick（过半在第 9 个 tick）不超预算。
+- 浏览器（client-browser）：`game/orig/jailWalkOut.browser.test.ts`（由 `confinedSpread.browser.test.ts` 改写）——住院 / 坐牢 / 住旅馆时本体、名牌、
+  附身神明、炸弹、引信都不画、画点在景观 / 旅馆上、路过同格的人不错开；走出的时长、出现时刻、朝向与终点；中止后直接在关押格；重新进房后的朝向。
+  `game/fx/fx.browser.test.ts`：程序化关押期间整个棋子不画、没有窗口气泡；walkOut 前半程不画、过半出现、停在格上。
+
+### 32.4 验证
+
+- `npm run typecheck`、`npm run lint`（1295 个文件）通过。
+- `vitest --project client-unit` 70 个文件 683 例、`client-dom` 46 个文件 804 例、`server` 51 个文件 327 例、`server-real` 18 个文件 84 例、
+  `shared` 的 `src/view` 4 个文件 60 例通过。
+- client-browser（本机没有 Playwright 1243 的浏览器，`RICH4_CHROMIUM_PATH` 指向已装的 Chrome for Testing 1228）：14 个文件 71 例通过、1 例跳过，
+  `audioEngine.browser.test.ts` 在整组运行时偶发失败、单独重跑通过（同 §29.6，与本改动无关）。
+- 真实素材包（packId `daa850ef3a455b4a`，本机端口 4321 / 6321，`test/jail-walkout-shots.mjs`，原版皮肤 1920×1080、original 节奏）：
+  台湾坐牢（关押格 1，13 tick，走出 1023 ms）、台湾住院（23，11 tick，873 ms）、大陆医院 63（环路，12 tick，958 ms）各一组：关押期间关押格与景观上都没有人
+  → 走出前半程看不见 → 过半出现、走在景观与关押格之间（台湾监狱 1 是快艇节点，出来就在快艇上）→ 停在关押格；控制台 0 错误。另用 `--skin=procedural`
+  看了一组台湾坐牢的程序化实现。截图与逐帧数据在本机 `.cache/jailview/`（含原版素材，不入库）。E2E 由主会话统一跑。
+
+### 32.5 遗留
+
+- 出国 / 航空回来：原版 fcn.0040cfab 播 UFO / 飞机动画（Data#492 / #517，flic-map 置信度 guess），我们仍是开门闪光加跳一下（docs/TODO.md）。
+- 住旅馆只在门前时走进去；死神替人付旅馆费时原版把付费人的坐标写成旅馆、节点改成当前玩家的节点（fcn.0040d06b 0x40d116–0x40d147），
+  我们不搬节点（引擎规则未动），付费人在原格不画。
+- 走出这一步放在 RELEASED 事件里（原版是获释回合的移动，0x40d7e5），网页版的名牌、聊天气泡、「自由啦！」气泡是自有的；镜头在 TURN_STARTED 对准建筑。
+
+## 33. 用户反馈修复：命运 / 新闻改成原版原文、新闻板照原版版式（2026-10-03）
+
+用户要求两件事：命运正文改成原版的一两行 28px 短句；新闻板照原版版式（分类名、标题、没有打字机、逐人名单与小头像、停到语音播完
+且至少 2.4 秒、任意时候放开即结束）。（编号说明：任务原定写成 §31，但 §31 已被同日的 AI 后瞻修复占用（docs/TODO.md、§29.7 引用），
+§32 是关押期间不画棋子，这里顺延为 §33。）本节只改表现层、i18n 与演出预算：**引擎规则、golden、ENGINE_VERSION 不变**；新增的
+`selectors.newsRowAmount` 是只读选择器，没有动 `effects/news`；素材包没有新登记的键，`rich4-assets/` 没有重建。
+
+### 33.1 原文（exe v2.06 radare2）
+
+- 来源：命运处理函数表 0x473d14（49 项）、新闻处理函数表 0x473c48（36 项）里各处理函数参数 0 分支 `push` 的格式串，开头 `#NNNN` 是
+  当场播的语音号（fcn.0044e2e3 0x44e32a–0x44e375）：命运 0x463979–0x463e07（#0185–#0233，slot 0–48，33–36 的按图变体是 slot 37–48
+  0x463cfb–0x463e07）、新闻 0x46347c–0x4638cc（#0149–#0184）；新闻分类 = 字节表 0x473cd8[id] → 指针表 0x473cfc（6 个名字
+  0x463444–0x463473，无責任新聞 / 政府公告 / 社會新聞 / 路況報導 / 氣象報導 / 財經新聞）；逐人行 0x4635ea「%s繳交%d元」（新闻 11–13）、
+  0x46377f「%s得到%d元」（新闻 23）。`test/fatenews-orig-text.ts` 从 exe 逐项列出地址、语音号与原文（`--check-locales` 与入库的 zh-TW
+  逐条比对：93 条，0 条不一致）。例：fate:14 = 0x463af8（#0199），fate:33.byMap.2 = 0x463d5f（#0226），news:30 = 0x463833（#0179）。
+- i18n（`locales/zh-CN/{fate,news}.json`）：zh-TW 就是 Big5 解码后的原文，`%d` / `%s` 按原位换成 `{{amount}}` `{{days}}` `{{pct}}` `{{who}}`
+  `{{lot}}` `{{company}}` `{{stock}}`；zh-CN 用 opencc tw → cn 生成（与 tools/extract 地图文案同一种做法），再由 `npm run i18n:zh-tw`
+  （cn → twp）转回繁体，往返与原文逐字相同；opencc 处理不好的两条（「電線桿」「污水」）进 `zhTw.ts` 的键覆盖表。原文里写死的数照抄
+  （例如新闻 27「暫停交易１０天」实际停 15 天、全角数字、命运 34「防礙風化」的错字）。
+- 插值：数字照 sprintf `%d` 写成不带千分位的整数（`eventText.origInt`）；命运的金额、天数是加持之前的（原版先写字、参数 1 才判加持再
+  加倍；罚金 / 冒贷 low、奖金 high 的事件金额已 ×2，`fateBaseAmount` 还原）；新闻的 `%s` 是地产 / 企业记录里的名字（`NameKit.lotName`，
+  不加我们给同名地块编的序号，例：「墾丁房屋鬧鬼」而不是「墾丁 3」）。
+- 我们的命运短标题（`fate:<id>.title`）只留给程序化翻面卡、日志与读屏，33–36 的标题按原文主题改了几条；新闻的自拟内文（`body`）删掉，
+  日志改为「新闻「<标题>」」（原文的换行在日志里换成空格，`eventText.oneLine`）。shared 的新闻 / 命运数据表没有动。
+
+### 33.2 命运板（`ui/classic/popups/FateBoard.tsx`）
+
+- 原文整句从 (24,330) 起左上对齐写成 28px 粗体 #F0F0F0、#101010 的 (1,1) 阴影、字距 −1（`./boardText`：fcn.0044e200(28, …, 3, 0)），
+  `white-space: pre` 不自动换行，两行的行距 = 字高（DrawText 的 tmHeight，細明體按 −h 建字没有 internal leading，⚑ 推定）。
+  句中金额包在 `fate-amount` 里（同色，只为测试与读屏定位）；短标题是视觉隐藏的 `fate-title`；原先标题下方另起的 20 / 16px 正文与金额行
+  （`FATE_BOARD.body`、`fateBodySize`）删掉。插图、表情头像、加持消息框、跳过、预取都不变（§30）。
+
+### 33.3 新闻板（`ui/classic/popups/NewsBoard.tsx`、`layout.ts`）
+
+- 分类名 (24,8)、原文标题 (24,310)，都是 28px（同命运板的字）；整块画好才拷上屏幕，没有打字机（读屏与画面是同一个 `news-headline`）。
+- 受影响玩家按各新闻处理函数参数 0 分支（`layout.ts` 的 `NEWS_BOARD_LISTS`）：11–13 税、23 储金红利逐行 24px 写在 (24, 346 + 32·i)
+  （0x4487b8 mov edi,0x15a … add edi,0x20），讲话头像按锚点画在 (390, 358 + 32·i)，税用图3、红利用图4；0–3 获释 / 延长只画头像，从 (390,328)
+  起每人 +42（0x447aaa mov esi,0x148 … add esi,0x2a，获释图4、延长图3）；16 / 17 豪雨 / 塞车只画头像 (390, 358 + 32·i) 图2；8–10 得奖的一人
+  (390,328) 图4；其余新闻不画人。
+- 逐人行的金额：引擎先发 NEWS 再逐人收税 / 发红利（NEWS 的 post 里还没有这些变化），所以按公布时的显示态算：`engine/selectors`
+  新增 `newsRowAmount(w, map, id, seat)`，与 `effects/news` 的 TAX_BASES、bonusInterest 同一公式；`realEngineM7.test` 对 11、12、13、23
+  逐条核对与引擎随后实际收付（MONEY）的金额相同。handler 把行文（`news:<id>.row`）放进 `AffectedRow.line`。
+- 跳过：新闻板也照原版从一开始任意鼠标左 / 右键或按键放开即结束（`ClassicPopupHost` 的 `anyInputSkips` 加上 news），不再画网页版的跳过钮、
+  没有 1.5 秒最短时间；跳过时停掉语音（DEV-35、DEV-33）。板面接住指针、暂停快捷键照旧（§30.6）。
+- 声音：原版新闻板只有语音、没有音效。soundMap 的 NEWS 音效改为 `NEWS_STING_SFX`（ZzFX news，timed：事件开始时不放），只在程序化新闻弹窗时
+  由 handler 放。
+
+### 33.4 节拍（`shared/view/pacing.ts`，服务器截止时间同表）
+
+- `NEWS_VOICE_MS[36]`：Speaking#0149–0184 的时长（素材包 durationMs，1346–3935 ms），同 `FATE_VOICE_MS` 的做法。
+- `newsShowMs(id, profile)`：original = 板子 max(2.4 秒, 语音) + 收尾 0.2 秒（fcn.00452c39(2400) 0x44a308–0x44a30d，之后参数 1 执行效果，
+  没有命运板那 0.8 秒）；compact 仍是 3.4 秒 + 0.2 秒。NEWS 的 original 预算 = max(compact 3800, 停留 + 收尾 + 余量 0.1 秒)，只有语音 3.935 秒的
+  新闻 29 放宽到 4235；compact 不变。程序化皮肤在 original 节奏下同样按这个停留（最短 1.5 秒后可点跳过）。多数新闻在 original 节奏下比以前
+  短 1 秒（2.4 秒，原先一律 3.4 秒）。
+
+### 33.5 程序化皮肤
+
+- `NewsPopup`：标题用原文（打字机保留，`white-space: pre-line` 显示两行），没有内文；税 / 储金红利的受影响玩家写原版的逐人行。
+- `FatePopup`：正文用原文（`pre-line`），标题与金额行（实际收付）、加持结果照旧。
+
+### 33.6 验证（2026-10-03）
+
+- `npm run typecheck`、`npm run lint` 通过；`npx vitest run --project client-unit --project client-dom` 116 个文件 1487 例全过（中途一次整跑时
+  `ui/decisions/realEngineCombat.dom.test.tsx` 一例因机器负载（两套 E2E 在后台跑）超时，单独重跑 47 例全过，与本次改动无关）；
+  `npx vitest run --project shared packages/shared/src/view …news.test.ts …fate.test.ts` 6 个文件 97 例全过；`--project scripts` 5 个文件 100 例全过；
+  `npm run check:zh-tw`、`npm run check:deps` 通过；`npx tsx test/fatenews-orig-text.ts --check-locales` 93 条 0 不一致。E2E 没有在本任务里跑（由主会话统一跑）。
+- 新增 / 改写的测试：`ui/classic/popups/eventCards.dom.test.tsx`（命运板原文的位置、字号、行距、字距、两行与句中金额；新闻板分类名 / 标题画点、
+  没有打字机、税行与头像的坐标与图号、只画头像的四类、任意放开即结束且板面照样接住）、`ui/classic/popups/popups.dom.test.tsx`、
+  `ui/popups/popups.dom.test.tsx`、`presentation/handlers/eventCards.test.ts`（命运原文与加持前的数、新闻板节拍、跳过停语音、提示音只在程序化
+  弹窗）、`presentation/eventText.test.ts`、`handlers/i18nKeys.test.ts`、`handlers/realEngineM7.test.ts`（逐人行金额对引擎）、`shared/view/pacing.test.ts`。
+- 本机真实素材包（packId daa850ef3a455b4a，未重建；服务器 4311 + 构建后的客户端 6311，脚本 `test/fatenews-shots.mjs`，两名真人，1920×1080）：
+  台湾 24 项、大陆 / 日本 / 美国各 4 项检查全过——命运 25「意外獲得遺產10000元」、17 两行「請所有人吃大餐 / 花費6000元」、33「酒醉大鬧警局坐牢3天」，
+  大陆 34 / 36 → slot 38 / 40「違法聚眾示威坐牢5天」「盜賣國寶坐牢9天」，日本 33 / 35 → slot 41 / 43，美国 36 / 34 → slot 48 / 46；新闻 11 两行
+  「<人>繳交<n>元」在 y=346 / 378 + 头像图3，23 两行「得到」+ 图4，0（在押的人获释）头像在 (390,328)，8（买地之后）得奖一人，16 两个步行者头像图2，
+  14 两行标题带地块原名；新闻板停留实测 2398–2414 ms（语音 < 2.4 秒的）与 2828–2843 ms（新闻 16，语音 2831），另一名玩家点一下板子 5–7 ms 内结束；
+  原版新闻板开头没有 ZzFX news。截图 `.cache/fatenews/{taiwan,china,japan,usa}-desktop/`（整页与 640×480 舞台裁切各一张）。
+
+### 33.7 遗留
+
+- 两行原文的行距按 tmHeight = 字高推定，没有和原版实机截图逐像素对过（VERIFY V-U13）。
+- 原版储金红利（新闻 23）给每个没有贷款的在场玩家都列一行（存款为 0 时「得到0元」），引擎的 affected 只含红利 > 0 的人（不改引擎）。
+- 手机横屏（844×390）这次没有截图（脚本支持 `mobile` 参数，本机那一轮卡在开房间，未查原因）。
+- `test/evcard-fix.mjs` 第 3 个场景（新闻板最短时间前点板子不跳过）是 §30.6 的旧行为，脚本没有改。

@@ -1,9 +1,10 @@
 // 原版命运板（original-skin.md §4.2 通用；exe v2.06 fcn.0044c4a0，取证见 docs/research/original-assets/ui.md §2.3）：
 // - 板面 Panel#66 图1（ui.newsBoard 第 1 帧，紫色问号板）整张 440×480 贴舞台 (0,0)，盖住工具列与棋盘视窗，资料栏与日历照常可见；
 // - 插图 Data#FATE_ART_TABLE[slot]（illustration.fate.<res − 436>，388×251）不透明贴 (25,44)，正好填满板上的白框；
-//   slot 是命运处理函数表下标：第 k 条命运 k < 33 为 k，33–36 在大陆 / 日本 / 美国图为 k + 4·gm（插图、标题、语音跟着换）；
-// - 文字：原版从 (24,330) 起左上对齐写一两行 28px 粗体 #F0F0F0（#101010 的 (1,1) 阴影、字距 −1）的整句；我们的命运文案分
-//   标题与正文（i18n 自拟），标题照原版字体写在 (24,330)，正文与金额另起一块写在标题下方、头像左侧（DEV，见 DEVIATIONS）；
+//   slot 是命运处理函数表下标：第 k 条命运 k < 33 为 k，33–36 在大陆 / 日本 / 美国图为 k + 4·gm（插图、原文、语音跟着换）；
+// - 文字：原版原文整句（i18n fate:<id>.text，zh-TW 即 exe 的格式串；一两行，\n 换行），从 (24,330) 起左上对齐写成 28px 粗体
+//   #F0F0F0（#101010 的 (1,1) 阴影、字距 −1，./boardText）；金额、天数在句子里（sprintf 的 %d，加持之前的数），没有另起的
+//   标题与金额行。我们的短标题只给读屏（fate-title，视觉隐藏）；句中金额标成 fate-amount（同色，只为测试与读屏定位）；
 // - 表情头像：抽到命运的人的讲话头像（portrait.speaker.<角色>，map#15+角色）图 FATE_FACE[slot]（1–4），按锚点画在 (390,344)；
 //   头像只是点缀，不进「是否用原版画面」的判定（还在加载就先不画）；
 // - 原版命运板没有音效，只有语音（soundMap 的 fate.<slot>）；停留时长与任意键跳过由 handler / PopupScene 负责
@@ -16,40 +17,26 @@ import { useTx } from '../../../i18n/tx';
 import type { FatePopupSpec } from '../../popups/popupStore';
 import { speakerSheet } from '../common/SpeakerBubble';
 import { useEnsureSceneSprites } from '../common/sceneAssets';
-import { classicText } from '../common/textStyles';
 import { useSceneImage } from '../dialogs/parts';
 import { Sprite } from '../Sprite';
+import { boardText } from './boardText';
 import { ShowBox } from './CardCast';
 import { BOARD_UNDERLAY, FATE_BOARD, FATE_FACE, fateArtKey, NEWS_SHEET } from './layout';
 import pp from './popups.module.css';
 
-/** 命运板的字：#F0F0F0、#101010 的 (1,1) 阴影、粗体（fcn.0044e200 样式 3） */
-const boardText = (size: number, lineHeight: number) => ({
-  ...classicText({ size, bold: true, color: '#f0f0f0', outline: null, shadow: '#101010', lineHeight }),
-  // SetTextCharacterExtra(0 − 1)（0x44e3c0）
-  letterSpacing: -1,
-});
-
-/** 标题：28px（原版整句的字号） */
-const TITLE_TEXT = boardText(28, 30);
-
-/**
- * 正文字号：放得下就用 20px，否则 16px（正文区 344×102；按每字一个全角宽保守估计，数字与英文更窄）
- * 金额另占一行。
- */
-export function fateBodySize(text: string, hasAmount: boolean): 20 | 16 {
-  const B = FATE_BOARD.body;
-  const fits = (size: number, lh: number): boolean => {
-    const perLine = Math.max(1, Math.floor(B.w / size));
-    const lines = Math.ceil([...text].length / perLine) + (hasAmount ? 1 : 0);
-    return lines * lh <= B.h;
-  };
-  return fits(20, 24) ? 20 : 16;
-}
+/** 原文整句：28px（fcn.0044e200(28, …) 0x44c51e） */
+const TEXT = boardText(28);
 
 /** 命运处理函数表下标（缺省等于命运编号） */
 export function fateSlotOf(spec: Pick<FatePopupSpec, 'id' | 'slot'>): number {
   return spec.slot ?? spec.id;
+}
+
+/** 原文按句中金额切开（金额那几个字标成 fate-amount）；没有金额或找不到时整句一段 */
+export function splitFateText(text: string, amount: string | null | undefined): [string, string, string] | null {
+  if (!amount) return null;
+  const at = text.indexOf(amount);
+  return at < 0 ? null : [text.slice(0, at), amount, text.slice(at + amount.length)];
 }
 
 export function FateBoard({ spec }: { spec: FatePopupSpec }): ReactNode {
@@ -61,11 +48,8 @@ export function FateBoard({ spec }: { spec: FatePopupSpec }): ReactNode {
   const sheet = speakerSheet(spec.player.character);
   useEnsureSceneSprites([sheet]);
   const A = FATE_BOARD.art;
-  const T = FATE_BOARD.title;
-  const B = FATE_BOARD.body;
-  const size = fateBodySize(spec.text, spec.amountText !== null);
-  const bodyText = boardText(size, size === 20 ? 24 : 20);
-  const tone = spec.amountTone ?? (spec.amountText?.startsWith('-') ? 'loss' : 'gain');
+  const T = FATE_BOARD.text;
+  const parts = splitFateText(spec.text, spec.textAmount);
   return (
     <section
       className={pp.layer}
@@ -101,27 +85,24 @@ export function FateBoard({ spec }: { spec: FatePopupSpec }): ReactNode {
           aria-hidden="true"
         />
       )}
-      <h2
-        className={pp.text}
-        style={{ ...TITLE_TEXT, left: T.x, top: T.y, margin: 0, whiteSpace: 'nowrap', overflow: 'visible' }}
-        data-testid="fate-title"
-      >
+      <h2 className={pp.srOnly} data-testid="fate-title">
         {spec.title}
       </h2>
-      <div className={pp.text} style={{ ...bodyText, left: B.x, top: B.y, width: B.w, height: B.h }}>
-        <p data-testid="fate-text" data-size={size}>
-          {spec.text}
-        </p>
-        {spec.amountText && (
-          <p
-            className={tone === 'loss' ? pp.loss : tone === 'gain' ? pp.gain : undefined}
-            data-testid="fate-amount"
-            data-tone={spec.amountTone ?? null}
-          >
-            {spec.amountText}
-          </p>
+      <p
+        className={pp.text}
+        style={{ ...TEXT, left: T.x, top: T.y, margin: 0, overflow: 'visible' }}
+        data-testid="fate-text"
+      >
+        {parts ? (
+          <>
+            {parts[0]}
+            <span data-testid="fate-amount">{parts[1]}</span>
+            {parts[2]}
+          </>
+        ) : (
+          spec.text
         )}
-      </div>
+      </p>
       <Sprite sheet={sheet} frame={face} x={FATE_BOARD.face.x} y={FATE_BOARD.face.y} testId="fate-face" />
     </section>
   );

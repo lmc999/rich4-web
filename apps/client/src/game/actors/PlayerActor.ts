@@ -1,6 +1,8 @@
 // 玩家棋子（design/client.md §3.7）：walk(path) 逐格跳步（抛物线小跳 + squash & stretch）、深度排序、
 // 支持 AbortSignal（中止即 teleport 到终点）与 AnimClock（倍速、假时钟）。
 // 路径是游戏格序列；相邻两格之间若有 via 连接格，按格链插值（每个子段一跳，总时长仍为一步）。
+// 关押 / 住旅馆期间人在建筑里（setInside）：画点放到医院 / 监狱 / 旅馆上、整个棋子不画；获释时 walkOut 从建筑跳着走到格上，
+// 前半程看不见、过半出现；住旅馆时 walkIn 反过来（与原版皮肤同一语义，原版 fcn.0040bb40 的 bit4 / bit5 分支）。
 import type { Cell, TileId } from '@rich4/shared/data';
 import type { GodKind, Vehicle } from '@rich4/shared/engine';
 import { type BitmapText, Container, Graphics, Sprite, Text } from 'pixi.js';
@@ -9,21 +11,13 @@ import { hopArc, linear } from '../anim/easing';
 import { tweenValue } from '../anim/tween';
 import type { BoardGeometry } from '../board/BoardGeometry';
 import { numberTag } from '../fx/FloatingText';
-import { HOP_MS } from '../fx/timings';
+import { HOP_MS, WALK_OUT_HOPS_MAX } from '../fx/timings';
 import { DepthBias, depthOfCell, depthOfMove } from '../iso/depth';
 import { dirOfViewStep, facingOf, type IsoDir, type Pt } from '../iso/projection';
 import { INK, PLAYER_COLORS, PLAYER_MARKS } from '../procedural/building/styles';
 import type { CharacterFrames } from '../procedural/character/atlas';
 import type { Facing, Pose } from '../procedural/character/rig';
-import {
-  type ActorStatus,
-  bombIcon,
-  confineWindow,
-  ICE_TINT,
-  NO_STATUS,
-  sameStatus,
-  tortoiseShell,
-} from './ActorStatus';
+import { type ActorStatus, bombIcon, ICE_TINT, NO_STATUS, sameStatus, tortoiseShell } from './ActorStatus';
 import type { FigureTextures } from './figureTextures';
 import { GodSprite } from './GodSprite';
 import { RIDE_LIFT, vehicleGraphics } from './Vehicle';
@@ -47,8 +41,6 @@ export const ACTOR_SCALE = 0.62;
 export const OVERHEAD_Y = -112 * ACTOR_SCALE - 20;
 /** 名牌的默认高度（相对脚底） */
 const TAG_Y = -112 * ACTOR_SCALE - 14;
-/** 关押时的深度加成（大于任何格子的深度） */
-const CONFINED_Z = 1_000_000;
 /** 附身神明相对头顶挂件层的高度 */
 const GOD_Y = -22;
 
@@ -57,6 +49,24 @@ export interface WalkOptions {
   signal?: AbortSignal;
   /** 每到达一个游戏格回调（i 为该格在 path 中的下标） */
   onStep?: (tile: TileId, i: number) => void;
+}
+
+/** 走出 / 走进建筑 */
+export interface WalkOutOptions {
+  /** 每跳一下的时长（缺省 STEP_MS） */
+  stepMs?: number;
+  signal?: AbortSignal;
+  /** 走出：出现的那一刻（调用方据此换掉关押状态）；中止时也会调用 */
+  onShow?: () => void;
+}
+
+const samePt = (a: Pt | null, b: Pt | null): boolean =>
+  a === b || (a !== null && b !== null && a.x === b.x && a.y === b.y);
+
+/** 建筑中心到格中心要跳几下（按格距四舍五入，1..WALK_OUT_HOPS_MAX） */
+export function walkOutHops(from: Pt, to: Pt): number {
+  const d = Math.hypot(to.x - from.x, to.y - from.y);
+  return Math.min(WALK_OUT_HOPS_MAX, Math.max(1, Math.round(d)));
 }
 
 export interface WalkStep {
@@ -110,12 +120,15 @@ export class PlayerActor {
   private readonly marks = new Graphics();
   private god: GodSprite | null = null;
   private bomb: { root: Container; fuse: BitmapText } | null = null;
-  private confine: { root: Container; where: 'jail' | 'hospital'; days: BitmapText; face: Sprite } | null = null;
   private status: ActorStatus = NO_STATUS;
   /** 头顶聊天 / 表情气泡（跟随角色；新气泡替换旧的） */
   private speech: { root: Container; timer: ReturnType<typeof setTimeout> } | null = null;
-  /** 关押气泡相对脚底的位置（舞台按医院 / 监狱建筑的位置给出；缺省在头顶） */
-  private confineAt: Pt = { x: 0, y: -22 };
+  /** 人在建筑里（关押、住旅馆）：建筑中心的逻辑坐标；画点放在这里，整个棋子不画。null = 在棋盘上 */
+  private inside: Pt | null = null;
+  /** 走出 / 走进建筑时看不见的那半程 */
+  private veiled = false;
+  /** 行走中收到的「在建筑里」同步（undefined = 没有）：行走收尾后再套用 */
+  private insideLanding: Pt | null | undefined = undefined;
   private puff = 0;
   /** 骑车行走时的排气（舞台接到粒子系统；缺省不排气） */
   exhaust: ((at: Pt) => void) | null = null;
@@ -222,15 +235,13 @@ export class PlayerActor {
     this.placeTag();
   }
 
-  /** 名牌位置：平时在头顶；关押时跟着医院 / 监狱窗口气泡走 */
+  /** 名牌位置：头顶 */
   private placeTag(): void {
-    if (this.confine) this.tag.position.set(this.confineAt.x, this.confineAt.y - 66);
-    else this.tag.position.set(0, TAG_Y);
+    this.tag.position.set(0, TAG_Y);
   }
 
-  /** 关押时整个角色（此时只剩窗口气泡与名牌）画在建筑之上，气泡不被医院 / 监狱的屋顶挡住 */
   private depth(c: Cell): number {
-    return depthOfCell(this.geo.viewCell(c), DepthBias.Actor) + this.seat * 0.01 + (this.confine ? CONFINED_Z : 0);
+    return depthOfCell(this.geo.viewCell(c), DepthBias.Actor) + this.seat * 0.01;
   }
 
   setGeometry(geo: BoardGeometry): void {
@@ -288,15 +299,46 @@ export class PlayerActor {
     this.figure.tint = s.hibernate ? ICE_TINT : 0xffffff;
     this.drawMarks();
     this.applyBomb(s.bomb);
-    this.applyConfine(s.confined);
-    const gone = s.away || s.beggar;
-    this.figure.visible = !gone && s.confined === null;
-    this.ride.visible = this.figure.visible;
-    this.overhead.visible = !gone && s.confined === null;
-    this.shadow.visible = !gone && s.confined === null;
-    this.tag.visible = !gone;
+    this.applyVisibility();
     if (!s.sleepwalk) this.figure.rotation = 0;
     this.applyFrames();
+  }
+
+  /** 棋盘上看不见本体（出国、乞丐、在建筑里、走出 / 走进建筑看不见的半程）：同格多人不为它错开 */
+  get offBoard(): boolean {
+    return this.status.away || this.status.beggar || this.inside !== null || this.veiled;
+  }
+
+  /** 人在建筑里（关押、住旅馆） */
+  get insideBuilding(): boolean {
+    return this.inside !== null;
+  }
+
+  /** 看不见时整个棋子（人物、载具、头顶挂件、影子、名牌）都不画 */
+  private applyVisibility(): void {
+    const shown = !this.offBoard;
+    this.body.visible = shown;
+    this.figure.visible = shown;
+    this.ride.visible = shown;
+    this.overhead.visible = shown;
+    this.shadow.visible = shown;
+    this.tag.visible = shown;
+  }
+
+  /**
+   * 人在建筑里（cell = 建筑中心的逻辑坐标，格中心为 x+0.5）或回到棋盘（null）：在建筑里时画点放到建筑上（镜头、气泡跟着它），
+   * 整个棋子不画；节点不变。行走中（含走出 / 走进建筑）先记下，收尾时套用
+   */
+  setInside(cell: Pt | null): void {
+    if (this.dead) return;
+    if (this.walking) {
+      this.insideLanding = cell ? { ...cell } : null;
+      return;
+    }
+    if (samePt(this.inside, cell)) return;
+    this.inside = cell ? { ...cell } : null;
+    this.applyVisibility();
+    this.relayout();
   }
 
   /** 附身神明（null 取消）；不经过 setStatus 时供演出直接调用 */
@@ -324,30 +366,15 @@ export class PlayerActor {
     return g;
   }
 
-  /**
-   * 关押气泡的位置（相对角色脚底，world 像素）：舞台把它放到医院 / 监狱建筑的窗口处，
-   * 表示角色已离开路面；同一栋楼里多人时按座位错开。
-   */
-  setConfineAnchor(p: Pt): void {
-    this.confineAt = { ...p };
-    this.confine?.root.position.set(p.x, p.y);
-    this.placeTag();
-  }
-
   /** 头顶挂件的屏幕坐标（world 本地像素） */
   headPos(): Pt {
     return { x: this.root.position.x, y: this.root.position.y + OVERHEAD_Y - this.hopY };
   }
 
-  /** 当前的正面待机帧（气泡头像用）；未加载时为 null */
-  portraitTexture() {
-    return this.frames ? this.frames.get('idle0', 'front') : null;
-  }
-
   /** 旋转或偏移变化后重新计算屏幕位置与朝向 */
   relayout(): void {
     if (this.dead) return;
-    const s = this.geo.toScreen(this.pos);
+    const s = this.geo.toScreen(this.inside ?? this.pos);
     this.root.position.set(s.x + this.offset.x, s.y + this.offset.y);
     this.body.position.set(0, -this.hopY);
     this.shadow.scale.set(1 - (this.hopY / HOP_PX) * 0.25);
@@ -379,6 +406,9 @@ export class PlayerActor {
   async walk(path: readonly TileId[], o: WalkOptions = {}): Promise<void> {
     if (path.length === 0) return;
     this.landing = null;
+    this.insideLanding = undefined;
+    // 在建筑里的人不会走路（关押期间不掷骰）；万一收到行走，先回到棋盘上
+    if (this.inside) this.setInside(null);
     const last = path[path.length - 1]!;
     if (this._tile !== path[0]) this.teleport(path[0]!);
     if (path.length === 1) return;
@@ -447,16 +477,139 @@ export class PlayerActor {
       );
       if (!o.signal?.aborted && cur >= 0) arrive(cur);
     } finally {
-      this.walking = false;
-      this.pose = 'idle0';
-      this.hopY = 0;
-      if (!this.dead) {
-        this.body.scale.set(1, 1);
-        // 正常走完或被中止，都以终点格收尾（中止 = 跳过动画直达终态）；行走期间收到了权威落点就以它为准
-        this.teleport(this.landing ?? last);
-        this.landing = null;
-        this.applyFrames();
+      this.settleWalk(last);
+    }
+  }
+
+  /** 行走收尾：以 tile 收尾（中止 = 跳过动画直达终态；行走期间收到了权威落点就以它为准），再套用行走中收到的「在建筑里」同步 */
+  private settleWalk(tile: TileId): void {
+    this.walking = false;
+    this.veiled = false;
+    this.pose = 'idle0';
+    this.hopY = 0;
+    if (this.dead) return;
+    this.body.scale.set(1, 1);
+    this.teleport(this.landing ?? tile);
+    this.landing = null;
+    const inside = this.insideLanding;
+    this.insideLanding = undefined;
+    if (inside !== undefined) this.setInside(inside);
+    this.applyVisibility();
+    this.applyFrames();
+  }
+
+  /** 走出 / 走进建筑的一段：从 a 到 b（逻辑坐标）跳 hops 下，走过一半（第 ceil(hops / 2) 下落地）时调用 onSwitch */
+  private async hopSegment(
+    a: Pt,
+    b: Pt,
+    depthCell: Cell,
+    o: { stepMs: number; signal?: AbortSignal; onSwitch: () => void },
+  ): Promise<void> {
+    const hops = walkOutHops(a, b);
+    const at = hops / 2;
+    let switched = false;
+    const va = this.geo.viewCell({ x: Math.floor(a.x), y: Math.floor(a.y) });
+    const vb = this.geo.viewCell({ x: Math.floor(b.x), y: Math.floor(b.y) });
+    if (va.x !== vb.x || va.y !== vb.y) this.dir = dirOfViewStep(Math.sign(vb.x - va.x), Math.sign(vb.y - va.y));
+    this.walking = true;
+    this.pos = { ...a };
+    this.root.zIndex = this.depth(depthCell);
+    let frame = 0;
+    try {
+      await tweenValue(
+        0,
+        hops,
+        hops * o.stepMs,
+        (x) => {
+          if (this.dead) return;
+          const t = Math.min(1, x / hops);
+          this.pos = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+          const k = Math.min(hops - 1, Math.floor(x));
+          const arc = hopArc(Math.min(1, x - k));
+          this.hopY = arc * HOP_PX;
+          this.body.scale.set(1 - 0.05 * arc, 1 + 0.07 * arc);
+          const pose = (['walk0', 'walk1', 'walk2', 'walk3'] as const)[k % 4]!;
+          if (pose !== this.pose || frame !== k) {
+            frame = k;
+            this.pose = pose;
+            this.applyFrames();
+          }
+          if (!switched && x >= at - 1e-9) {
+            switched = true;
+            o.onSwitch();
+          }
+          this.relayout();
+          this.root.zIndex = this.depth(depthCell);
+        },
+        { clock: this.clock, signal: o.signal, ease: linear },
+      );
+    } finally {
+      if (!switched && !this.dead) o.onSwitch();
+    }
+  }
+
+  /**
+   * 获释：从所在的建筑跳着走到格 to（与原版皮肤同一语义：前半程看不见、过半出现，onShow 在这一刻调用，调用方据此换掉
+   * 关押状态），停在 to。不在建筑里时直接在 to 上出现。中止时立即落到 to 并显示
+   */
+  async walkOut(to: TileId, o: WalkOutOptions = {}): Promise<void> {
+    if (this.dead) return;
+    const from = this.walking ? null : this.inside;
+    if (!from) {
+      if (!this.walking) {
+        this.inside = null;
+        this.teleport(to);
+        this.applyVisibility();
       }
+      o.onShow?.();
+      return;
+    }
+    const c = this.geo.tileCell(to);
+    this.landing = null;
+    this.insideLanding = undefined;
+    this.inside = null;
+    this.veiled = true;
+    this._tile = to;
+    this.applyVisibility();
+    let shown = false;
+    const show = (): void => {
+      if (shown) return;
+      shown = true;
+      this.veiled = false;
+      this.applyVisibility();
+      o.onShow?.();
+    };
+    try {
+      await this.hopSegment(from, { x: c.x + 0.5, y: c.y + 0.5 }, c, {
+        stepMs: o.stepMs ?? STEP_MS,
+        signal: o.signal,
+        onSwitch: show,
+      });
+    } finally {
+      if (!this.dead) show();
+      this.settleWalk(to);
+    }
+  }
+
+  /** 住旅馆：从当前格跳着走进旅馆（cell = 旅馆中心），过半后看不见，走完人在旅馆里。已经在建筑里时不动 */
+  async walkIn(cell: Pt, o: WalkOutOptions = {}): Promise<void> {
+    if (this.dead || this.walking || this.inside || this._tile === null) return;
+    const tile = this._tile;
+    const c = this.geo.tileCell(tile);
+    this.landing = null;
+    this.insideLanding = undefined;
+    try {
+      await this.hopSegment({ x: c.x + 0.5, y: c.y + 0.5 }, cell, c, {
+        stepMs: o.stepMs ?? STEP_MS,
+        signal: o.signal,
+        onSwitch: () => {
+          this.veiled = true;
+          this.applyVisibility();
+        },
+      });
+    } finally {
+      if (this.insideLanding === undefined) this.insideLanding = { ...cell };
+      this.settleWalk(tile);
     }
   }
 
@@ -563,7 +716,6 @@ export class PlayerActor {
     this.shellBehind.visible = facing === 'front';
     this.shellFront.visible = facing !== 'front';
     this.ride.scale.x = flip;
-    if (this.confine?.face && this.frames) this.confine.face.texture = this.frames.get('idle0', 'front');
   }
 
   private applyVehicle(v: Vehicle): void {
@@ -620,50 +772,6 @@ export class PlayerActor {
       this.bomb = { root, fuse: tag };
     }
     this.bomb.fuse.text = String(fuse);
-  }
-
-  private applyConfine(c: ActorStatus['confined']): void {
-    if (c === null || (this.confine && this.confine.where !== c.where)) {
-      const had = this.confine !== null;
-      this.confine?.root.destroy({ children: true });
-      this.confine = null;
-      if (had) {
-        this.placeTag();
-        this.relayout();
-      }
-    }
-    if (c === null) return;
-    if (!this.confine) {
-      const w = confineWindow(c.where);
-      const face = new Sprite();
-      face.anchor.set(0.5, 0.35);
-      face.scale.set(0.42);
-      face.position.set(0, -44);
-      const tex = this.portraitTexture();
-      if (tex) face.texture = tex;
-      else {
-        const dot = new Graphics()
-          .circle(0, -40, 14)
-          .fill(PLAYER_COLORS[this.seat % 4] ?? 0xffffff)
-          .stroke({
-            width: 3,
-            color: INK,
-          });
-        w.content.addChild(dot);
-      }
-      const mask = new Graphics().roundRect(-27, -61, 54, 50, 8).fill(0xffffff);
-      w.content.addChild(face, mask);
-      face.mask = mask;
-      const days = numberTag(String(c.days), 18, 0xffffff);
-      days.position.set(18, -2);
-      w.root.addChild(days);
-      w.root.position.set(this.confineAt.x, this.confineAt.y);
-      this.root.addChild(w.root);
-      this.confine = { root: w.root, where: c.where, days, face };
-      this.placeTag();
-      this.relayout();
-    }
-    this.confine.days.text = String(c.days);
   }
 
   /** 图集未加载时的占位棋子：玩家色胶囊 + 形状标记 */

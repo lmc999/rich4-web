@@ -7,7 +7,9 @@
  * - original：以原版 FLIC 原长为准——有 FLIC 的事件预算 = max(compact, FLIC 原长 + handler 里 FLIC 之外的等待 + 余量)，
  *   保证原版皮肤能按原速完整播完（playFit 的可用时长 = 预算 − 其他等待 ≥ FLIC 原长）；亮卡的事件（出卡、被动卡生效、
  *   卡片格与聖誕節得卡）按原版亮卡的 1.5 秒（CARD_SHOW_MS）放宽；命运按原版命运板（语音时长、加持消息框、0.8 秒停顿，
- *   FATE_SHOW）放宽；其余事件与 compact 完全相同。original 的每一项都 ≥ compact。
+ *   FATE_SHOW）放宽；新闻按原版新闻板（语音时长、不足 2.4 秒补足，NEWS_SHOW）放宽；其余事件与 compact 完全相同。
+ *   original 的每一项都 ≥ compact。
+ * - 两种节奏都按原版 tick（DICE_TIMING.throwTickMs）换算的：掷骰动作、获释时走出建筑（WALK_OUT，RELEASED）。
  *
  * 调整预算只影响倒计时公平性与演出节奏，不影响规则。
  */
@@ -70,6 +72,69 @@ export function diceShowMs(t: DiceTiming, throwFrames: number = DICE_THROW_FRAME
 
 /** 掷骰事件的余量（首帧对齐与载入，约一帧） */
 const DICE_SLACK_MS = 100;
+
+// ───────────────────────── 关押与获释：走出 / 走进建筑（原版时序） ─────────────────────────
+
+/**
+ * 关押期间不画棋子、获释时从建筑里走一步出来（exe v2.06，玩家记录基址 0x493910、步长 0x68）：
+ * - 被关时棋子坐标写成景观坐标（监狱 0x43c369–0x43c37d 取景观 2、医院 0x43d9f6–0x43da0a 取景观 1；住旅馆 fcn.0040d06b
+ *   写成旅馆坐标），节点仍是关押格（旅馆门前的格）。绘制循环 0x4082a5–0x4082c3：主阻碍计数 +0x32（住旅馆、消失、坐牢、
+ *   住院四个字节，按 dword 比较）不为 0 且没有 +0x15 bit5 就不画；附身神明与身上炸弹同样不画（0x408be6）。
+ * - 获释 fcn.0040d184（期满 0x41c09e / 0x43c4f6 / 0x43db86，新闻 0 与保释也走这里）置 +0x15 bit4，朝向 = 当前坐标（景观）→
+ *   节点（fcn.00453614），不改节点。当回合 fcn.0040d7e5 只走 1 步（0x40d7fd–0x40d806）：fcn.0040bb40 的 bit4 分支以当前坐标为
+ *   起点、节点坐标为终点（0x40bba3–0x40bbcc），每 tick 8 px（0x40bd5a fmul 0.125），tick 数 = trunc(距离 / 8)（fcn.0045641c
+ *   截断取整，0 记 1）；剩余 tick 少于 tick 数 >> 1 时清掉计数（0x40be98–0x40beb3），从这一刻起画出来；走的时候不改朝向
+ *   （0x40befb），走到后不触发落点事件。
+ * - 住旅馆是同一函数的 bit5 分支（0x40bbd1–0x40bc0b）：从节点走向旅馆，同一时刻清掉 bit5（0x40bebb），此后不画。
+ * - 消失（航空、出国）获释 fcn.0040cfab 直接清计数、放回节点，播飞机 / UFO 动画（Data#517 / #492），不走出来。
+ * tick 与掷骰动作同一个：20 ms × 分频表 0x46a9d0 [6,4,2][速度]（DICE_TIMING.throwTickMs，original 速度 1、compact 速度 2）。
+ */
+export const WALK_OUT = Object.freeze({
+  /** 每 tick 走的世界像素 */
+  pxPerTick: 8,
+  /** 监狱 / 医院：四张图里最远的是美国监狱（景观 (658,814) → 关押格 118 (528,815)，130 px = 16 tick） */
+  maxTicks: 16,
+  /** 旅馆：四张图的设施到门前格最远约 80 px（10 tick） */
+  hotelMaxTicks: 10,
+});
+
+/** 走 distPx 世界像素要几个 tick（原版截断取整、至少 1）；超过 cap 按 cap（预算按 cap 算，演出不会超预算） */
+export function walkOutTicks(distPx: number, cap: number = WALK_OUT.maxTicks): number {
+  const n = Math.trunc(Math.max(0, distPx) / WALK_OUT.pxPerTick);
+  return Math.min(Math.max(1, cap), Math.max(1, n));
+}
+
+/**
+ * 第几个 tick 走完时换显隐（走出：从这时起画出来；走进旅馆：从这时起不画）：剩余 tick 第一次少于 ticks >> 1 的那个 tick；
+ * ticks ≤ 3 时这个条件在走到之前不会成立，到终点才换
+ */
+export function walkOutSwitchTick(ticks: number): number {
+  const half = ticks >> 1;
+  return half >= 2 ? ticks - half + 1 : ticks;
+}
+
+/** 走出（走进）建筑的时长（ms）：ticks 个原版 tick */
+export function walkOutMs(profile: PacingProfile, ticks: number = WALK_OUT.maxTicks): number {
+  return ticks * DICE_TIMING[profile].throwTickMs;
+}
+
+/**
+ * 获释事件的基础预算（toast、气泡；消失获释的显现与跳一下）。compact 就是它：最远的走出（16 tick × 40 ms）加收尾与余量
+ * 也在 1 秒之内（pacing.test 断言）
+ */
+const RELEASED_BASE_MS = 1000;
+/** 走出建筑之后的收尾（换回站姿、同步显示态） */
+export const WALK_OUT_TAIL_MS = 100;
+
+/** RELEASED 的 original 预算：坐牢 / 住院 / 住旅馆获释时 = max(基础, 走出（按最远的 tick 数）+ 收尾 + 余量)；消失与恶人为基础 */
+function releasedOriginal(e: GameEventOf<'RELEASED'>): number {
+  if (e.actor.t !== 'seat' || e.from === 'away') return RELEASED_BASE_MS;
+  const ticks = e.from === 'hotel' ? WALK_OUT.hotelMaxTicks : WALK_OUT.maxTicks;
+  return Math.max(RELEASED_BASE_MS, walkOutMs('original', ticks) + WALK_OUT_TAIL_MS + FLIC_SLACK_MS);
+}
+
+/** 按原版 tick 换算走出建筑、original 节奏放宽的事件类型 */
+export const WALK_OUT_EVENT_TYPES = Object.freeze(['RELEASED'] as const);
 
 // ───────────────────────── 亮卡（原版时序） ─────────────────────────
 
@@ -218,6 +283,52 @@ function fateOriginalBudget(e: GameEventOf<'FATE'>): number {
   return Math.max(COMPACT_BUDGET_MS.FATE, longest + FLIC_SLACK_MS);
 }
 
+// ───────────────────────── 新闻板（原版时序） ─────────────────────────
+
+/**
+ * 新闻语音的时长（ms），下标 = 新闻编号；语音为 Speaking.mkf #0149 + id（标题开头的 #NNNN，fcn.0044e2e3 当场播放）。
+ * 与 FATE_VOICE_MS 同一种做法：只是事实时长，服务器据此算新闻板的停留预算。
+ * @source 素材包 manifest voice.0149–0184 的 durationMs（本机 v2.06 原版包，packId daa850ef3a455b4a）
+ */
+export const NEWS_VOICE_MS: readonly number[] = Object.freeze([
+  2206, 2028, 2178, 2179, 1750, 3068, 1346, 2617, 1940, 2095, 2579, 2136, 1827, 2029, 2092, 2889, 2831, 3060, 2389,
+  2103, 3053, 3307, 1807, 1734, 2458, 2485, 1724, 1826, 1945, 3935, 2497, 2766, 1906, 2909, 2552, 1938,
+]);
+
+/** 新闻板的节拍（1x，ms） */
+export interface NewsShowTiming {
+  /** 新闻板停留（original：等语音播完、不足 2.4 秒补足） */
+  readonly holdMs: number;
+  /** handler 收尾（同步显示态、金额飘字） */
+  readonly endMs: number;
+}
+
+/**
+ * 原版新闻板（fcn.0044a173）：写分类名与标题（处理函数参数 0）→ 整张拷到 (0,0) → fcn.00452c39(2400)（0x44a308–0x44a30d）
+ * 等语音播完、不足 2.4 秒补足，任意鼠标左 / 右键或按键放开即结束并停掉语音（fcn.00452bd6）→ 处理函数参数 1 执行效果，
+ * 之后没有停顿（与命运板的 fcn.00450f9a(800) 不同）。compact 沿用初版的 3.4 秒。
+ * @source exe v2.06 0x44a173–0x44a33b、fcn.00452c39（0x452c39–0x452cf9）
+ */
+export const NEWS_SHOW = Object.freeze({
+  original: Object.freeze({ minHoldMs: 2400, endMs: 200 }),
+  compact: Object.freeze({ holdMs: 3400, endMs: 200 }),
+});
+
+/** 一条新闻的节拍 */
+export function newsShowMs(id: number, profile: PacingProfile): NewsShowTiming {
+  if (profile === 'original') {
+    const o = NEWS_SHOW.original;
+    return { holdMs: Math.max(o.minHoldMs, NEWS_VOICE_MS[id] ?? 0), endMs: o.endMs };
+  }
+  return { holdMs: NEWS_SHOW.compact.holdMs, endMs: NEWS_SHOW.compact.endMs };
+}
+
+/** NEWS 的 original 预算 = max(compact, 新闻板停留 + 收尾 + 余量) */
+function newsOriginalBudget(e: GameEventOf<'NEWS'>): number {
+  const t = newsShowMs(e.id, 'original');
+  return Math.max(COMPACT_BUDGET_MS.NEWS, t.holdMs + t.endMs + FLIC_SLACK_MS);
+}
+
 /** 一种节奏的完整预算表：以 GameEvent['type'] 为键穷举 */
 export type EventBudgetTable = { readonly [T in GameEventType]: EventBudget<T> };
 
@@ -228,8 +339,9 @@ export const COMPACT_BUDGET_MS = Object.freeze({
   TURN_STARTED: 600,
   PARACHUTE: 1500,
   TURN_BLOCKED: 1200,
-  RELEASED: 1000,
-  RETURNED: 800,
+  // 获释：坐牢 / 住院 / 住旅馆从建筑里走出来（WALK_OUT）；走回棋盘（RETURNED）只剩落定的停顿
+  RELEASED: RELEASED_BASE_MS,
+  RETURNED: 400,
   TURN_ENDED: 0,
   // move（掷骰：原版时序的速度 2 档，见 DICE_TIMING；停留 / 乌龟不掷骰为 0）
   DICE_ROLLED: (e) => (e.dice.length === 0 ? 0 : diceShowMs(DICE_TIMING.compact) + DICE_SLACK_MS),
@@ -587,14 +699,22 @@ export const CARD_SHOW_EVENT_TYPES = Object.freeze(['CARD_USED', 'PASSIVE', 'CAR
 /** original 节奏里按原版命运板时序（语音时长 + 加持消息框 + 0.8 秒）放宽的事件类型 */
 export const FATE_SHOW_EVENT_TYPES = Object.freeze(['FATE'] as const);
 
-/** original 节奏：有 FLIC 预留的事件按原长放宽，亮卡的事件按原版 1.5 秒放宽，命运按原版命运板，其余沿用 compact */
+/** original 节奏里按原版新闻板时序（语音时长、不足 2.4 秒补足）放宽的事件类型 */
+export const NEWS_SHOW_EVENT_TYPES = Object.freeze(['NEWS'] as const);
+
+/**
+ * original 节奏：有 FLIC 预留的事件按原长放宽，亮卡的事件按原版 1.5 秒放宽，命运按原版命运板、新闻按原版新闻板，
+ * 其余沿用 compact
+ */
 export const ORIGINAL_BUDGET_MS: EventBudgetTable = Object.freeze({
   ...COMPACT_BUDGET_MS,
   ...originalOverrides(),
+  RELEASED: releasedOriginal,
   CARD_USED: cardShowBudget('CARD_USED', CARD_SHOW_MS.original.castMs),
   PASSIVE: cardShowBudget('PASSIVE', CARD_SHOW_MS.original.passiveMs),
   CARD_GAINED: cardGainedOriginal,
   FATE: fateOriginalBudget,
+  NEWS: newsOriginalBudget,
 } satisfies EventBudgetTable);
 
 /** 按节奏取预算表：EVENT_BUDGET_MS[profile][type] */
