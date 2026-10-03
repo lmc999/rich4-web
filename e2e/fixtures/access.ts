@@ -106,6 +106,8 @@ export async function enterPasscode(page: Page, passcode: string): Promise<boole
 /**
  * 房主取得房间邀请链接（站内路径 `/r/<code>#g=<token>`）：房间页的邀请框（data-testid invite-url，
  * data-grant="true" 表示已换成授权链接）就绪时读界面，否则在页面里调 POST /api/access/grant。
+ * 授权只能兑换一次、30 分钟内有效（architecture §35）：一个链接只给一个受邀者；只读邀请框不算交出（框里的链接不变），
+ * 点「复制」或打开二维码才会把它交出并换新。
  */
 export async function grantLink(page: Page, code: string): Promise<{ path: string; token: string; viaUi: boolean }> {
   const box = page.getByTestId('invite-url');

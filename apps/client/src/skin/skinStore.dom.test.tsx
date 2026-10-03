@@ -207,6 +207,9 @@ describe('素材包发现', () => {
       granted: true,
       kind: 'p',
       expiresAt: 1,
+      deadline: null,
+      room: null,
+      roomOpen: null,
       grants: true,
       canGrant: true,
     });
@@ -224,6 +227,9 @@ describe('素材包发现', () => {
       granted: true,
       kind: 'p',
       expiresAt: 1,
+      deadline: null,
+      room: null,
+      roomOpen: null,
       grants: true,
       canGrant: true,
     });
@@ -237,6 +243,9 @@ describe('素材包发现：失败与恢复', () => {
     granted: true,
     kind: 'p' as const,
     expiresAt: 1,
+    deadline: null,
+    room: null,
+    roomOpen: null,
     grants: true,
     canGrant: true,
   };

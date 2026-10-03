@@ -1,8 +1,10 @@
 /**
  * 访问门禁的持久化（docs/design/original-skin.md U4；design-draft §5.3）：
  * - access_meta：`epoch`（+1 即吊销全部 cookie 与未兑换的房间授权）；
- * - access_invites：管理员生成的邀请码（只存 sha256，可限次、限期、单独撤销）；
- * - access_grants：房间邀请授权（只存 token 的 sha256；24 小时、限次、绑定签发时的 epoch）。
+ * - access_invites：管理员生成的邀请码（只存 sha256，可限次、限期、单独撤销；撤销同时让用它登录的会话失效，
+ *   所以用完、撤销的邀请码都留到到期才清理，不过期的一直保留）；
+ * - access_grants：房间邀请授权（只存 token 的 sha256；30 分钟、1 次、绑定签发时的 epoch 与房间实例 room_iid）。
+ *   room_iid 列是 architecture §35 加的（旧库启动时 ALTER TABLE 补上，旧授权的 room_iid 为空串、一律不能再兑换）。
  *
  * 表用 CREATE TABLE IF NOT EXISTS 建立，不占用 persistence/db.ts 的 schema_version（与房间、存档的迁移互不影响）。
  * STORE=sqlite 时与 rich4.db 同库；STORE=json 时单独使用 DATA_DIR/access.db（见 accessDbPath）。
@@ -26,6 +28,8 @@ export interface InviteRecord {
 
 export interface GrantRecord {
   room: string;
+  /** 房间实例（net/accessScope.ts 的 roomInstanceOf）；兑换得到的 g cookie 绑定它 */
+  instance: string;
   usesLeft: number;
   expiresAt: number;
   epoch: number;
@@ -40,18 +44,27 @@ export interface AccessStore {
     code: string;
     invite: InviteRecord;
   };
-  /** 兑换邀请码（成功时次数 −1）；无效、用完、过期、已撤销返回 false */
-  redeemInvite(code: string, now: number): boolean;
+  /** 兑换邀请码（成功时次数 −1，返回它的 id 与到期时间）；无效、用完、过期、已撤销返回 null */
+  redeemInvite(code: string, now: number): { id: string; expiresAt: number | null } | null;
   listInvites(): InviteRecord[];
-  /** 撤销单个邀请码（已发出的 cookie 不受影响，需要时再 bumpEpoch） */
+  /** 撤销单个邀请码：不能再登录，用它登录的会话（cookie 带这个 id）也随之失效 */
   revokeInvite(id: string): boolean;
-  /** 生成房间授权；token 只在这里返回一次 */
-  createGrant(o: { room: string; uses: number; expiresAt: number; epoch: number; now: number }): string;
-  /** 兑换房间授权：存在、未过期、有剩余次数、epoch 与当前一致时次数 −1 并返回记录 */
+  /** 已撤销的邀请码 id（AccessControl 按秒缓存，用来让这些会话失效） */
+  revokedInviteIds(): string[];
+  /** 生成房间授权（绑定房间实例）；token 只在这里返回一次 */
+  createGrant(o: {
+    room: string;
+    instance: string;
+    uses: number;
+    expiresAt: number;
+    epoch: number;
+    now: number;
+  }): string;
+  /** 兑换房间授权：存在、未过期、有剩余次数、epoch 与当前一致、带房间实例时次数 −1 并返回记录 */
   redeemGrant(token: string, now: number, epoch: number): GrantRecord | null;
   /** 只查询（不消耗次数）；条件同 redeemGrant */
   peekGrant(token: string, now: number, epoch: number): GrantRecord | null;
-  /** 删除过期或用完的授权与邀请码 */
+  /** 删除过期或用完的授权，以及过期的邀请码（用完、撤销而未过期的邀请码保留：撤销状态还要用来拦会话） */
   prune(now: number): number;
 }
 
@@ -63,9 +76,18 @@ CREATE TABLE IF NOT EXISTS access_invites(
 ) STRICT;
 CREATE TABLE IF NOT EXISTS access_grants(
   token_hash TEXT PRIMARY KEY, room TEXT NOT NULL, uses_left INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL, epoch INTEGER NOT NULL, created_at INTEGER NOT NULL
+  expires_at INTEGER NOT NULL, epoch INTEGER NOT NULL, created_at INTEGER NOT NULL,
+  room_iid TEXT NOT NULL DEFAULT ''
 ) STRICT, WITHOUT ROWID;
 `;
+
+/** 旧库（§35 之前建的 access_grants 没有 room_iid）补列；已有的授权 room_iid 为空串，兑换时不认 */
+function migrateGrants(db: DatabaseSync): void {
+  const cols = db.prepare('PRAGMA table_info(access_grants)').all() as { name: string }[];
+  if (!cols.some((c) => c.name === 'room_iid')) {
+    db.exec("ALTER TABLE access_grants ADD COLUMN room_iid TEXT NOT NULL DEFAULT ''");
+  }
+}
 
 /** 邀请码字母表：Crockford base32（去掉 I L O U，输入时容错映射） */
 const INVITE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
@@ -100,6 +122,14 @@ type InviteRow = {
   revoked: number;
 };
 
+const GRANT_COLS = 'room, room_iid, uses_left, expires_at, epoch';
+
+type GrantRow = { room: string; room_iid: string; uses_left: number; expires_at: number; epoch: number };
+
+function grantOf(r: GrantRow): GrantRecord {
+  return { room: r.room, instance: r.room_iid, usesLeft: r.uses_left, expiresAt: r.expires_at, epoch: r.epoch };
+}
+
 function inviteOf(r: InviteRow): InviteRecord {
   return {
     id: r.id,
@@ -114,6 +144,7 @@ function inviteOf(r: InviteRow): InviteRecord {
 export class SqliteAccessStore implements AccessStore {
   constructor(private readonly db: DatabaseSync) {
     db.exec(SCHEMA);
+    migrateGrants(db);
   }
 
   epoch(): number {
@@ -154,16 +185,24 @@ export class SqliteAccessStore implements AccessStore {
     return { code, invite: { id, usesLeft: o.uses, expiresAt: o.expiresAt, createdAt: o.now, note, revoked: false } };
   }
 
-  redeemInvite(code: string, now: number): boolean {
+  redeemInvite(code: string, now: number): { id: string; expiresAt: number | null } | null {
     const norm = normalizeInviteCode(code);
-    if (!norm) return false;
-    const r = this.db
-      .prepare(
-        `UPDATE access_invites SET uses_left = uses_left - 1
-         WHERE code_hash = ? AND revoked = 0 AND uses_left > 0 AND (expires_at IS NULL OR expires_at > ?)`,
-      )
-      .run(sha256(norm), now);
-    return Number(r.changes) === 1;
+    if (!norm) return null;
+    const h = sha256(norm);
+    return transaction(this.db, () => {
+      const r = this.db
+        .prepare(
+          `UPDATE access_invites SET uses_left = uses_left - 1
+           WHERE code_hash = ? AND revoked = 0 AND uses_left > 0 AND (expires_at IS NULL OR expires_at > ?)`,
+        )
+        .run(h, now);
+      if (Number(r.changes) !== 1) return null;
+      const row = this.db.prepare('SELECT id, expires_at FROM access_invites WHERE code_hash = ?').get(h) as {
+        id: string;
+        expires_at: number | null;
+      };
+      return { id: row.id, expiresAt: row.expires_at };
+    });
   }
 
   listInvites(): InviteRecord[] {
@@ -180,13 +219,27 @@ export class SqliteAccessStore implements AccessStore {
     return Number(r.changes) === 1;
   }
 
-  createGrant(o: { room: string; uses: number; expiresAt: number; epoch: number; now: number }): string {
+  revokedInviteIds(): string[] {
+    const rows = this.db.prepare('SELECT id FROM access_invites WHERE revoked = 1').all() as { id: string }[];
+    return rows.map((r) => r.id);
+  }
+
+  createGrant(o: {
+    room: string;
+    instance: string;
+    uses: number;
+    expiresAt: number;
+    epoch: number;
+    now: number;
+  }): string {
+    if (o.instance === '') throw new Error('房间授权必须绑定房间实例');
     const token = randomBytes(32).toString('base64url');
     this.db
       .prepare(
-        'INSERT INTO access_grants(token_hash, room, uses_left, expires_at, epoch, created_at) VALUES(?, ?, ?, ?, ?, ?)',
+        `INSERT INTO access_grants(token_hash, room, room_iid, uses_left, expires_at, epoch, created_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(sha256(token), o.room, o.uses, o.expiresAt, o.epoch, o.now);
+      .run(sha256(token), o.room, o.instance, o.uses, o.expiresAt, o.epoch, o.now);
     return token;
   }
 
@@ -196,36 +249,31 @@ export class SqliteAccessStore implements AccessStore {
       const r = this.db
         .prepare(
           `UPDATE access_grants SET uses_left = uses_left - 1
-           WHERE token_hash = ? AND uses_left > 0 AND expires_at > ? AND epoch = ?`,
+           WHERE token_hash = ? AND uses_left > 0 AND expires_at > ? AND epoch = ? AND room_iid != ''`,
         )
         .run(h, now, epoch);
       if (Number(r.changes) !== 1) return null;
-      const row = this.db
-        .prepare('SELECT room, uses_left, expires_at, epoch FROM access_grants WHERE token_hash = ?')
-        .get(h) as { room: string; uses_left: number; expires_at: number; epoch: number };
-      return { room: row.room, usesLeft: row.uses_left, expiresAt: row.expires_at, epoch: row.epoch };
+      const row = this.db.prepare(`SELECT ${GRANT_COLS} FROM access_grants WHERE token_hash = ?`).get(h) as GrantRow;
+      return grantOf(row);
     });
   }
 
   peekGrant(token: string, now: number, epoch: number): GrantRecord | null {
     const row = this.db
       .prepare(
-        `SELECT room, uses_left, expires_at, epoch FROM access_grants
-         WHERE token_hash = ? AND uses_left > 0 AND expires_at > ? AND epoch = ?`,
+        `SELECT ${GRANT_COLS} FROM access_grants
+         WHERE token_hash = ? AND uses_left > 0 AND expires_at > ? AND epoch = ? AND room_iid != ''`,
       )
-      .get(sha256(token), now, epoch) as
-      | { room: string; uses_left: number; expires_at: number; epoch: number }
-      | undefined;
-    return row ? { room: row.room, usesLeft: row.uses_left, expiresAt: row.expires_at, epoch: row.epoch } : null;
+      .get(sha256(token), now, epoch) as GrantRow | undefined;
+    return row ? grantOf(row) : null;
   }
 
   prune(now: number): number {
-    const a = this.db.prepare('DELETE FROM access_grants WHERE expires_at <= ? OR uses_left <= 0').run(now);
-    const b = this.db
-      .prepare(
-        'DELETE FROM access_invites WHERE (expires_at IS NOT NULL AND expires_at <= ?) OR uses_left <= 0 OR revoked = 1',
-      )
+    const a = this.db
+      .prepare("DELETE FROM access_grants WHERE expires_at <= ? OR uses_left <= 0 OR room_iid = ''")
       .run(now);
+    // 邀请码只在过期后删除：用它登录的会话不会晚于邀请码到期（cap），之前都可能还要按撤销状态拦下
+    const b = this.db.prepare('DELETE FROM access_invites WHERE expires_at IS NOT NULL AND expires_at <= ?').run(now);
     return Number(a.changes) + Number(b.changes);
   }
 }

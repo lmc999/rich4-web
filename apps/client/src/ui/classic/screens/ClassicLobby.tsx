@@ -16,6 +16,7 @@ import { useClient } from '../../../app/services';
 import { useTx } from '../../../i18n/tx';
 import { formatDate } from '../../../presentation/names';
 import { canStart, mySeatView } from '../../../store/roomStore';
+import { useGuestRoom } from '../../access/accessStore';
 import { takenCharacters } from '../../lobby/characterPick';
 import { InviteLink } from '../../lobby/InviteLink';
 import { useRun } from '../../lobby/SeatGrid';
@@ -535,6 +536,8 @@ function LobbyLeftRail({ room, info }: { room: RoomView; info: RailRenderInfo })
   const unclaimed = unclaimedSeats(room);
   const startable = canStart(room) && unclaimed.length === 0;
   const [savesOpen, setSavesOpen] = useState(false);
+  // 经房间邀请链接进入的会话不能读档（服务器 ACCESS_SCOPE，architecture §35）：成了房主也不给读档入口
+  const guest = useGuestRoom() !== null;
   const wide = info.mode === 'drawer';
   return (
     <div className={s.railBox} data-wide={wide ? 'true' : 'false'}>
@@ -584,7 +587,7 @@ function LobbyLeftRail({ room, info }: { room: RoomView; info: RailRenderInfo })
       <section className={cc.box}>
         <SpectatorList room={room} />
       </section>
-      {host && (
+      {host && !guest && (
         <details
           className={clsx(cc.box, s.savesBox)}
           data-testid="lobby-saves"

@@ -217,6 +217,98 @@ describe('标题画面（Data#1）', () => {
     renderWith(<ClassicHome />);
     expect(screen.getByTestId('home-closed-note')).toHaveTextContent('654321');
   });
+
+  it('经房间邀请链接进入（kind g）：START / LOAD 变暗禁用，按钮带换成「回到房间」，上方一行说明', async () => {
+    useSettingsStore.setState({ nickname: 'G1' });
+    useAccessStore.setState({
+      status: {
+        mode: 'passcode',
+        granted: true,
+        kind: 'g',
+        expiresAt: 0,
+        deadline: null,
+        room: '482913',
+        roomOpen: true,
+        grants: true,
+        canGrant: false,
+      },
+    });
+    const { loc } = renderWith(<ClassicHome />);
+    expect(screen.getByTestId('home-guest-note')).toHaveTextContent('你是通过邀请链接进入的，只能加入邀请你的房间');
+    for (const id of ['home-create', 'home-load-open']) {
+      expect(screen.getByTestId(id)).toBeDisabled();
+      expect(screen.getByTestId(id)).toHaveAttribute('data-locked', 'true');
+    }
+    await userEvent.click(screen.getByTestId('home-create'));
+    expect(screen.queryByTestId('setup-column')).toBeNull();
+    expect(screen.getByTestId('title-option')).toBeEnabled();
+    for (const id of ['home-join-open', 'home-solo', 'title-public-open']) expect(screen.queryByTestId(id)).toBeNull();
+    expect(screen.getByTestId('home-guest-room')).toHaveTextContent('回到房间 482913');
+    expect(screen.getByTestId('home-guest-passcode')).toHaveTextContent('我有口令');
+    await userEvent.click(screen.getByTestId('home-guest-room'));
+    expect(loc.history?.at(-1)).toBe('/r/482913');
+  });
+
+  it('邀请的房间已经结束：没有「回到房间」，「我有口令」占满按钮带；点了要求门禁页', async () => {
+    useAccessStore.setState({
+      status: {
+        mode: 'passcode',
+        granted: true,
+        kind: 'g',
+        expiresAt: 0,
+        deadline: null,
+        room: '482913',
+        roomOpen: false,
+        grants: true,
+        canGrant: false,
+      },
+    });
+    renderWith(<ClassicHome />);
+    expect(screen.getByTestId('home-guest-closed')).toHaveTextContent('邀请你的房间已经结束');
+    expect(screen.queryByTestId('home-guest-room')).toBeNull();
+    const pass = screen.getByTestId('home-guest-passcode');
+    expect(pass.style.width).toBe('384px');
+    await userEvent.click(pass);
+    expect(useAccessStore.getState().required).toBe('manual');
+  });
+
+  it('邀请码会话有到期时间：上方显示有效期；口令会话不显示，入口照常', () => {
+    const deadline = new Date(2026, 9, 4, 16, 5).getTime();
+    useAccessStore.setState({
+      status: {
+        mode: 'passcode',
+        granted: true,
+        kind: 'i',
+        expiresAt: deadline,
+        deadline,
+        room: null,
+        roomOpen: null,
+        grants: true,
+        canGrant: true,
+      },
+    });
+    const { unmount } = renderWith(<ClassicHome />);
+    expect(screen.getByTestId('home-access-until')).toHaveTextContent('本次登录有效期至 10月4日 16:05');
+    expect(screen.getByTestId('home-create')).toBeEnabled();
+    expect(screen.queryByTestId('home-guest-note')).toBeNull();
+    unmount();
+    useAccessStore.setState({
+      status: {
+        mode: 'passcode',
+        granted: true,
+        kind: 'p',
+        expiresAt: deadline,
+        deadline: null,
+        room: null,
+        roomOpen: null,
+        grants: true,
+        canGrant: true,
+      },
+    });
+    renderWith(<ClassicHome />);
+    expect(screen.queryByTestId('home-access-until')).toBeNull();
+    expect(screen.getByTestId('home-solo')).toBeInTheDocument();
+  });
 });
 
 describe('片头（video.start）', () => {
@@ -865,7 +957,17 @@ describe('首页按皮肤切换', () => {
     const client = atlasPackClient(frames);
     resetSkinStoreForTest({ client: client as unknown as PackClient });
     useAccessStore.setState({
-      status: { mode: 'passcode', granted: true, kind: 'p', expiresAt: 0, grants: false, canGrant: false },
+      status: {
+        mode: 'passcode',
+        granted: true,
+        kind: 'p',
+        expiresAt: 0,
+        deadline: null,
+        room: null,
+        roomOpen: null,
+        grants: false,
+        canGrant: false,
+      },
     } as never);
     useSkinStore.setState({
       pack: { status: 'ready', manifest: { packId: 'feedfacefeedface' } as PackManifestV1 },
@@ -905,7 +1007,17 @@ describe('首页按皮肤切换', () => {
     unmount();
     useSettingsStore.setState({ skin: 'auto' });
     useAccessStore.setState({
-      status: { mode: 'passcode', granted: true, kind: 'p', expiresAt: 0, grants: false, canGrant: false },
+      status: {
+        mode: 'passcode',
+        granted: true,
+        kind: 'p',
+        expiresAt: 0,
+        deadline: null,
+        room: null,
+        roomOpen: null,
+        grants: false,
+        canGrant: false,
+      },
     } as never);
     useSkinStore.setState({ pack: { status: 'loading' }, ensurePack: vi.fn(() => new Promise<PackState>(() => {})) });
     renderWith(<SkinHome />);
@@ -917,7 +1029,17 @@ describe('首页按皮肤切换', () => {
     const ensure = vi.fn(() => Promise.resolve(useSkinStore.getState().pack));
     useSkinStore.setState({ ensurePack: ensure });
     useAccessStore.setState({
-      status: { mode: 'passcode', granted: false, kind: null, expiresAt: null, grants: false, canGrant: false },
+      status: {
+        mode: 'passcode',
+        granted: false,
+        kind: null,
+        expiresAt: null,
+        deadline: null,
+        room: null,
+        roomOpen: null,
+        grants: false,
+        canGrant: false,
+      },
     } as never);
     renderWith(<SkinHome />);
     expect(screen.getByTestId('home-nickname')).toBeInTheDocument();

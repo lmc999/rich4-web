@@ -1,5 +1,7 @@
 // /r/:code（邀请链接直接进房；?watch=1 以观战者进入）：连接 → resume / join → 大厅或对局。
 // 满员或已开局时自动改为观战；房间关闭（解散、被踢、回收）回到首页并提示。
+// 经房间邀请链接进入的会话打开别的房间被拒（ACCESS_SCOPE）时，错误页另给「回到房间」（邀请的房间还在时）与「我有口令」
+// （architecture §35）。
 import { ROOM_CODE_RE } from '@rich4/shared/net';
 import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useSearch } from 'wouter';
@@ -7,6 +9,7 @@ import { useClient } from '../../app/services';
 import { useTx } from '../../i18n/tx';
 import { useRoomStore } from '../../store/roomStore';
 import { useUiStore } from '../../store/uiStore';
+import { requireAccess, useGuestRoom, useGuestRoomClosed } from '../access/accessStore';
 import c from '../common/common.module.css';
 import { Toasts } from '../hud/Overlays';
 import { LobbyView } from '../lobby/LobbyView';
@@ -26,6 +29,8 @@ export default function RoomScreen({ code }: { code: string }): ReactNode {
   const [error, setError] = useState<string | null>(null);
   const [, navigate] = useLocation();
   const valid = ROOM_CODE_RE.test(code);
+  const guestRoom = useGuestRoom();
+  const guestClosed = useGuestRoomClosed();
   // 进房只随房间号 / 身份变化重做：t 随界面语言变化（原版皮肤的对局页进出时在 zh-TW 与 zh-CN 之间切换），
   // 放进依赖会在「离开房间 → 对局页卸载 → 语言切回」的途中重新 enterRoom，把刚离开的玩家又拉回房间
   const tRef = useRef(t);
@@ -63,6 +68,21 @@ export default function RoomScreen({ code }: { code: string }): ReactNode {
           {valid ? error : t('lobby:room.invalidCode')}
         </p>
         <div className={s.actions}>
+          {guestRoom && guestRoom !== code && !guestClosed && (
+            <Link href={`/r/${guestRoom}`} className="btn btn--green" data-testid="room-guest-back">
+              {t('lobby:home.guestBack', { code: guestRoom })}
+            </Link>
+          )}
+          {guestRoom && (
+            <button
+              type="button"
+              className="btn btn--blue"
+              onClick={() => requireAccess('manual')}
+              data-testid="room-guest-passcode"
+            >
+              {t('lobby:home.havePasscode')}
+            </button>
+          )}
           <Link href="/" className="btn btn--cream">
             {t('common.backHome')}
           </Link>

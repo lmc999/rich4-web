@@ -1,11 +1,13 @@
-// 门禁页（口令、#g= 房间邀请授权兑换、错误提示）、门禁宿主（按原因收尾）与邀请链接（门禁开启时生成授权链接）
+// 门禁页（口令、#g= 房间邀请授权兑换、错误提示、兑换失败时回到原房间）、门禁宿主（按原因收尾）与邀请链接
+// （门禁开启时生成授权链接：一个链接只给一个人，每次复制 / 二维码都换新链接）
 
 import type { AccessStatus } from '@rich4/shared/net';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FetchLike } from '../../skin/pack/http';
-import { clearGrantCache, GRANT_FRESH_MS, InviteLink } from '../lobby/InviteLink';
+import { useUiStore } from '../../store/uiStore';
+import { clearGrantCache, GRANT_REUSE_MARGIN_MS, InviteLink } from '../lobby/InviteLink';
 import { AccessGate } from './AccessGate';
 import { AccessGateHost } from './AccessGateHost';
 import { setAccessFetch } from './accessApi';
@@ -13,7 +15,17 @@ import { requireAccess, useAccessStore } from './accessStore';
 import { bootstrapAccess } from './bootstrap';
 
 const TOKEN = 'A'.repeat(43);
-const STATUS: AccessStatus = { mode: 'passcode', granted: true, kind: 'p', expiresAt: 1, grants: true, canGrant: true };
+const STATUS: AccessStatus = {
+  mode: 'passcode',
+  granted: true,
+  kind: 'p',
+  expiresAt: 1,
+  deadline: null,
+  room: null,
+  roomOpen: null,
+  grants: true,
+  canGrant: true,
+};
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -84,8 +96,10 @@ describe('AccessGate', () => {
     expect(onGranted).not.toHaveBeenCalled();
   });
 
-  it('#g= 授权：挂载即兑换，先清掉片段；成功回调房间号', async () => {
-    const calls = mockFetch(() => json({ ok: true, data: { ...STATUS, kind: 'g', canGrant: false, room: '123456' } }));
+  it('#g= 授权：挂载即兑换，先清掉片段；成功回调链接对应的房间号（target）', async () => {
+    const calls = mockFetch(() =>
+      json({ ok: true, data: { ...STATUS, kind: 'g', canGrant: false, room: '123456', target: '123456' } }),
+    );
     const replaced: string[] = [];
     const onGranted = vi.fn();
     render(
@@ -127,6 +141,51 @@ describe('AccessGate', () => {
     );
     expect(screen.queryByTestId('access-redeeming')).toBeNull();
     expect(calls).toEqual([]);
+  });
+});
+
+describe('AccessGate：兑换失败时已有访问', () => {
+  it('g 会话打开已用过的链接：提示失效，并给「回到房间」（不必输入口令）', async () => {
+    const guest: AccessStatus = { ...STATUS, kind: 'g', canGrant: false, room: '654321' };
+    mockFetch((c) =>
+      c.url === '/api/access/redeem'
+        ? json({ ok: false, error: { code: 'ACCESS_REQUIRED', details: { reason: 'grantInvalid' } } }, 401)
+        : json({ ok: true, data: guest }),
+    );
+    const onGranted = vi.fn();
+    render(
+      <AccessGate
+        reason="startup"
+        onGranted={onGranted}
+        location={{ hash: `#g=${TOKEN}`, pathname: '/r/123456', search: '' }}
+        replaceUrl={() => {}}
+      />,
+    );
+    expect(await screen.findByTestId('access-error')).toHaveTextContent('已被别人用过');
+    const back = await screen.findByTestId('access-continue');
+    expect(back).toHaveTextContent('回到房间 654321');
+    await userEvent.click(back);
+    expect(onGranted).toHaveBeenCalledWith(guest, '654321');
+  });
+
+  it('房间已关闭（ROOM_NOT_FOUND）：单独的提示；没有有效访问时只显示口令输入', async () => {
+    mockFetch((c) =>
+      c.url === '/api/access/redeem'
+        ? json({ ok: false, error: { code: 'ROOM_NOT_FOUND', details: { reason: 'roomClosed' } } }, 404)
+        : json({ ok: true, data: { ...STATUS, granted: false, kind: null, canGrant: false } }),
+    );
+    render(
+      <AccessGate
+        reason="startup"
+        onGranted={() => {}}
+        location={{ hash: `#g=${TOKEN}`, pathname: '/r/123456', search: '' }}
+        replaceUrl={() => {}}
+      />,
+    );
+    expect(await screen.findByTestId('access-error')).toHaveTextContent('邀请你的房间已经关闭');
+    expect(screen.getByTestId('access-passcode')).toBeInTheDocument();
+    await waitFor(() => expect(useAccessStore.getState().status?.granted).toBe(false));
+    expect(screen.queryByTestId('access-continue')).toBeNull();
   });
 });
 
@@ -196,104 +255,140 @@ describe('InviteLink + 门禁', () => {
     expect(screen.getByTestId('invite-url')).toHaveValue(`${location.origin}/r/482913`);
   });
 
-  it('可以生成授权：复制带 #g= 的链接；刚生成的授权（30 秒内）复用，连续复制不重复生成', async () => {
-    const calls = mockFetch((c) =>
-      c.url === '/api/access'
-        ? json({ ok: true, data: STATUS })
-        : json({
-            ok: true,
-            data: {
-              room: '482913',
-              token: TOKEN,
-              expiresAt: Date.now() + 24 * 3600_000,
-              uses: 8,
-              path: `/r/482913#g=${TOKEN}`,
-            },
-          }),
-    );
-    render(<InviteLink code="482913" allowWatch />);
-    await waitFor(() => expect(useAccessStore.getState().status?.canGrant).toBe(true));
-    // 邀请框自动换成授权链接（E2E 夹具读 data-grant）
-    await waitFor(() => expect(screen.getByTestId('invite-url')).toHaveAttribute('data-grant', 'true'));
-    await userEvent.click(screen.getByTestId('invite-copy'));
-    await waitFor(() => expect(clip).toEqual([`${location.origin}/r/482913#g=${TOKEN}`]));
-    expect(screen.getByTestId('invite-url')).toHaveValue(`${location.origin}/r/482913#g=${TOKEN}`);
-    expect(screen.getByTestId('invite-grant-note')).toHaveTextContent('最多 8 次');
-    await userEvent.click(screen.getByTestId('invite-copy-watch'));
-    await waitFor(() => expect(clip[1]).toBe(`${location.origin}/r/482913?watch=1#g=${TOKEN}`));
-    expect(calls.filter((c) => c.url === '/api/access/grant')).toEqual([
-      { url: '/api/access/grant', method: 'POST', body: { room: '482913' }, contentType: 'application/json' },
-    ]);
-  });
-
-  it('复制与打开二维码要新鲜的授权：超过 30 秒的旧授权（可能已用满或被吊销）不再复制出去，邀请框随之换新', async () => {
+  /** 每次 POST /api/access/grant 返回新的 token（第 n 次为 tok(n)） */
+  const tok = (k: number) => String(k).repeat(43).slice(0, 43);
+  function grantServer(o: { expiresIn?: number } = {}): Call[] {
     let n = 0;
-    const calls = mockFetch((c) => {
+    return mockFetch((c) => {
       if (c.url === '/api/access') return json({ ok: true, data: STATUS });
       n++;
-      const token = String(n).repeat(43).slice(0, 43);
       return json({
         ok: true,
-        data: { room: '482913', token, expiresAt: Date.now() + 24 * 3600_000, uses: 8, path: `/r/482913#g=${token}` },
+        data: {
+          room: '482913',
+          token: tok(n),
+          expiresAt: Date.now() + (o.expiresIn ?? 30 * 60_000),
+          uses: 1,
+          path: `/r/482913#g=${tok(n)}`,
+        },
       });
     });
+  }
+  const link = (k: number, watch = false) => `${location.origin}/r/482913${watch ? '?watch=1' : ''}#g=${tok(k)}`;
+  const grants = (calls: Call[]) => calls.filter((c) => c.url === '/api/access/grant').length;
+
+  it('邀请框是一条还没交出去的授权链接；每次复制交出这一条并换新，观战链接同理；文案说明限一人、30 分钟', async () => {
+    const calls = grantServer();
+    render(<InviteLink code="482913" allowWatch />);
+    // 邀请框自动换成授权链接（E2E 夹具读 data-grant）
+    await waitFor(() => expect(screen.getByTestId('invite-url')).toHaveValue(link(1)));
+    expect(screen.getByTestId('invite-url')).toHaveAttribute('data-grant', 'true');
+    expect(screen.getByTestId('invite-grant-note')).toHaveTextContent('邀请链接限一人使用、30 分钟内有效');
+    await userEvent.click(screen.getByTestId('invite-copy'));
+    await waitFor(() => expect(clip).toEqual([link(1)]));
+    // 复制过的链接不留在框里
+    await waitFor(() => expect(screen.getByTestId('invite-url')).toHaveValue(link(2)));
+    expect(useUiStore.getState().toasts.at(-1)?.text).toContain('限一人使用，30 分钟内有效');
+    await userEvent.click(screen.getByTestId('invite-copy-watch'));
+    await waitFor(() => expect(clip[1]).toBe(link(2, true)));
+    await waitFor(() => expect(screen.getByTestId('invite-url')).toHaveValue(link(3)));
+    await userEvent.click(screen.getByTestId('invite-copy'));
+    await waitFor(() => expect(clip[2]).toBe(link(3)));
+    expect(new Set(clip.map((u) => u.split('#')[1])).size).toBe(3);
+    await waitFor(() => expect(grants(calls)).toBe(4));
+    expect(calls.find((c) => c.url === '/api/access/grant')).toEqual({
+      url: '/api/access/grant',
+      method: 'POST',
+      body: { room: '482913' },
+      contentType: 'application/json',
+    });
+  });
+
+  it('二维码：每次打开都交出一条新链接（框里随之换新）；在框里手动复制也算交出', async () => {
+    const calls = grantServer();
+    render(<InviteLink code="482913" allowWatch={false} />);
+    await waitFor(() => expect(screen.getByTestId('invite-url')).toHaveValue(link(1)));
+    await userEvent.click(screen.getByTestId('invite-qr-toggle'));
+    await waitFor(() => expect(screen.getByTestId('invite-qr')).toHaveAttribute('data-url', link(1)));
+    expect(screen.getByTestId('invite-qr-note')).toHaveTextContent('限一人扫码');
+    await waitFor(() => expect(screen.getByTestId('invite-url')).toHaveValue(link(2)));
+    // 关掉再打开：给下一个人的新链接
+    await userEvent.click(screen.getByTestId('invite-qr-toggle'));
+    expect(screen.queryByTestId('invite-qr')).toBeNull();
+    await userEvent.click(screen.getByTestId('invite-qr-toggle'));
+    await waitFor(() => expect(screen.getByTestId('invite-qr')).toHaveAttribute('data-url', link(2)));
+    await waitFor(() => expect(screen.getByTestId('invite-url')).toHaveValue(link(3)));
+    // 在邀请框里选中复制（Ctrl+C）：这条算交出去了
+    fireEvent.copy(screen.getByTestId('invite-url'));
+    await waitFor(() => expect(screen.getByTestId('invite-url')).toHaveValue(link(4)));
+    expect(grants(calls)).toBe(4);
+  });
+
+  it('连点「复制」「复制观战」（下一条还在生成中）：两次拿到的也是两条不同的链接', async () => {
+    const calls = grantServer();
+    render(<InviteLink code="482913" allowWatch />);
+    await waitFor(() => expect(screen.getByTestId('invite-url')).toHaveValue(link(1)));
+    fireEvent.click(screen.getByTestId('invite-copy'));
+    fireEvent.click(screen.getByTestId('invite-copy-watch'));
+    fireEvent.click(screen.getByTestId('invite-copy'));
+    await waitFor(() => expect(clip).toHaveLength(3));
+    expect(new Set(clip.map((u) => u.split('#')[1])).size).toBe(3);
+    await waitFor(() => expect(screen.getByTestId('invite-url')).toHaveAttribute('data-grant', 'true'));
+    expect(clip).not.toContain((screen.getByTestId('invite-url') as HTMLInputElement).value);
+    expect(grants(calls)).toBeGreaterThanOrEqual(4);
+  });
+
+  it('备用链接快到期（不足 5 分钟）时不交出去：复制时现生成一条', async () => {
+    const calls = grantServer();
     const t0 = Date.now();
     let now = t0;
     const spy = vi.spyOn(Date, 'now').mockImplementation(() => now);
     try {
-      render(<InviteLink code="482913" allowWatch />);
-      const tok = (k: number) => String(k).repeat(43).slice(0, 43);
-      await waitFor(() =>
-        expect(screen.getByTestId('invite-url')).toHaveValue(`${location.origin}/r/482913#g=${tok(1)}`),
-      );
-      now = t0 + GRANT_FRESH_MS + 1000;
+      render(<InviteLink code="482913" allowWatch={false} />);
+      await waitFor(() => expect(screen.getByTestId('invite-url')).toHaveValue(link(1)));
+      now = t0 + 30 * 60_000 - GRANT_REUSE_MARGIN_MS + 1000;
       await userEvent.click(screen.getByTestId('invite-copy'));
-      await waitFor(() => expect(clip).toEqual([`${location.origin}/r/482913#g=${tok(2)}`]));
-      expect(screen.getByTestId('invite-url')).toHaveValue(`${location.origin}/r/482913#g=${tok(2)}`);
-      // 紧接着打开二维码：30 秒内生成的，复用
-      await userEvent.click(screen.getByTestId('invite-qr-toggle'));
-      expect(calls.filter((c) => c.url === '/api/access/grant')).toHaveLength(2);
-      await userEvent.click(screen.getByTestId('invite-qr-toggle'));
-      now += GRANT_FRESH_MS + 1000;
-      await userEvent.click(screen.getByTestId('invite-qr-toggle'));
-      await waitFor(() => expect(calls.filter((c) => c.url === '/api/access/grant')).toHaveLength(3));
-      await waitFor(() =>
-        expect(screen.getByTestId('invite-url')).toHaveValue(`${location.origin}/r/482913#g=${tok(3)}`),
-      );
+      await waitFor(() => expect(clip).toEqual([link(2)]));
+      await waitFor(() => expect(screen.getByTestId('invite-url')).toHaveValue(link(3)));
+      expect(grants(calls)).toBe(3);
     } finally {
       spy.mockRestore();
     }
   });
 
-  it('门禁状态变化（登出后重新登录、吊销后换了 cookie）：清空授权缓存，邀请框换新授权', async () => {
-    let n = 0;
-    const calls = mockFetch((c) => {
-      if (c.url === '/api/access') return json({ ok: true, data: STATUS });
-      n++;
-      const token = String(n).repeat(43).slice(0, 43);
-      return json({
-        ok: true,
-        data: { room: '482913', token, expiresAt: Date.now() + 24 * 3600_000, uses: 8, path: `/r/482913#g=${token}` },
-      });
-    });
-    render(<InviteLink code="482913" allowWatch={false} />);
-    const tok = (k: number) => String(k).repeat(43).slice(0, 43);
-    await waitFor(() =>
-      expect(screen.getByTestId('invite-url')).toHaveValue(`${location.origin}/r/482913#g=${tok(1)}`),
+  it('生成失败：提示并退回普通链接', async () => {
+    mockFetch((c) =>
+      c.url === '/api/access'
+        ? json({ ok: true, data: STATUS })
+        : json({ ok: false, error: { code: 'RATE_LIMITED' } }, 429),
     );
+    render(<InviteLink code="482913" allowWatch={false} />);
+    await waitFor(() => expect(useAccessStore.getState().status?.canGrant).toBe(true));
+    expect(screen.getByTestId('invite-url')).toHaveAttribute('data-grant', 'false');
+    await userEvent.click(screen.getByTestId('invite-copy'));
+    await waitFor(() => expect(clip).toEqual([`${location.origin}/r/482913`]));
+    expect(useUiStore.getState().toasts.some((x) => x.text.includes('改用普通链接'))).toBe(true);
+  });
+
+  it('门禁状态变化（登出后重新登录、吊销后换了 cookie）：清空备用链接，邀请框换新授权', async () => {
+    const calls = grantServer();
+    render(<InviteLink code="482913" allowWatch={false} />);
+    await waitFor(() => expect(screen.getByTestId('invite-url')).toHaveValue(link(1)));
     act(() => useAccessStore.setState({ status: { ...STATUS, granted: false, kind: null, canGrant: false } }));
     expect(screen.getByTestId('invite-url')).toHaveValue(`${location.origin}/r/482913`);
     act(() => useAccessStore.setState({ status: { ...STATUS, expiresAt: 2 } }));
-    await waitFor(() =>
-      expect(screen.getByTestId('invite-url')).toHaveValue(`${location.origin}/r/482913#g=${tok(2)}`),
-    );
-    expect(calls.filter((c) => c.url === '/api/access/grant')).toHaveLength(2);
+    await waitFor(() => expect(screen.getByTestId('invite-url')).toHaveValue(link(2)));
+    expect(grants(calls)).toBe(2);
   });
 
   it('经授权进入的访客：普通链接并提示不能再生成授权', async () => {
-    mockFetch(() => json({ ok: true, data: { ...STATUS, kind: 'g', canGrant: false } }));
+    const calls = mockFetch(() => json({ ok: true, data: { ...STATUS, kind: 'g', canGrant: false, room: '482913' } }));
     render(<InviteLink code="482913" allowWatch={false} />);
     expect(await screen.findByTestId('invite-guest-note')).toBeInTheDocument();
+    expect(screen.queryByTestId('invite-grant-note')).toBeNull();
+    await userEvent.click(screen.getByTestId('invite-copy'));
+    await waitFor(() => expect(clip).toEqual([`${location.origin}/r/482913`]));
+    expect(grants(calls)).toBe(0);
   });
 });
 

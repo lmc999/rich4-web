@@ -1285,7 +1285,7 @@ RICH4_ASSETS_ALLOW_UNGATED=0     # 仅本机调试：非 production + PUBLIC_URL
 
 - **配置**（§9.2）：`RICH4_ASSETS_DIR` 只认显式设置、目录里有 manifest.json 才启用；`RICH4_ASSETS_VERIFY=quick|full`（任何不符整体不启用）；`ACCESS_MODE=off|passcode|invite`、`ACCESS_PASSCODE_HASH`（scrypt，格式 `scrypt:<N>:<r>:<p>:<salt>:<hash>`，不用设计稿的 `$` 分隔：compose 的 .env 会对 `$` 插值；解析时仍接受 `$`）、`ACCESS_SECRET`（≥32 字节）、`ACCESS_TTL_DAYS=30`、`ACCESS_GRANTS=1`。空字符串视为未设置。**启动守卫**（修正 3）：启用素材包而门禁为 off 时 ConfigError，只有「非 production + PUBLIC_URL 为 localhost + TRUST_PROXY=0 + 显式 RICH4_ASSETS_ALLOW_UNGATED=1」四条同时满足才放行，并打印高亮告警。
 - **`/pack/*` 永远注册**（修正 4）：未启用时 404 JSON（reason packDisabled），只提供 manifest 白名单里的文件；带哈希文件 `private, max-age=2592000`，manifest `private, no-cache` + `ETag=packId`、启动时预压缩 br / gzip；单段 Range（206 / 416 / If-Range）；所有 /pack 响应带 nosniff、CORP same-origin、X-Robots-Tag。SPA 回退排除 `/pack` 与 `/api`，`/robots.txt` 为 `Disallow: /`。
-- **门禁**：cookie `r4_access=v1.<exp>.<epoch>.<kind>.<HMAC>`（kind p 口令 / i 邀请码 / g 房间授权），HttpOnly、SameSite=Lax、https 时 Secure；`/api`、manifest、GET `/api/access`、Socket.IO 握手响应上滑动续期。口令 scrypt（线程池）+ timingSafeEqual，POST 必须是 application/json。限流：按 IP 退避（前 5 次免费，之后 1s→30s 封顶，30 分钟清零）+ 全局令牌桶软上限（排队，超过 10s 才 429），不做硬锁。**房间授权**（U4）：24 小时、8 次、只存 sha256、绑定 epoch；g 会话不能再生成授权（防链式扩散），已持有效 cookie 的人兑换不消耗次数。邀请码存 sqlite `access_invites/access_meta/access_grants`（`CREATE IF NOT EXISTS`，不升 `DB_SCHEMA_VERSION`；STORE=json 时 `DATA_DIR/access.db`）。`epoch+1` 一键吊销（每秒至多读一次库，另一进程的 CLI 吊销 1 秒内生效）；吊销不强制断开已建立的 Socket（下次握手被拒），免得踢掉进行中的对局。
+- **门禁**：cookie `r4_access=v1.<exp>.<epoch>.<kind>.<HMAC>`（kind p 口令 / i 邀请码 / g 房间授权），HttpOnly、SameSite=Lax、https 时 Secure；`/api`、manifest、GET `/api/access`、Socket.IO 握手响应上滑动续期。口令 scrypt（线程池）+ timingSafeEqual，POST 必须是 application/json。限流：按 IP 退避（前 5 次免费，之后 1s→30s 封顶，30 分钟清零）+ 全局令牌桶软上限（排队，超过 10s 才 429），不做硬锁。**房间授权**（U4）：24 小时、8 次、只存 sha256、绑定 epoch；g 会话不能再生成授权（防链式扩散），已持有效 cookie 的人兑换不消耗次数（2026-10-03 起改为 30 分钟、1 次、绑定房间实例，g 会话只对该房间有效，邀请码会话到期不超过邀请码到期，cookie 升为 v2，见 §35）。邀请码存 sqlite `access_invites/access_meta/access_grants`（`CREATE IF NOT EXISTS`，不升 `DB_SCHEMA_VERSION`；STORE=json 时 `DATA_DIR/access.db`）。`epoch+1` 一键吊销（每秒至多读一次库，另一进程的 CLI 吊销 1 秒内生效）；吊销不强制断开已建立的 Socket（下次握手被拒），免得踢掉进行中的对局。
 - **接口**：`GET /api/access`（状态 + `pack: packId|null`，未通过门禁恒为 null）、`POST /api/access {passcode}`（口令模式也接受邀请码）、`/api/access/grant`、`/redeem`、`/logout`；`ADMIN_TOKEN` 保护的 `/admin/access/invites`（GET / POST / DELETE）与 `/admin/access/revoke`（Docker 部署不进容器即可管理）。受保护请求失败 401 `ACCESS_REQUIRED{reason}`；`io.use` 先查门禁（先于 BAD_HANDSHAKE / PROTOCOL_MISMATCH）。
 - **CLI**：`npx tsx scripts/access.ts hash [--stdin] | secret | invite | list | revoke`（根 package.json 未加 `npm run access`）。**部署**：`deploy/Dockerfile`（构建期发现原版 / 派生文件即失败，镜像扫描 0）、`deploy/docker-compose.yml`（`../rich4-assets:/assets-rich4:ro`、TRUST_PROXY=1）、`deploy/.env.example`（缺省 ACCESS_MODE=passcode）、`deploy/Caddyfile`（/pack 不再压缩）。
 
@@ -2268,3 +2268,140 @@ mapHash 都不变；ENGINE_VERSION 仍是 0.5.0（尚未上线，`engine/version
 - 原版储金红利（新闻 23）给每个没有贷款的在场玩家都列一行（存款为 0 时「得到0元」），引擎的 affected 只含红利 > 0 的人（不改引擎）。
 - 手机横屏（844×390）这次没有截图（脚本支持 `mobile` 参数，本机那一轮卡在开房间，未查原因）。
 - `test/evcard-fix.mjs` 第 3 个场景（新闻板最短时间前点板子不跳过）是 §30.6 的旧行为，脚本没有改。
+
+## 35. 访问门禁：限时邀请码会话、一次性邀请链接与房间作用域（2026-10-03）
+
+用户要求收紧门禁（另有外部程序经管理接口给人签发 24 小时口令；外部程序不在本仓库）：共享口令不变；邀请码会话到期即失效、停用邀请码即
+失效；房间邀请链接改为一个链接一个人、30 分钟；用邀请链接进来的人只能进那个房间。（编号说明：§34 留给同日另一项修复，这里是 §35。）引擎、ENGINE_VERSION、
+存档格式不变；房间快照不变（房间实例取已持久化的创建时间）。
+
+### 35.1 规则
+
+| 会话（cookie kind） | 来源 | 到期 | 作用域 |
+|---|---|---|---|
+| p | 共享口令（`ACCESS_MODE=passcode`） | `ACCESS_TTL_DAYS`，用过就续（不变） | 全部；能生成邀请链接 |
+| i | 邀请码（管理接口 / CLI，16 位） | min(签发时 + `ACCESS_TTL_DAYS`, 邀请码到期)；续期同样取 min，到了邀请码到期就不再换发、到点失效；不过期的邀请码照常滑动 | 全部；能生成邀请链接 |
+| g | 房间邀请链接兑换 | 24 小时，活跃滑动（不变） | 只有绑定的那个房间实例 |
+
+- 邀请码的可用次数 = 能登录的设备数：只有 POST /api/access 消耗（`redeemInvite`）；之后凭 cookie 的 /api、manifest、握手与续期都不消耗。
+- 停用邀请码（`DELETE /admin/access/invites/:id`）让用它登录的会话立即失效：i cookie 带邀请码 id，`AccessControl.check` 查已撤销 id 的
+  集合（与 epoch 一样按 `epochCacheMs` 缓存，缺省 1 秒；本进程撤销时清缓存立即生效），命中即 `revoked`——下一次 /api、manifest 或握手被拒，
+  GET /api/access 清掉 cookie；已建立的 Socket 不断开。用这个码登录的人生成的房间授权、经授权进来的 g 会话不受影响。v1 换发来的 i 不带 id，
+  只按到期。为此 prune 不再删用完或撤销的邀请码，只删过期的（会话不会晚于邀请码到期；不过期的邀请码一直保留）。
+- 房间邀请授权：`ACCESS_GRANT_TTL_MS` 30 分钟、`ACCESS_GRANT_MAX_USES` 1；只有 p / i 能生成（g 生成 → 403 `ACCESS_SCOPE`）；生成时绑定房间
+  当前实例，兑换时实例必须还在（房间已关闭、或同号的新房间 → 404 `ROOM_NOT_FOUND{reason:'roomClosed'}`，不消耗）。
+- 兑换（POST /api/access/redeem）：持 p / i → 不消耗，原样返回（`target` = 链接对应的房间，链接已失效为 null）；持 g 且链接就是绑定的
+  房间实例 → 不消耗；其余（没有有效 cookie，或 g 打开别的房间的链接）→ 经兑换限流器消耗一次，签发绑定新房间的 g cookie（换绑）。
+- 每 IP 每小时生成授权的上限从 30 提到 60（一个链接一个人，邀请框每交出一条就换一条）；`RICH4_TEST_MODE` 仍放宽 100 倍。
+- 已建立的 Socket 不因到期、吊销或换绑断开；下一次握手（以及 /api 调用）才按新 cookie。
+- 管理接口不变：`POST /admin/access/invites {uses, days, note}` 的 days 可为 1（或小数），响应 `{code, invite:{id, usesLeft, expiresAt, …}}`；
+  签发时顺带每小时至多一次清理（原来只在生成授权时清理）；`DELETE /admin/access/invites/:id` 现在同时让用该码登录的会话失效（见下）。
+
+### 35.2 cookie 格式 v2 与兼容（`access/cookie.ts`）
+
+- `r4_access=v2.<exp>.<epoch>.<kind>.<cap>.<ref>.<HMAC>`：cap = 硬性到期（Unix 秒，0 = 无；只有带到期时间的邀请码会话非 0，取邀请码
+  到期向下取整到秒）；ref 按 kind 解释——g 是绑定的房间实例 `<6 位房间号>-<实例>`，i 是登录所用邀请码的 id（8 位十六进制；v1 换发来的
+  不知道 id，为 `-`），p 为 `-`；HMAC 覆盖 `v2.<exp>.<epoch>.<kind>.<cap>.<ref>`（密钥派生与 v1 相同，签名正文带版本前缀，v1 的签名不能
+  套到 v2）。ref 与 kind 对不上（g 不带房间、p 带任何东西、i 带房间）判 malformed。
+- 兼容：v1（`v1.<exp>.<epoch>.<kind>.<HMAC>`）的 p / i 照常验证（cap 0、不绑房间），到续期时换发成 v2；**v1 的 g 一律判 `outdated`**
+  （不知道绑定哪个房间）：握手 / /api 401 ACCESS_REQUIRED{reason:'outdated'}，GET /api/access 清掉它（STALE_REASONS 加 outdated）。
+  v1 的 i 不知道邀请码到期时间，按不过期续期（要收紧只能 epoch+1 吊销全部会话）。
+- 续期（`AccessControl.check`）：距上次签发超过 min(有效期/4, 1 天)，且 min(现在 + 有效期, cap) 确实晚于当前 exp 才换发；换发保留 kind、
+  cap、房间与邀请码 id。Max-Age 按实际剩余秒数（到 cap 为止）。
+- 状态（`AccessStatus`）新增 `deadline`（cap × 1000 或 null）、`room`（g 绑定的房间号或 null）与 `roomOpen`（g 绑定的房间实例还在为
+  true，已关闭或同号换了新房间为 false；非 g 为 null）；`expiresAt` 已经算上 cap。兑换结果里
+  原来的 `room`（跳转目标）改名 `target`，`room` 统一表示会话绑定的房间。
+
+### 35.3 作用域在服务器上的强制点
+
+房间实例 = 房间创建时间（毫秒）的 base36（`net/accessScope.ts` 的 `roomInstanceOf`）：随房间快照持久化，重启恢复不变；房间号释放后再分配给
+新房间时一定不同。没有另造实例 id（不动快照格式）。
+
+1. **Socket.IO 握手**（`net/io.ts` 的 `io.use`）：cookie 是 g 时把绑定写进 `socket.data.scope`（p / i / 门禁关闭为 null）。
+2. **每个 C2S 事件**（`net/guard.ts` 的 `handle`，限流与 zod 校验之后、处理函数之前）调用 `checkScope`：
+   - `room:create`（建房；单机 `/solo` 与首页读档都先建房）、`room:loadSave`（读档）、`lobby:list`（公开房间）→ `ACCESS_SCOPE`；
+   - `room:join` / `room:resume`：目标房间号与实例都等于绑定才放行（房间不存在时交给处理函数回 ROOM_NOT_FOUND）；别的房间、同号新实例、
+     不存在的别的房间号一律 `ACCESS_SCOPE`（不透露是否存在）；
+   - 其余房间内事件（room:* / game:* / chat:* / debug:*）：会话当前所在的房间必须是绑定的实例（会话按玩家 token 跨连接保留 roomCode：
+     用口令进过别的房间、之后只剩 g cookie 的人不能继续操作那个房间）；不在房间时交给处理函数回 NOT_IN_ROOM；
+   - `room:leave`、`saves:list` / `saves:delete`（只涉及本人的存档归属）、`time:ping` 不受限。
+   - 拒绝的 details 带 `{ room: 绑定的房间号 }`。
+3. **HTTP**：`POST /api/access/grant` 拒绝 g（403 ACCESS_SCOPE，reason grantNotAllowed；原来是 ACCESS_REQUIRED）；`POST /api/saves/import`
+   拒绝 g（403 ACCESS_SCOPE，reason import——不能读档，导入没有用处）。其余 /api 与 /pack 对 g 照常（素材、地图、导出本人的存档）。
+4. 新错误码 `ACCESS_SCOPE`（`shared/net/errors.ts`）：「你是通过邀请链接进入的，只能加入邀请你的房间」。
+
+### 35.4 存储（`access/AccessStore.ts`）
+
+- `access_grants` 增加 `room_iid TEXT NOT NULL DEFAULT ''`（新库建表即有；旧库在打开时按 `PRAGMA table_info` 判断后 `ALTER TABLE … ADD COLUMN`）。
+  不升 `DB_SCHEMA_VERSION`（门禁表一直是 CREATE IF NOT EXISTS 自管）。兑换与查询只认 `room_iid != ''`，旧授权在 prune 时删除。
+- `redeemInvite` 改为在事务里扣次数并返回 `{ id, expiresAt }`（失败 null），供登录时算 cap、把 id 写进 cookie；新增 `revokedInviteIds()`。
+- prune：授权照旧删过期或用完的；邀请码只删过期的（原来连用完、撤销的也删——那样撤销状态会丢，停用之后会话又能用）。
+
+### 35.5 前端
+
+- 门禁状态：`accessStore` 新增 `guestRoomOf` / `useGuestRoom`（g 会话绑定的房间号）与 `accessDeadlineOf`。
+- **邀请框（`ui/lobby/InviteLink.tsx`，程序化大厅、原版选人大厅、对局侧栏共用）**：框里是一条已生成、还没交出去的「备用」链接
+  （`data-grant="true"`，离到期不足 5 分钟自动换新）；点复制 / 复制观战 / 打开二维码 / 在框里手动复制（copy 事件）都把这一条交出去，框里随即
+  换成新生成的一条；二维码显示交出去的那条（`invite-qr` 的 `data-url`），关掉再打开给下一个人。文案（zh-CN / zh-TW，经 `npm run i18n:zh-tw`）：
+  「邀请链接限一人使用、30 分钟内有效；每次复制或打开二维码都会换一个新链接」、复制后「已复制邀请链接（限一人使用，30 分钟内有效）」、
+  二维码下「这个二维码限一人扫码；给下一个人请重新打开二维码」。备用链接按房间存在模块级 store，门禁状态变化时清空。
+- **首页**：程序化（`HomeScreen`）对 g 会话不显示建房、加入、读档、单机、公开房间，改为一行说明（`home-guest-note`）与「回到房间 <号>」
+  （`home-guest-room`）；原版标题（`ClassicHome`）START / LOAD 变暗禁用（`data-locked`），按钮带的加入 / 单机 / 公开房间换成一格「回到房间」，
+  画面上方叠放说明条。两种皮肤对带 deadline 的会话显示「本次登录有效期至 M月D日 HH:mm，到期后需要新的口令」（`home-access-until`）。
+- **「我有口令」**：访客（g）后来拿到口令或邀请码时，在首页（程序化：「回到房间」旁的按钮 `home-guest-passcode`；原版：按钮带的「回到房间」
+  缩成两格、公开房间那一格换成「我有口令」）或被 ACCESS_SCOPE 拒绝的房间页（`room-guest-passcode`）打开门禁页（`requireAccess('manual')`）；
+  已有访问时门禁页多一个「取消」（`access-cancel`）。服务器 `POST /api/access` 本来就不看已有 cookie：带 g cookie 登录照常成功，换发 p / i
+  （Set-Cookie 覆盖），门禁页随后重新载入当前页，首页恢复完整入口。
+- **邀请的房间已经结束**（状态 `roomOpen: false`；首页挂载时刷新一次状态）：首页不给「回到房间」，说明换成「邀请你的房间已经结束；要继续玩，
+  请向朋友要新的邀请链接，或输入口令」（`home-guest-closed`），原版标题的「我有口令」占满三格；房间错误页同样只给「我有口令」。
+- 原版标题上方的提示条改为一个自上而下叠放、按文字行数自适应高度的容器（房间结束的说明在繁体下是两行）。
+- **邀请框说明的对比度**：说明文字（`invite-grant-note` / `invite-guest-note` / `invite-qr-note`、「房间号」标签）改用 `lobby.module.css` 的
+  `inviteNote`，颜色取 `--invite-note`（缺省 `--c-ink-soft`）；原版棕色栏框（`classic.module.css` 的 `.box`）把它设为 #ecd6a6，对比约 7:1
+  （原来是 #6b5842 压在 #6b3410–#4a2208 上，约 1.1:1）；程序化大厅的米色底上 `--c-ink-soft` 约 6:1，不变。
+- **大厅**：邀请链接会话成了房主（原房主离开）时，两种大厅都不给「读取存档」入口（服务器同样拒绝 room:loadSave）。
+- **被服务器拒绝时**：`hud:error.ACCESS_SCOPE` 给同样的说明；房间页（两种皮肤）打开别的房间失败时错误面板另给「回到房间」
+  （`room-guest-back`）；`/solo` 的错误同样显示这句。
+- **门禁页**：兑换结果用 `target` 跳转；兑换失败而本浏览器已有有效访问（例如 g 会话打开已被用过的链接）时另给「回到房间 <号>」
+  （`access-continue`）；房间已关闭单独提示；「邀请链接已失效」的说明改为「超过 30 分钟，或已被别人用过」。
+- zh-TW 词汇表补「透過邀請連結」（twp 写成「通過」）与「QR 碼」前接汉字时的空格。
+
+### 35.6 迁移影响（部署后）
+
+- 旧的 g cookie（v1）全部失效：用邀请链接进来的人回到门禁页，需要房主重新发链接（新链接只给一个人）。
+- 部署前生成、还没兑换的邀请链接全部失效（`room_iid` 为空）。
+- 旧的 p / i cookie 继续有效；旧 i cookie 按不过期续期，也不受停用邀请码影响（不知道是哪个码）。新登录的邀请码会话才有 cap 与邀请码 id。
+- E2E：两份 Playwright 配置的端口可用 `E2E_SERVER_PORT` / `E2E_CLIENT_PORT` 覆盖（`e2e/fixtures/ports.ts`，缺省 3100/5174 与 3110/5184 不变）：
+  本机非 CI 时 `reuseExistingServer` 为 true，另一个工作目录同时跑 E2E 必须换一组端口。
+
+### 35.7 验证（2026-10-03，worktree 内）
+
+- 单测：`access-crypto`（v2 格式、ref 按 kind、篡改 cap / 房间 / 邀请码 id、v1 的 p / i 兼容与 g outdated）、`access-control`（邀请码会话上限与
+  到点失效、到期晚于有效期时最后一次续期止于 cap、无到期邀请码照常滑动、同一设备再进不消耗、授权 30 分钟 1 次、g 绑定房间实例与换绑、
+  房间关闭 / 同号新实例不兑换、v1 兼容、停用邀请码即失效（本进程立即、另一进程 1 秒内）、旧库补 room_iid 列、prune 保留未过期的撤销码）、
+  `access-scope`（checkScope 各类事件、实例比较）、`access-cli`。
+- 集成：`integration/access-scope`（g 会话建房 / lobby:list / 读档 / 导入存档 / 进别的房间被拒，本房间入座、选角、准备、聊天、开局、
+  断线重连、打完再开一局正常；旧房间的残留会话被拒；g 换绑；持口令打开链接不消耗；v1 g 握手 outdated、v1 p 照常；停用邀请码后
+  /api/access 未授权、/api/maps 401 revoked、握手被拒、已建立连接照旧、它生成的授权与 g 会话不受影响），`integration/pack-access` 随新规则更新；
+  stub 与真实引擎两个 project 都过。
+- 前端 dom：`access.dom`（兑换用 target、兑换失败时「回到房间」、房间已关闭提示；邀请框备用链接、每次复制 / 观战 / 二维码 / 手动复制都换新、
+  连点不重复、快到期不交出、生成失败退回普通链接、访客不生成）、`homeAccess.dom`（程序化首页访客模式与有效期、房间页 ACCESS_SCOPE 与回到房间）、
+  `screens.dom`（原版标题访客模式、有效期）、`lobby.dom`（访客房主没有读档入口）、`screens.test`（「回到房间」一格的几何）。
+- `npm run typecheck`、vitest 全量（327 个文件 3317 例通过）、check-determinism / no-original / deps / zh-TW 全过。`npm run lint`（`biome check .`）
+  在 `.claude/worktrees/` 下的工作目录里会被 biome.json 的 `!!**/.claude/worktrees` 整体忽略（报「No files were processed」，与代码无关），
+  改用 `npx biome check apps packages tools scripts e2e deploy vitest.config.ts .github` 覆盖同一批文件：1300 个文件无问题。
+- E2E（端口 3200/5274 与 3210/5284，CI=1 不复用别处的服务器，最终代码现场构建）：默认配置全量 59 通过、1 跳过（deploy-restart 需要
+  E2E_RESTART_CMD）；原版配置全量 56 通过、4 跳过（chat-spectate、deploy-restart、skin-original-board、skin-procedural-fallback 只适用于默认配置）。
+  `access.spec` 6 例（新增：一个链接一个人、复制后框里换新、二维码换新、第二个人被拒、访客进别的房间 / 首页 / 单机、限时口令的有效期与停用、
+  旧格式 g cookie）。中途一轮两套并发全量时原版配置的 minigame.spec 超时一次（机器负载 20+），重跑通过。
+- 截图：`npx tsx test/access-scope-shots.ts both`（自起开门禁的服务器、合成素材包）两种皮肤各 10 张、16/16 项检查通过，存 `.cache/access-scope/{procedural,original}/`。
+- 追加（访客「我有口令」、房间结束后的首页、邀请框说明对比度）：单测补 roomOpen 与 g 带着 cookie 用口令登录换成 p，集成测试补 g → p 升级后能
+  进别的房间、建房；dom 补首页 / 原版标题的「我有口令」（门禁页可取消、通过后重新载入）、房间结束（含挂载时刷新）、房间错误页；vitest 全量
+  3324 例通过，lint / typecheck / 其余检查全过。E2E 两套配置各跑 access（新增「g 会话输入口令升级」「房间关闭后的首页」共 8 例）+ lobby +
+  skin-classic-screens：各 13 例全过。
+
+### 35.8 遗留
+
+- v1 的 i cookie 不知道邀请码 id 与到期时间：按不过期续期、停用邀请码拦不住，只能 epoch+1 吊销全部会话收紧（部署时可以考虑吊销一次）。
+- 房间实例用创建时间：同一毫秒内释放又分配同一个房间号才会撞（房间号释放后 24 小时内不复用，实际不会发生）；没有单独持久化的实例 id。
+- g 会话绑定的房间关闭后只能要新链接或输入口令（首页已提示）；状态里的 roomOpen 只在载入首页、状态刷新时更新，停留在别的页面时不会主动刷新。
+- 邀请框每个挂载都会先生成一条备用链接（原来也是一挂载就生成）；每 IP 每小时授权上限因此从 30 提到 60。

@@ -2,6 +2,7 @@
 // 素材包 401（reason 'pack'）只刷新状态，由 skinStore 重新请求素材包；其他原因（握手、/api 401）重新载入页面，
 // 让 Socket.IO 带着新 cookie 重新握手（兑换了房间授权时直接进那个房间）。
 // 对局期间门禁开启时按 ACCESS_RENEW_HINT_MS 的一半定期 GET /api/access，给 cookie 滑动续期。
+// 已有有效访问的人自己打开的门禁页（reason 'manual'，例如邀请链接会话点「我有口令」）可以取消。
 import { ACCESS_RENEW_HINT_MS, type AccessStatus } from '@rich4/shared/net';
 import { type ReactNode, useCallback, useEffect } from 'react';
 import { AccessGate } from './AccessGate';
@@ -60,5 +61,9 @@ export function AccessGateHost({
   );
 
   if (required === null || (standalone && hosts > 1)) return null;
-  return <AccessGate reason={required} onGranted={onGranted} />;
+  const cancel =
+    required === 'manual' && status?.granted === true && status.mode !== 'off'
+      ? () => useAccessStore.getState().dismiss()
+      : undefined;
+  return <AccessGate reason={required} onGranted={onGranted} {...(cancel ? { onCancel: cancel } : {})} />;
 }

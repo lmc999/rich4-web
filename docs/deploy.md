@@ -186,27 +186,63 @@ docker compose logs app | grep -E 'asset pack enabled|rich4 server listening'
 
 ### 9.1 邀请朋友与吊销
 
-- **房间邀请链接**（`ACCESS_GRANTS=1`，缺省开启）：已通过口令的玩家在房间大厅里复制的链接带一次性授权（24 小时内有效、最多 8 人），朋友不用知道口令。
-- **邀请码**（口令之外的另一种登录方式；`ACCESS_MODE=invite` 时是唯一方式）。镜像里没有 `scripts/access.ts`，用 `ADMIN_TOKEN` 调管理接口：
+门禁开启后（`ACCESS_MODE=passcode` 或 `invite`）有三种进入方式，规则见 architecture §35：
 
-  ```sh
-  # 生成：可用 5 次、7 天有效；响应里的 code 就是邀请码
-  sed -n 's/^ADMIN_TOKEN=/Authorization: Bearer /p' deploy/.env | curl -fsS -X POST -H @- \
-    -H 'Content-Type: application/json' -d '{"uses":5,"days":7,"note":"朋友"}' \
-    https://rich4.example.com/admin/access/invites
-  # 列出邀请码（剩余次数、到期时间、备注）与当前 epoch
-  sed -n 's/^ADMIN_TOKEN=/Authorization: Bearer /p' deploy/.env | curl -fsS -H @- \
-    https://rich4.example.com/admin/access/invites
-  ```
+| 方式 | 谁签发 | 会话有效期 | 能做什么 |
+|---|---|---|---|
+| **共享口令**（kind p，只在 `passcode` 模式） | 管理员（`ACCESS_PASSCODE_HASH`） | `ACCESS_TTL_DAYS` 天，用过就续期 | 全部功能，能生成房间邀请链接 |
+| **邀请码**（kind i，16 位 `XXXX-XXXX-XXXX-XXXX`） | 管理接口 / CLI | min(登录时 + `ACCESS_TTL_DAYS`, 邀请码到期时间)；邀请码有到期时间时**到点即失效、不再续期**，没有到期时间的照常续期 | 全部功能，能生成房间邀请链接 |
+| **房间邀请链接**（kind g，`ACCESS_GRANTS=1`，缺省开启） | 口令或邀请码进来的玩家在房间里复制 | 24 小时，活跃时续期 | **只能进邀请的那个房间** |
 
-- **吊销全部会话**（口令泄露、有人不该再进来）：所有人的访问 cookie 与未兑换的房间邀请链接立即失效，需要重新输入口令。换口令时先改 `ACCESS_PASSCODE_HASH`、`docker compose up -d --wait` 让 app 用新配置重建，再吊销：
+- **邀请码的可用次数 = 能登录的设备（浏览器）数**：在门禁页输入一次用掉 1 次；同一浏览器之后凭 cookie 再进、刷新、续期都不再消耗。首页会显示「本次登录有效期至 …」。
+- **停用邀请码会让用它登录的设备立即失效**（`DELETE /admin/access/invites/<id>`，见下）：这些设备的下一次刷新、重连或接口调用就回到门禁页（正在进行的连接不强制断开）；不能再用它登录。用这个码进来的人之前生成的房间邀请链接、经这些链接进来的人不受影响。
+- **房间邀请链接一个只给一个人**：30 分钟内有效、只能兑换 1 次。大厅（或对局侧栏「邀请朋友」）的邀请框里放的是一条还没给出去的链接；点「复制链接」「复制观战链接」、打开二维码、或在框里手动复制，都会把这一条交出去并换一条新的——要邀请几个人就复制几次。已经用口令或邀请码进来的人打开邀请链接不消耗次数。
+- **用邀请链接进来的人只能进那个房间**：可以入座、选角、准备、观战、对局、断线重连、聊天、同一房间再开一局；不能建房、单机、读档（含导入存档）、看公开房间、加入或观战别的房间，也不能再生成邀请链接（服务器返回 `ACCESS_SCOPE`，页面提示「你是通过邀请链接进入的，只能加入邀请你的房间」并给「回到房间」）。房间关闭后旧链接、旧会话都进不了日后同号的新房间。他们打开另一个房间的邀请链接时会正常兑换（用掉那个链接）并改绑到新房间；后来拿到口令或邀请码的，在首页（或被拒的房间页）点「我有口令」输入即换成完整权限。邀请的房间结束后，首页不再给「回到房间」，改为提示「请向朋友要新的邀请链接，或输入口令」。
+- **到期、停用与吊销都不强制断线**：已经建立的连接继续，之后下一次刷新、重连或调用接口时才回到门禁页。
 
-  ```sh
-  sed -n 's/^ADMIN_TOKEN=/Authorization: Bearer /p' deploy/.env | curl -fsS -X POST -H @- \
-    https://rich4.example.com/admin/access/revoke
-  ```
+**邀请码**（口令之外的另一种登录方式；`ACCESS_MODE=invite` 时是唯一方式）。镜像里没有 `scripts/access.ts`，用 `ADMIN_TOKEN` 调管理接口：
+
+```sh
+# 生成：可用 5 次（5 台设备）、7 天有效；响应里的 code 就是邀请码
+sed -n 's/^ADMIN_TOKEN=/Authorization: Bearer /p' deploy/.env | curl -fsS -X POST -H @- \
+  -H 'Content-Type: application/json' -d '{"uses":5,"days":7,"note":"朋友"}' \
+  https://rich4.example.com/admin/access/invites
+# 列出邀请码（剩余次数、到期时间、备注）与当前 epoch
+sed -n 's/^ADMIN_TOKEN=/Authorization: Bearer /p' deploy/.env | curl -fsS -H @- \
+  https://rich4.example.com/admin/access/invites
+# 停用一个邀请码：不能再用它登录，已经用它登录的设备也立即失效（下一次刷新 / 重连即回到门禁页）
+sed -n 's/^ADMIN_TOKEN=/Authorization: Bearer /p' deploy/.env | curl -fsS -X DELETE -H @- \
+  https://rich4.example.com/admin/access/invites/<id>
+```
+
+**吊销全部会话**（口令泄露、有人不该再进来）：所有人的访问 cookie 与未兑换的房间邀请链接立即失效，需要重新输入口令。换口令时先改 `ACCESS_PASSCODE_HASH`、`docker compose up -d --wait` 让 app 用新配置重建，再吊销：
+
+```sh
+sed -n 's/^ADMIN_TOKEN=/Authorization: Bearer /p' deploy/.env | curl -fsS -X POST -H @- \
+  https://rich4.example.com/admin/access/revoke
+```
 
 - 管理接口鉴权失败会按 IP 退避（429）并记 warn 日志。
+- **升级到这套规则（2026-10-03）的影响**：访问 cookie 升为 v2。旧的口令 / 邀请码 cookie 继续有效（旧邀请码 cookie 不知道是哪个邀请码、何时到期：按不过期续期，停用邀请码也拦不住它们；要收紧就吊销全部会话）；**旧的房间邀请链接会话一律失效**，用邀请链接进来的朋友要房主重新发链接；部署前生成、还没兑换的邀请链接也失效。
+
+#### 由外部程序签发限时口令
+
+外部程序（例如发口令的聊天机器人、内部网页）可以用管理接口给每个人签发一个限时、限设备数的邀请码，本仓库不需要任何改动：
+
+1. 程序持有 `ADMIN_TOKEN`（门禁开启时至少 32 字节；它还能吊销全部会话，按密钥保管，不要写进日志或发给用户）。
+2. 每次需要时调用：
+
+   ```sh
+   curl -fsS -X POST https://rich4.example.com/admin/access/invites \
+     -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+     -d '{"uses":3,"days":1,"note":"<来源标识>"}'
+   ```
+
+   - `uses`：可登录的设备数，1–1000（缺省 1）；`days`：有效天数，可以是小数（`1` = 24 小时、`0.5` = 12 小时），`null` 为不过期（缺省 7）；`note`：≤ 200 字的来源标识，只用于在列表里追溯是谁要的，不要放口令或其他敏感信息。
+   - 响应：`{"ok":true,"data":{"code":"XXXX-XXXX-XXXX-XXXX","invite":{"id":"…","usesLeft":3,"expiresAt":1790000000000,"createdAt":…,"note":"…","revoked":false}}}`。`code` 只在这次响应里出现（库里只存哈希）；`expiresAt` 是毫秒时间戳，可以连同口令一起告诉用户。
+3. 用户在门禁页输入 `code`（大小写、空格、连字符、O/0、I/L/1 都能容错）。每台设备用掉 1 次；登录后的会话在 `expiresAt` 到点失效，首页显示有效期。到期后要新的口令就再签发一个。
+4. 需要提前收回某个口令（例如封禁某人）：`DELETE /admin/access/invites/<id>`（`id` 就是签发响应里的 `invite.id`，也可以从列表里按 `note` 找）。它不能再登录，**已经用它登录的设备也立即失效**（下一次刷新、重连或接口调用被拒；正在进行的连接不强制断开；由另一个进程直接改库时最多晚 1 秒生效）。这个人之前生成的房间邀请链接、经链接进来的人不受影响（链接 30 分钟就过期）。
+5. 管理接口按 IP 退避：连续鉴权失败会收到 429（带 `Retry-After`），程序不要在失败时紧密重试。过期的邀请码会被定期清理；用完或停用而未过期的保留在列表里（停用状态要用来拦已登录的设备），到期后再清理。
 
 ### 9.2 运行状态：/admin/stats
 

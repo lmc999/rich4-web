@@ -136,6 +136,14 @@
   letter-spacing: 0.1em;
 }
 
+/* 邀请框下的说明（限一人、30 分钟、访客不能生成等）：底色深的容器（原版皮肤的棕色栏框）用 --invite-note 换成浅色字 */
+.inviteNote {
+  margin: 0;
+  color: var(--invite-note, var(--c-ink-soft));
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .qr {
   align-self: flex-start;
   border: var(--border);

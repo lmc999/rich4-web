@@ -75,7 +75,7 @@ describe('access CLI', () => {
     expect(dbPath).toBe(join(root, 'rich4.db'));
     expect(defaultAccessDbPath({ DATA_DIR: 'd', STORE: 'json' }, '/srv')).toBe(join('/srv', 'd', 'access.db'));
     const { store, db } = openAccessStore(dbPath);
-    expect(store.redeemInvite(code, t + 1000)).toBe(true);
+    expect(store.redeemInvite(code, t + 1000)).toEqual({ id: expect.any(String), expiresAt: t + 2 * 86_400_000 });
     db.close();
 
     const l = io({ now: () => t });

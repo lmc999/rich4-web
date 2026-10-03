@@ -220,7 +220,8 @@
     "SAVE_INCOMPATIBLE": "存档与当前版本或地图不兼容",
     "SAVE_FORBIDDEN": "你无权读取这个存档",
     "CHAT_DISABLED": "聊天已关闭",
-    "ACCESS_REQUIRED": "需要访问口令或邀请链接才能进入"
+    "ACCESS_REQUIRED": "需要访问口令或邀请链接才能进入",
+    "ACCESS_SCOPE": "你是通过邀请链接进入的，只能加入邀请你的房间"
   },
   "errorReason": {
     "timeout": "请求超时，请检查网络",
@@ -361,11 +362,15 @@
     "submit": "进入",
     "checking": "验证中…",
     "redeeming": "正在验证邀请链接…",
+    "backToRoom": "回到房间 {{code}}",
+    "continue": "不用口令，继续进入",
+    "cancel": "取消",
     "privateNote": "口令只用于换取本浏览器的访问凭据，不会保存在页面上。",
     "error": {
       "badPasscode": "口令不正确",
       "rateLimited": "尝试次数过多，请 {{n}} 秒后再试",
-      "grantInvalid": "邀请链接已失效（过期或次数已用完），请向房主索取新链接或输入口令",
+      "grantInvalid": "邀请链接已失效（超过 30 分钟，或已被别人用过），请向房主索取新链接或输入口令",
+      "roomClosed": "邀请你的房间已经关闭，请向房主索取新链接或输入口令",
       "network": "无法连接服务器，请稍后再试",
       "generic": "验证失败，请稍后再试"
     }

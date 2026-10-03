@@ -7,6 +7,7 @@ import { useClient } from '../../app/services';
 import { useTx } from '../../i18n/tx';
 import { formatDate } from '../../presentation/names';
 import { canStart, mySeatView } from '../../store/roomStore';
+import { useGuestRoom } from '../access/accessStore';
 import c from '../common/common.module.css';
 import { ChatPanel } from '../social/ChatPanel';
 import { SpectatorList } from '../social/SpectatorList';
@@ -184,6 +185,8 @@ export function LobbyView({ room, onLeave }: { room: RoomView; onLeave(): void }
   const unclaimed = unclaimedSeats(room);
   const startable = canStart(room) && unclaimed.length === 0;
   const [savesOpen, setSavesOpen] = useState(false);
+  // 经房间邀请链接进入的会话不能读档（服务器 ACCESS_SCOPE，architecture §35）：成了房主也不给读档入口
+  const guest = useGuestRoom() !== null;
   // 选角光标在这里持有：开始 / 准备前先提交光标上的角色（lobby/characterPick）
   const [cursor, setCursor] = usePickCursor(room);
   const commitPick = useCommitPick(room, cursor);
@@ -266,7 +269,7 @@ export function LobbyView({ room, onLeave }: { room: RoomView; onLeave(): void }
         <aside className={l.lobbySide}>
           <SettingsBox room={room} />
           <SpectatorList room={room} />
-          {host && (
+          {host && !guest && (
             <details
               className={`panel ${l.savesBox}`}
               data-testid="lobby-saves"

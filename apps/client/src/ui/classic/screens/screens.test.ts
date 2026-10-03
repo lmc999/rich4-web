@@ -31,6 +31,7 @@ import {
   stageRow,
   TITLE_BAND,
   TITLE_BUTTONS,
+  TITLE_GUEST,
   WALK_X0,
   WALK_X1,
   WIDE_PANEL,
@@ -128,6 +129,18 @@ describe('几何', () => {
       expect(band[i]!.y + band[i]!.h).toBeLessThanOrEqual(480);
       for (let j = i + 1; j < band.length; j++) expect(overlaps(band[i]!, band[j]!)).toBe(false);
     }
+    // 访客的「回到房间」「我有口令」盖住加入 / 单机 / 公开房间三格：互不重叠、不碰昵称牌，高宽 ≥ 手机 44px；
+    // 房间结束时「我有口令」独占三格
+    expect(overlaps(TITLE_GUEST.back, TITLE_GUEST.passcode)).toBe(false);
+    for (const r of Object.values(TITLE_GUEST)) {
+      expect(overlaps(r, TITLE_BAND.nickname)).toBe(false);
+      expect(r.h).toBeGreaterThanOrEqual(PHONE_HIT);
+      expect(r.w).toBeGreaterThanOrEqual(PHONE_HIT);
+    }
+    expect(TITLE_GUEST.back.x).toBe(TITLE_BAND.join.x);
+    expect(TITLE_GUEST.passcode.x + TITLE_GUEST.passcode.w).toBe(TITLE_BAND.public.x + TITLE_BAND.public.w);
+    expect(TITLE_GUEST.passcodeWide.x).toBe(TITLE_BAND.join.x);
+    expect(TITLE_GUEST.passcodeWide.x + TITLE_GUEST.passcodeWide.w).toBe(TITLE_BAND.public.x + TITLE_BAND.public.w);
   });
 
   it('竖栏：贴在右侧；关卡行、OK / EXIT、6 个下拉框都在竖栏内且互不重叠；OK / EXIT 热区高 ≥ 手机 44px', () => {

@@ -3,6 +3,8 @@
  * 不启用 connectionStateRecovery：断线恢复完全由应用层 room:resume 负责。
  * 访问门禁（docs/design/original-skin.md U4）：ACCESS_MODE != off 时握手必须带有效的 r4_access cookie，
  * 否则 connect_error.data 为 ACCESS_REQUIRED（先于其他握手检查）；握手响应顺带滑动续期 cookie。
+ * cookie 是房间邀请授权（kind g）时把绑定的房间实例记进 socket.data.scope，之后的事件由 guard 按作用域限制
+ * （net/accessScope.ts，architecture §35）；连接期间 cookie 到期或换绑不影响已建立的连接，下次握手才按新 cookie。
  * 门禁在命名空间中间件里判（HTTP 层的 allowRequest 只能回 403，客户端拿不到 ACCESS_REQUIRED 错误码）；
  * 拒绝之后 CONNECT_ERROR 一送出就关闭底层 engine.io 连接，未授权者不能占着会话（含 WebSocket）等到 connectTimeout。
  */
@@ -26,6 +28,7 @@ import { Server } from 'socket.io';
 import type { AccessControl } from '../access/AccessControl';
 import type { Logger } from '../infra/logger';
 import type { Emitter } from '../rooms/RoomBroadcaster';
+import type { AccessScope } from './accessScope';
 import type { AppSocket, HandlerCtx, SocketData } from './guard';
 import { registerChatHandlers } from './handlers/chat';
 import { registerDebugHandlers } from './handlers/debug';
@@ -188,6 +191,7 @@ export function attachIo(io: AppServer, ctx: HandlerCtx, o: IoOptions): void {
   }
 
   io.use((socket, next) => {
+    let scope: AccessScope | null = null;
     if (access) {
       const g = access.check(socket.handshake.headers.cookie);
       if (!g.granted) {
@@ -198,6 +202,8 @@ export function attachIo(io: AppServer, ctx: HandlerCtx, o: IoOptions): void {
         });
         return;
       }
+      const bound = g.claims?.room;
+      if (bound) scope = { room: bound.code, instance: bound.instance };
     }
     const parsed = HandshakeAuthSchema.safeParse(socket.handshake.auth);
     if (!parsed.success) return next(handshakeError('BAD_HANDSHAKE'));
@@ -207,7 +213,7 @@ export function attachIo(io: AppServer, ctx: HandlerCtx, o: IoOptions): void {
     const ip = clientIp(socket, o.trustProxy);
     warnPrivateIp?.(ip, socket.handshake.address);
     if ((perIp.get(ip) ?? 0) >= limit) return next(handshakeError('SERVER_BUSY'));
-    socket.data = { tokenHash: tokenHashOf(parsed.data.token), nickname, ip };
+    socket.data = { tokenHash: tokenHashOf(parsed.data.token), nickname, ip, scope };
     next();
   });
 

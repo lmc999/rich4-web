@@ -33,6 +33,7 @@ import { registerSavesHttp } from './http/saves';
 import { registerStatic } from './http/static';
 import { type Clock, RealScheduler, realClock, type Scheduler } from './infra/clock';
 import { createLogger, type Logger } from './infra/logger';
+import { roomInstanceOf } from './net/accessScope';
 import { type AppServer, attachIo, createIo, ioEmitter, isTrustedProxy } from './net/io';
 import { RateLimiter } from './net/rateLimit';
 import { SessionRegistry } from './net/sessions';
@@ -298,7 +299,10 @@ export async function createApp(deps: AppDeps): Promise<App> {
     config: config.access,
     store: accessStore,
     log: log.child({ mod: 'access' }),
-    roomExists: (code) => roomsRef?.get(code) !== undefined,
+    roomInstance: (code) => {
+      const room = roomsRef?.get(code);
+      return room ? roomInstanceOf(room) : null;
+    },
     packId: pack.enabled ? pack.packId : null,
     // 测试模式（E2E 全部页面来自 127.0.0.1，每个进房的页面都会自动生成授权）放宽每 IP 的授权数
     ...(config.testMode ? { grantsPerHour: GRANTS_PER_IP_PER_HOUR * 100 } : {}),

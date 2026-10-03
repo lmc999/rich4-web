@@ -1,5 +1,7 @@
 // 访问门禁页（original-skin.md U4；design-draft §5.3）：
 // - 打开时先看 URL 片段：`#g=<token>`（房间邀请授权）→ POST /api/access/redeem 换取 cookie，无论成败都立刻清掉片段；
+//   邀请链接只能用一次、30 分钟内有效；兑换失败而本浏览器已有有效的访问（例如之前经别的邀请链接进来）时，另给一个
+//   「回到房间 / 继续」的按钮，不必输入口令；
 // - 否则（或兑换失败）显示口令输入：POST /api/access {passcode}；
 // - 通过后交给 onGranted：缺省跳到授权里的房间（或重新载入当前页），让 Socket.IO 带着新 cookie 重新握手。
 // 口令输入框是 password 类型、autocomplete=current-password；口令与 token 不写进日志和 URL。
@@ -10,7 +12,7 @@ import { useTx } from '../../i18n/tx';
 import c from '../common/common.module.css';
 import a from './access.module.css';
 import { type AccessResult, loginAccess, redeemAccessGrant } from './accessApi';
-import type { AccessReason } from './accessStore';
+import { type AccessReason, useAccessStore } from './accessStore';
 
 export interface GateLocation {
   hash: string;
@@ -20,8 +22,10 @@ export interface GateLocation {
 
 export interface AccessGateProps {
   reason: AccessReason | null;
-  /** 通过门禁；room 为邀请授权对应的房间号 */
+  /** 通过门禁；room 为邀请授权对应的房间号（兑换结果的 target） */
   onGranted(status: AccessStatus, room: string | null): void;
+  /** 已有有效访问、自己点开门禁页的人（邀请链接会话「我有口令」）可以取消，回到原来的页面；缺省不给取消 */
+  onCancel?(): void;
   /** 测试注入（缺省 window.location / history） */
   location?: GateLocation;
   replaceUrl?(url: string): void;
@@ -40,12 +44,13 @@ function defaultReplace(url: string): void {
 function errorKey(r: Extract<AccessResult<unknown>, { ok: false }>, redeem: boolean): string {
   if (r.code === 'RATE_LIMITED') return 'hud:access.error.rateLimited';
   if (r.code === 'NETWORK') return 'hud:access.error.network';
+  if (redeem && r.code === 'ROOM_NOT_FOUND') return 'hud:access.error.roomClosed';
   if (redeem) return 'hud:access.error.grantInvalid';
   if (r.code === 'ACCESS_REQUIRED' || r.status === 401 || r.status === 403) return 'hud:access.error.badPasscode';
   return 'hud:access.error.generic';
 }
 
-export function AccessGate({ reason, onGranted, location, replaceUrl }: AccessGateProps): ReactNode {
+export function AccessGate({ reason, onGranted, onCancel, location, replaceUrl }: AccessGateProps): ReactNode {
   const t = useTx();
   const loc: GateLocation = location ?? globalThis.location ?? { hash: '', pathname: '/', search: '' };
   const replace = replaceUrl ?? defaultReplace;
@@ -54,6 +59,8 @@ export function AccessGate({ reason, onGranted, location, replaceUrl }: AccessGa
   const [busy, setBusy] = useState(false);
   const [passcode, setPasscode] = useState('');
   const [error, setError] = useState<{ key: string; seconds: number | null } | null>(null);
+  /** 兑换失败但本浏览器已有有效访问时的状态（显示「回到房间 / 继续」） */
+  const [already, setAlready] = useState<AccessStatus | null>(null);
   const onGrantedRef = useRef(onGranted);
   onGrantedRef.current = onGranted;
 
@@ -63,14 +70,17 @@ export function AccessGate({ reason, onGranted, location, replaceUrl }: AccessGa
     if (token === null) return;
     stripGrantFragment(loc, replace);
     let stale = false;
-    redeemAccessGrant(token).then((r) => {
+    redeemAccessGrant(token).then(async (r) => {
       if (stale) return;
       // 成功时保持「正在验证」直到宿主收起门禁页或页面跳转
-      if (r.ok) onGrantedRef.current(r.data, r.data.room);
-      else {
-        setRedeeming(false);
-        setError({ key: errorKey(r, true), seconds: null });
+      if (r.ok) {
+        onGrantedRef.current(r.data, r.data.target);
+        return;
       }
+      setRedeeming(false);
+      setError({ key: errorKey(r, true), seconds: null });
+      const st = await useAccessStore.getState().refresh();
+      if (!stale && st?.granted && st.mode !== 'off') setAlready(st);
     });
     return () => {
       stale = true;
@@ -133,6 +143,21 @@ export function AccessGate({ reason, onGranted, location, replaceUrl }: AccessGa
           <p className={c.error} role="alert" data-testid="access-error">
             {t(error.key, { n: error.seconds ?? 0 })}
           </p>
+        )}
+        {onCancel && !busy && !redeeming && (
+          <button type="button" className="btn btn--cream" onClick={onCancel} data-testid="access-cancel">
+            {t('hud:access.cancel')}
+          </button>
+        )}
+        {already && !busy && (
+          <button
+            type="button"
+            className="btn btn--cream"
+            onClick={() => onGrantedRef.current(already, already.room ?? null)}
+            data-testid="access-continue"
+          >
+            {already.room ? t('hud:access.backToRoom', { code: already.room }) : t('hud:access.continue')}
+          </button>
         )}
         <p className={c.muted}>{t('hud:access.privateNote')}</p>
       </section>
