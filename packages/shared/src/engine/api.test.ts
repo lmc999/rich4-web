@@ -26,7 +26,7 @@ describe('createGame（design/engine.md §5）', () => {
     const { state: s, events } = newGame({ players: ['human', 'ai', 'human', 'ai'] });
     expect(events.map((e) => e.type)).toEqual(['GAME_STARTED', 'TURN_STARTED', 'PARACHUTE']);
     expect(s.v).toBe(1);
-    expect(s.engine).toBe('0.4.0');
+    expect(s.engine).toBe('0.5.0');
     expect(s.dataRef).toEqual({
       mapId: 'test',
       mapHash: fixtureRegistry.getMap('test').def.meta.dataHash,

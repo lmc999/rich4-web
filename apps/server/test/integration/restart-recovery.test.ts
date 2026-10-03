@@ -10,10 +10,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { GameState } from '@rich4/shared/engine';
+import type { GameEvent, GameState } from '@rich4/shared/engine';
 import { canonicalJson, fnv1a64 } from '@rich4/shared/util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SHUTDOWN_HTTP_GRACE_MS } from '../../src/app';
+import { fixtureCatalog } from '../../src/data/DataRegistry';
+import { openPersistence } from '../../src/persistence/index';
 import { autoSaveId } from '../../src/persistence/SaveService';
 import { type BotClient, connectBot } from '../helpers/botClient';
 import { closeAll, setupRoom, startGame } from '../helpers/scenario';
@@ -35,8 +37,18 @@ function tmp(): string {
   return d;
 }
 
-async function serve(dataDir: string, store: 'sqlite' | 'json' = 'sqlite'): Promise<TestServer> {
-  const s = await startTestServer({ dataDir, store, rateLimitScale: 0, roomDefaults: { reconnectGraceSec: 30 } });
+async function serve(
+  dataDir: string,
+  store: 'sqlite' | 'json' = 'sqlite',
+  engine?: 'stub' | 'real',
+): Promise<TestServer> {
+  const s = await startTestServer({
+    dataDir,
+    store,
+    rateLimitScale: 0,
+    roomDefaults: { reconnectGraceSec: 30 },
+    ...(engine ? { engine } : {}),
+  });
   servers.push(s);
   return s;
 }
@@ -167,6 +179,82 @@ describe('integration/restart-recovery', () => {
       data: { mode: 'snapshot' },
     });
     await a2.until(() => a2.epoch === epoch + 2 && a2.lastSeq === 18, 3000, 'snapshot');
+  }, 60_000);
+
+  it('真实引擎、规则次版本升级（0.4.0 写下的快照）：不重放 journal 只迁移快照；在押者带旧 savedPrevNode，获释留在关押格、对局继续', async () => {
+    const dir = tmp();
+    const srv1 = await serve(dir, 'sqlite', 'real');
+    expect(srv1.engine.ENGINE_VERSION).not.toMatch(/^0\.4\./);
+    const s = await twoPlayerGame(srv1);
+    const [a, b] = s.bots as [BotClient, BotClient];
+    // 开局时轮到 0 号（1 号还没跳伞）；补几条 journal 后正常关闭（刷快照）
+    for (let i = 1; i <= 3; i++)
+      expect((await a.req('debug:act', { op: { op: 'setPoints', seat: 0, points: i } })).ok).toBe(true);
+    await a.until(() => a.lastSeq === 3, 3000, 'debug acts');
+    await srv1.close();
+
+    // 改写成 0.4.0 写下的快照：1 号在监狱关押格、下一回合获释（0x80），关押前的来路存在 savedPrevNode（0.4.0 才写它）；
+    // 快照之后还有一条 0.4.0 产生的 journal，规则次版本不同时不得重放
+    const map = fixtureCatalog().registry.getMap('test');
+    const hold = map.jailHold;
+    const saved = map.forwardCandidates(hold, hold)[0]!;
+    const p = openPersistence({ kind: 'sqlite', location: join(dir, 'rich4.db') });
+    const [rec] = p.rooms.listActive(0);
+    expect(rec!.state!.pending[0]?.seat).toBe(0);
+    const legacy = structuredClone(rec!.state!) as GameState;
+    legacy.engine = '0.4.0';
+    const q = legacy.players[1]!;
+    Object.assign(q, { placed: true, node: hold, prevNode: hold, savedPrevNode: saved });
+    q.st.jail = 0x80;
+    p.rooms.writeSnapshot({ ...rec!, engineVersion: '0.4.0', state: legacy });
+    p.rooms.appendJournal(rec!.code, rec!.epoch, {
+      seq: rec!.seq + 1,
+      ts: 0,
+      actor: 'system',
+      action: { type: 'SYS_DEBUG', op: { op: 'setPoints', seat: 0, points: 77 } },
+    });
+    p.close();
+
+    const srv2 = await serve(dir, 'sqlite', 'real');
+    expect(srv2.app.restoreReport).toEqual([
+      { code: s.code, phase: 'playing', mode: 'migrated', replayed: 0, epoch: rec!.epoch + 1, seq: rec!.seq },
+    ]);
+    const room = srv2.app.rooms.get(s.code)!;
+    expect(room.phase).toBe('paused');
+    expect(room.runner!.state.players[0]!.points).toBe(3);
+    expect(room.runner!.state.players[1]).toMatchObject({ node: hold, prevNode: hold, savedPrevNode: saved });
+
+    // 两人回来、自动应答：1 号这一回合获释，RETURNED 落在关押格；之后从关押格出发，对局继续
+    const a2 = await connectBot(srv2.url, { token: a.token, nickname: 'P0', seed: 21 });
+    const b2 = await connectBot(srv2.url, { token: b.token, nickname: 'P1', seed: 22 });
+    bots.push(a2, b2);
+    expect((await a2.req('room:resume', { code: s.code, lastSeq: a.lastSeq, epoch: a.epoch })).ok).toBe(true);
+    expect((await b2.req('room:resume', { code: s.code, lastSeq: b.lastSeq, epoch: b.epoch })).ok).toBe(true);
+    await a2.until(() => a2.room?.phase === 'playing', 3000, 'resumed');
+    a2.autoPlay();
+    b2.autoPlay();
+    const events = () => a2.batches.flatMap((m) => m.events as GameEvent[]);
+    await a2.until(() => events().some((e) => e.type === 'RETURNED' && e.seat === 1), 20_000, 'seat 1 released');
+    const returned = events().find((e) => e.type === 'RETURNED' && e.seat === 1);
+    expect(returned).toMatchObject({ node: hold });
+    // 获释那一批的批尾快照：人在关押格、来路 = 关押格（0.4.0 会恢复成关押前的来路 saved）
+    const atRelease = a2.batches.find((m) =>
+      (m.events as GameEvent[]).some((e) => e.type === 'RETURNED' && e.seat === 1),
+    );
+    expect(atRelease!.view.players.find((x) => x.seat === 1)).toMatchObject({ node: hold, prevNode: hold });
+    const firstStep = (): number | undefined => {
+      const all = events();
+      const from = all.findIndex((e) => e.type === 'RETURNED' && e.seat === 1);
+      const mv = all.slice(from).find((e) => e.type === 'MOVE_SEGMENT' && e.actor.t === 'seat' && e.actor.seat === 1);
+      return mv?.type === 'MOVE_SEGMENT' ? mv.path[0] : undefined;
+    };
+    await a2.until(() => firstStep() !== undefined, 20_000, 'seat 1 walks out');
+    expect(map.forwardCandidates(hold, hold)).toContain(firstStep());
+    expect(room.runner!.state.players[1]!.savedPrevNode).toBeNull();
+    const seq = a2.lastSeq;
+    await a2.until(() => a2.lastSeq >= seq + 10, 20_000, 'game continues');
+    expect(a2.gaps).toEqual([]);
+    expect(b2.gaps).toEqual([]);
   }, 60_000);
 
   it('对局中踢人后立即崩溃：座位归属已落盘，重启后仍是电脑，被踢者不能 room:resume 拿回', async () => {

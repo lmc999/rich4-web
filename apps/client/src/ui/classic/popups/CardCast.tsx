@@ -15,9 +15,14 @@
 // 免費卡确认后同样是「使用免費卡」。联机时别人看不到出卡人的选目标过程，所以一律带上出卡人（与被动卡同一格式），
 // 有目标时另起一行小字写目标；卡片说明不上框（原版没有，悬停卡片欄时在日历位置能看到）。
 // 坐标以棋盘视窗 REGION.board（0,40 起）为基准换算，与 exe 的屏幕坐标相同。
+// 得卡（variant gain）：原版只有卡片格（0x41abfa「得到%s！」，FLIC Data#495 之后）与聖誕節送卡（0x450e29
+// 「聖誕節\n\n%s得到%s！」）调这个亮卡函数，版式相同。卡片格的原句不带人名，联机时同样带上得卡人（与出卡同理）；
+// 私密手牌模式下别人收到的卡号为 null（脱敏）：只画消息框、写「得到一張卡片！」，不贴卡图（原版没有大卡背）。
 // data-testid 与程序化 CardCastPopup 同名（card-cast-popup[data-card][data-variant]）；插画带 data-asset-key。
+// 另导出 ShowBox：同一个宝石消息框（画在 (220,129)，字居中），命运的加持、魔法屋的结果也用它（原版通用消息框 fcn.0043f90f
+// 同一画点、同一字体）。
 import { CARD, type CardId } from '@rich4/shared/engine';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useTx } from '../../../i18n/tx';
 import type { CardCastPopupSpec } from '../../popups/popupStore';
 import { CLASSIC_FRAMES } from '../common/frames';
@@ -52,50 +57,102 @@ const SHOW_TEXT = classicText({
 /** 目标行：小一号 */
 const TARGET_TEXT = classicText({ size: 12, color: '#f0f0f0', outline: null, shadow: '#101010', align: 'center' });
 
-/** 框里的句式：出卡、免費卡（原版确认后是「使用免費卡」）→ use；复仇 / 嫁祸 / 免罪 → passive；没有效果 → fizzle */
-export function cardShowMode(variant: CardCastPopupSpec['variant'], card: CardId): 'use' | 'passive' | 'fizzle' {
+/** 框里的句式：出卡、免費卡（原版确认后是「使用免費卡」）→ use；复仇 / 嫁祸 / 免罪 → passive；没有效果 → fizzle；
+ * 得卡 → gain（卡片格）/ holiday（聖誕節），看不到卡号（私密手牌下的别人）时 gainHidden / holidayHidden */
+export type CardShowMode = 'use' | 'passive' | 'fizzle' | 'gain' | 'gainHidden' | 'holiday' | 'holidayHidden';
+
+export function cardShowMode(
+  variant: CardCastPopupSpec['variant'],
+  card: CardId | null,
+  gainFrom: CardCastPopupSpec['gainFrom'] = 'square',
+): CardShowMode {
+  if (variant === 'gain') {
+    const base = gainFrom === 'holiday' ? 'holiday' : 'gain';
+    return card === null ? `${base}Hidden` : base;
+  }
   if (variant === 'fizzle') return 'fizzle';
   if (variant === 'passive' && card !== CARD.FREE) return 'passive';
   return 'use';
 }
 
-export function CardCast({ spec }: { spec: CardCastPopupSpec }): ReactNode {
-  const t = useTx();
-  const key = cardArtKey(spec.card);
-  const img = useSceneImage(key);
-  const mode = cardShowMode(spec.variant, spec.card);
-  const L = CARD_SHOW_LAYOUT;
-  const box = L.box;
+/** 宝石消息框的头部高度（Data#476 图5 三宫格的上段）与底边：正文区在两者之间 */
+const BOX_HEAD = 38;
+const BOX_FOOT = 12;
+/** 每行 16px 字的行高 */
+const BOX_LINE_H = 18;
+
+/** 放得下 lines 行（16px）的消息框高度（不小于原版的 133） */
+export function showBoxHeight(lines: number): number {
+  return Math.max(MESSAGE_BOX.h, BOX_HEAD + BOX_FOOT + Math.ceil(lines) * BOX_LINE_H + 12);
+}
+
+export interface ShowBoxProps {
+  /** 正文行数（超过原版框能放的 4 行时框往下加高） */
+  lines?: number;
+  testId?: string;
+  textStyle?: CSSProperties;
+  children?: ReactNode;
+}
+
+/**
+ * 亮卡与通用消息框的宝石框：Data#476 图5（ui.common）画在 (220,129)（锚点 97,81 → 左上 123,48），框里的字 16px 粗体
+ * #F0F0F0、#101010 阴影，以框的正文区中心逐行居中（原版 133 高时中心正好在 129）。
+ */
+export function ShowBox({ lines = 3, testId = 'card-cast-box', textStyle, children }: ShowBoxProps): ReactNode {
+  const box = CARD_SHOW_LAYOUT.box;
+  const left = box.x - MESSAGE_BOX.ax;
+  const top = box.y - MESSAGE_BOX.ay;
+  const h = showBoxHeight(lines);
+  // 原版高度时文字中心 = 画点 y（CARD_SHOW_LAYOUT.text）；加高的框按正文区中心往下移
+  const cy = CARD_SHOW_LAYOUT.text.y + (h - MESSAGE_BOX.h) / 2;
   return (
-    <section
-      className={pp.layer}
-      style={{ left: 0, top: 0, width: 640, height: 480 }}
-      data-testid="card-cast-popup"
-      data-card={spec.card}
-      data-variant={spec.variant}
-      data-mode={mode}
-      aria-label={spec.title}
-    >
+    <>
       <NineSlice
         spec={CLASSIC_FRAMES.messageBox}
-        x={box.x - MESSAGE_BOX.ax}
-        y={box.y - MESSAGE_BOX.ay}
+        x={left}
+        y={top}
         w={MESSAGE_BOX.w}
-        h={MESSAGE_BOX.h}
-        testId="card-cast-frame"
+        h={h}
+        testId={testId === 'card-cast-box' ? 'card-cast-frame' : `${testId}-frame`}
       />
       <div
         className={pp.text}
         style={{
-          left: box.x - MESSAGE_BOX.ax + MESSAGE_BOX.text.x,
-          top: L.text.y,
+          ...SHOW_TEXT,
+          ...textStyle,
+          left: left + MESSAGE_BOX.text.x,
+          top: cy,
           width: MESSAGE_BOX.text.w,
           transform: 'translateY(-50%)',
           overflow: 'visible',
           whiteSpace: 'pre-line',
         }}
-        data-testid="card-cast-box"
+        data-testid={testId}
       >
+        {children}
+      </div>
+    </>
+  );
+}
+
+export function CardCast({ spec }: { spec: CardCastPopupSpec }): ReactNode {
+  const t = useTx();
+  const key = spec.card === null ? null : cardArtKey(spec.card);
+  const img = useSceneImage(key);
+  const mode = cardShowMode(spec.variant, spec.card, spec.gainFrom);
+  const L = CARD_SHOW_LAYOUT;
+  return (
+    <section
+      className={pp.layer}
+      style={{ left: 0, top: 0, width: 640, height: 480 }}
+      data-testid="card-cast-popup"
+      data-card={spec.card ?? undefined}
+      data-variant={spec.variant}
+      data-mode={mode}
+      data-gain-from={spec.gainFrom}
+      aria-label={spec.title}
+    >
+      <ShowBox>
         <p style={SHOW_TEXT} data-testid="card-cast-line">
           {t(`events:popup.cardShow.${mode}`, { who: spec.player.name, card: spec.cardName })}
         </p>
@@ -104,23 +161,25 @@ export function CardCast({ spec }: { spec: CardCastPopupSpec }): ReactNode {
             {t('events:popup.cardShow.target', { target: spec.targetText })}
           </p>
         )}
-      </div>
-      <span
-        className={pp.art}
-        style={{
-          left: L.card.x,
-          top: L.card.y,
-          width: CARD_ART.w,
-          height: CARD_ART.h,
-          backgroundColor: CARD_ART_UNDERLAY,
-          backgroundImage: img ? `url("${img.url}")` : undefined,
-          filter: spec.variant === 'fizzle' ? 'grayscale(1) brightness(0.8)' : undefined,
-        }}
-        data-testid="card-cast-art"
-        data-asset-key={key}
-        data-src={img?.url}
-        aria-hidden="true"
-      />
+      </ShowBox>
+      {key !== null && (
+        <span
+          className={pp.art}
+          style={{
+            left: L.card.x,
+            top: L.card.y,
+            width: CARD_ART.w,
+            height: CARD_ART.h,
+            backgroundColor: CARD_ART_UNDERLAY,
+            backgroundImage: img ? `url("${img.url}")` : undefined,
+            filter: spec.variant === 'fizzle' ? 'grayscale(1) brightness(0.8)' : undefined,
+          }}
+          data-testid="card-cast-art"
+          data-asset-key={key}
+          data-src={img?.url}
+          aria-hidden="true"
+        />
+      )}
     </section>
   );
 }

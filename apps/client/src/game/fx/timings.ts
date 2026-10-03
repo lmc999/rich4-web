@@ -96,8 +96,11 @@ export const ORIG_FLIC_WAITS = {
   STRIKE: { before: 400, after: 150 },
   /** removeObject boom（小爆炸 FLIC） */
   OBJECT_REMOVED: { before: 0, after: 0 },
-  /** 得卡 FLIC ∥ wait 400 */
-  CARD_GAINED: { before: 0, after: 0 },
+  /**
+   * 得卡 FLIC ∥ wait 400；原版皮肤亮卡时 FLIC 之后亮卡 1.5 秒 + 收尾 0.1 秒（两种节奏都按 original 的亮卡预留，
+   * 见 shared/view/pacing 的 CARD_GAIN_AFTER_FLIC_MS：载入慢时压缩的是 FLIC，不截断亮卡）
+   */
+  CARD_GAINED: { before: 0, after: 1600 },
   /** 得点券 FLIC ∥ 飘字 + wait 500 */
   POINTS_GAINED: { before: 0, after: 0 },
   /** 烟火 / 圣诞 FLIC ∥ 节日横幅 1500 */

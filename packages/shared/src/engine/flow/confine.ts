@@ -2,7 +2,7 @@
  * 关押、住院、住旅馆、消失（design/engine.md §6.1 CONFINE、§11.3 保险理赔；docs/research/r_rules_map.md §10）。
  *
  * applyConfinement：直接施加（M4 的旅馆住宿、航空出国走这里，它们没有免罪 / 嫁祸环节）：
- *   坐牢 / 住院：首次关押同时清掉住宿、消失与另一种关押；棋子搬到关押格并保存朝向；
+ *   坐牢 / 住院：首次关押同时清掉住宿、消失与另一种关押；棋子搬到关押格、来路写成关押格本身（获释时不换节点）；
  *              已在押时 (旧值 + 天数) & 0x7f（原版加刑，可能回绕）
  *   消失（航空、出国）：计数器 = 天数（n 个受阻回合 + 1 个走回棋盘的回合）⚑
  *   住旅馆：原版写 +0x32 = n − 1；n = 1 时写 0x80（下一回合走回、不掷骰），使「住 n 天」= 失去 n 个回合 ⚑V-R1
@@ -57,15 +57,14 @@ export function applyConfinement(
   if (where === 'jail' || where === 'hospital') {
     const other = where === 'jail' ? 'hospital' : 'jail';
     if (p.st[where] === 0) {
-      if (p.st.jail === 0 && p.st.hospital === 0 && p.st.hotel === 0 && p.st.away === 0) {
-        p.savedPrevNode = p.prevNode;
-      }
       p.st.hotel = 0;
       p.st.away = 0;
       p.st[other] = 0;
       value = days & ECON.COUNTER_MASK;
     } else value = addCounterDays(p.st[where], days);
     p.st[where] = value;
+    // 节点写成关押格、来路写成关押格本身（原版来路写 0，获释后不换节点、从这里随机方向出发，见 flow/turn.ts release）
+    // @source exe v2.06 0x43c34c / 0x43c359（监狱）、0x43d9d9 / 0x43d9e6（医院）
     const hold = where === 'jail' ? ctx.map.index.jailHold : ctx.map.index.hospitalHold;
     p.node = hold;
     p.prevNode = hold;

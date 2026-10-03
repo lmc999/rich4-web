@@ -109,6 +109,11 @@ export interface AudioPort {
    * 出卡 / 被动卡在亮卡结束之后（原版亮卡函数 fcn.00440bac 停 1.5 秒返回后才说卡片台词）；没有音频时不实现
    */
   voices?(e: GameEvent): void;
+  /**
+   * 停掉正在说的语音：原版命运板被任意键跳过时连语音一起停（fcn.00452c39 → fcn.00452bd6 Stop + Release）；
+   * 没有音频时不实现
+   */
+  stopVoice?(): void;
 }
 
 /**

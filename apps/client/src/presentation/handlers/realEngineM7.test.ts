@@ -160,7 +160,6 @@ function eventArena(o: { confined?: boolean } = {}): Scenario {
     sc.edit((s) => {
       const p = s.players.find((x) => x.seat === 2)!;
       const hold = map.hospitalHold;
-      p.savedPrevNode = p.prevNode;
       p.st.hospital = 4;
       p.placed = true;
       p.node = hold;

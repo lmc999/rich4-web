@@ -6,10 +6,13 @@ import {
   type PacingProfile as NetPacingProfile,
 } from '../net/timing';
 import {
+  CARD_GAIN_FOCUS_MS,
+  CARD_GAIN_SHOW_SOURCES,
   CARD_SHOW_EVENT_TYPES,
   CARD_SHOW_MS,
   CARD_SHOW_TAIL_MS,
   COMPACT_BUDGET_MS,
+  cardGainShows,
   DEFAULT_PACING,
   DICE_FLIC_FRAMES,
   DICE_KNOCK_FRAME,
@@ -19,8 +22,12 @@ import {
   EVENT_BUDGET_MS,
   estimateAnimMs,
   eventBudgetMs,
+  FATE_SHOW,
+  FATE_SHOW_EVENT_TYPES,
+  FATE_VOICE_MS,
   FLIC_EVENT_TYPES,
   FLIC_SLACK_MS,
+  fateShowMs,
   flicMs,
   flicReserveOf,
   GOD_ARRIVAL_FLICS,
@@ -71,7 +78,7 @@ describe('pacing：两种节奏的预算表', () => {
   });
 
   it('穷举：每种事件在两种节奏下都是非负整数，original ≥ compact；没有 FLIC 预留、也不亮卡的完全相同', () => {
-    const flicTypes = new Set<string>([...FLIC_EVENT_TYPES, ...CARD_SHOW_EVENT_TYPES]);
+    const flicTypes = new Set<string>([...FLIC_EVENT_TYPES, ...CARD_SHOW_EVENT_TYPES, ...FATE_SHOW_EVENT_TYPES]);
     for (const t of GAME_EVENT_TYPES) {
       const e = stub(t);
       const c = eventBudgetMs(e, 'compact');
@@ -172,7 +179,8 @@ describe('pacing：original（原版 FLIC 原长）', () => {
 
   it('得卡 / 得点券只在卡片格 / 点券格；踩雷的小爆炸；身上炸弹的大爆炸', () => {
     const card: GameEvent = { type: 'CARD_GAINED', seat: 0, card: 3, source: 'square' };
-    expect(eventBudgetMs(card, 'original')).toBe(994 + FLIC_SLACK_MS);
+    // 卡片格：FLIC 原长 + 亮卡 1.5 秒 + 收尾 + 余量
+    expect(eventBudgetMs(card, 'original')).toBe(994 + 1500 + CARD_SHOW_TAIL_MS + FLIC_SLACK_MS);
     expect(eventBudgetMs({ ...card, source: 'shop' }, 'original')).toBe(700);
     const pts: GameEvent = { type: 'POINTS_GAINED', seat: 0, amount: 30, source: 'square' };
     expect(eventBudgetMs(pts, 'original')).toBe(994 + FLIC_SLACK_MS);
@@ -225,10 +233,10 @@ describe('pacing：亮卡（原版 fcn.00440bac：卡图 + 消息框停 1.5 秒�
   const used: GameEvent = { type: 'CARD_USED', seat: 0, card: 17, target: { t: 'none' } };
   const passive: GameEvent = { type: 'PASSIVE', seat: 1, card: 21, context: 'frame', other: null };
 
-  it('original 按原版 1.5 秒（0x440ce4 fcn.00450f9a(1500)），compact 沿用 1.2 / 0.95 秒', () => {
-    expect(CARD_SHOW_MS.original).toEqual({ castMs: 1500, passiveMs: 1500 });
-    expect(CARD_SHOW_MS.compact).toEqual({ castMs: 1200, passiveMs: 950 });
-    expect([...CARD_SHOW_EVENT_TYPES]).toEqual(['CARD_USED', 'PASSIVE']);
+  it('original 按原版 1.5 秒（0x440ce4 fcn.00450f9a(1500)），compact 沿用 1.2 / 0.95 秒（得卡 1.2 秒）', () => {
+    expect(CARD_SHOW_MS.original).toEqual({ castMs: 1500, passiveMs: 1500, gainMs: 1500 });
+    expect(CARD_SHOW_MS.compact).toEqual({ castMs: 1200, passiveMs: 950, gainMs: 1200 });
+    expect([...CARD_SHOW_EVENT_TYPES]).toEqual(['CARD_USED', 'PASSIVE', 'CARD_GAINED']);
   });
 
   it('预算 = 亮卡 + 收尾 + 余量（original）；compact 不变且放得下 compact 的亮卡与收尾', () => {
@@ -282,6 +290,95 @@ describe('pacing：掷骰（原版时序：持骰动作 → FLC 36 帧 → 落�
   });
 });
 
+describe('pacing：得卡亮卡（原版只在卡片格 0x41abfa 与聖誕節 0x450e29 亮卡）', () => {
+  const gain = (source: string): GameEvent => ({ type: 'CARD_GAINED', seat: 0, card: 3, source }) as GameEvent;
+
+  it('亮卡的来源只有卡片格与聖誕節；其余得卡途径两种节奏都是 700', () => {
+    expect([...CARD_GAIN_SHOW_SOURCES]).toEqual(['square', 'holiday']);
+    for (const s of ['shop', 'god', 'chairmanGift', 'rob', 'birthday', 'villain', 'magic', 'board', 'debug']) {
+      expect(cardGainShows(s), s).toBe(false);
+      for (const p of PACING_PROFILES) expect(eventBudgetMs(gain(s), p), `${s} ${p}`).toBe(700);
+    }
+    expect(cardGainShows('square')).toBe(true);
+    expect(cardGainShows('holiday')).toBe(true);
+  });
+
+  it('卡片格：original = FLIC 原长 + 亮卡 + 收尾 + 余量；compact 给 FLIC 约 0.5 秒，FLIC 之后同样留足 1.5 秒亮卡', () => {
+    const r = flicReserveOf(gain('square'))!;
+    expect(r.flic).toBe(ORIGINAL_FLICS.cardGain);
+    expect(r.extraMs).toBe(CARD_SHOW_MS.original.gainMs + CARD_SHOW_TAIL_MS);
+    expect(eventBudgetMs(gain('square'), 'original')).toBe(flicMs(r.flic) + r.extraMs + FLIC_SLACK_MS);
+    expect(eventBudgetMs(gain('square'), 'compact')).toBe(500 + r.extraMs + FLIC_SLACK_MS);
+    // 两种节奏都放得下各自的亮卡（compact 的亮卡比预留短，FLIC 之后不会被截断）
+    for (const p of PACING_PROFILES) {
+      expect(eventBudgetMs(gain('square'), p) - r.extraMs - FLIC_SLACK_MS).toBeGreaterThan(0);
+      expect(r.extraMs).toBeGreaterThanOrEqual(CARD_SHOW_MS[p].gainMs + CARD_SHOW_TAIL_MS);
+    }
+  });
+
+  it('聖誕節：镜头 + 亮卡 + 收尾 + 余量（没有 FLIC 预留，圣诞 FLIC 在 HOLIDAY 事件里）', () => {
+    expect(flicReserveOf(gain('holiday'))).toBeNull();
+    for (const p of PACING_PROFILES) {
+      expect(eventBudgetMs(gain('holiday'), p)).toBe(
+        CARD_GAIN_FOCUS_MS + CARD_SHOW_MS[p].gainMs + CARD_SHOW_TAIL_MS + FLIC_SLACK_MS,
+      );
+    }
+  });
+
+  it('预算与卡号无关（私密手牌下别人收到的 card 为 null，所有观察者同一预算）', () => {
+    for (const s of ['square', 'holiday'])
+      for (const p of PACING_PROFILES)
+        expect(eventBudgetMs({ ...gain(s), card: null } as GameEvent, p)).toBe(eventBudgetMs(gain(s), p));
+  });
+});
+
+describe('pacing：命运板（原版 fcn.0044c4a0：语音 ≥ 1.6 秒 → 效果 / 加持消息框 1.5 秒 → 0.8 秒）', () => {
+  const fate = (id: number, blessing: 'high' | 'low' | null = null): GameEvent =>
+    ({ type: 'FATE', seat: 0, id, amount: null, blessing }) as GameEvent;
+
+  it('语音时长表 49 项（Speaking#185–233），1282–3816 ms', () => {
+    expect(FATE_VOICE_MS).toHaveLength(49);
+    expect(Math.min(...FATE_VOICE_MS)).toBe(1282);
+    expect(Math.max(...FATE_VOICE_MS)).toBe(3816);
+    expect(FATE_VOICE_MS.filter((v) => v <= 1600)).toHaveLength(7);
+  });
+
+  it('original：板子停留 = max(1.6 秒, 语音)，加持消息框 1.5 秒，停顿 0.8 秒', () => {
+    expect(FATE_SHOW.original).toEqual({ minHoldMs: 1600, blessingMs: 1500, tailMs: 800, endMs: 100 });
+    expect(fateShowMs(25, false, 'original')).toEqual({ holdMs: 1600, blessingMs: 0, tailMs: 800, endMs: 100 });
+    expect(fateShowMs(4, true, 'original')).toEqual({ holdMs: 3816, blessingMs: 1500, tailMs: 800, endMs: 100 });
+    // 33 在日本图（slot 41）的语音
+    expect(fateShowMs(41, false, 'original').holdMs).toBe(2820);
+  });
+
+  it('compact：总长 2.25 秒不变（有加持时板子 1.35 + 消息框 0.9）+ 收尾 0.2 秒', () => {
+    for (const slot of [0, 4, 25, 48]) {
+      for (const b of [false, true]) {
+        const t = fateShowMs(slot, b, 'compact');
+        expect(t.holdMs + t.blessingMs + t.tailMs, `${slot} ${b}`).toBe(2250);
+        expect(t.endMs).toBe(200);
+      }
+    }
+    expect(eventBudgetMs(fate(4, 'high'), 'compact')).toBe(COMPACT_BUDGET_MS.FATE);
+  });
+
+  it('original 预算 = max(compact, 停留 + 加持 + 停顿 + 收尾 + 余量)；33–36 取四张图里最长的语音', () => {
+    const o = FATE_SHOW.original;
+    expect(eventBudgetMs(fate(25), 'original')).toBe(Math.max(2600, 1600 + o.tailMs + o.endMs + FLIC_SLACK_MS));
+    expect(eventBudgetMs(fate(4, 'high'), 'original')).toBe(3816 + 1500 + 800 + 100 + FLIC_SLACK_MS);
+    expect(eventBudgetMs(fate(4, 'low'), 'original')).toBe(eventBudgetMs(fate(4, 'high'), 'original'));
+    const k33 = Math.max(FATE_VOICE_MS[33]!, FATE_VOICE_MS[37]!, FATE_VOICE_MS[41]!, FATE_VOICE_MS[45]!);
+    expect(eventBudgetMs(fate(33), 'original')).toBe(k33 + 800 + 100 + FLIC_SLACK_MS);
+    for (let id = 0; id <= 36; id++) {
+      for (const b of [null, 'high'] as const) {
+        expect(eventBudgetMs(fate(id, b), 'original'), `${id}`).toBeGreaterThanOrEqual(
+          eventBudgetMs(fate(id, b), 'compact'),
+        );
+      }
+    }
+  });
+});
+
 describe('estimateAnimMs', () => {
   it('为各事件预算之和，空批为 0；按节奏求和', () => {
     const events: GameEvent[] = [
@@ -290,8 +387,9 @@ describe('estimateAnimMs', () => {
       { type: 'CARD_GAINED', seat: 0, card: 3, source: 'square' },
       { type: 'SYNC', reason: 'flush' },
     ];
-    expect(estimateAnimMs(events, 'compact')).toBe(1480 + 3 * 180 + 250 + 700);
-    expect(estimateAnimMs(events, 'original')).toBe(2400 + 3 * 180 + 250 + 994 + FLIC_SLACK_MS);
+    // 卡片格得卡：FLIC 之后亮卡 1.5 秒 + 收尾（compact 的 FLIC 约 0.5 秒）
+    expect(estimateAnimMs(events, 'compact')).toBe(1480 + 3 * 180 + 250 + 500 + 1600 + 100);
+    expect(estimateAnimMs(events, 'original')).toBe(2400 + 3 * 180 + 250 + 994 + 1600 + FLIC_SLACK_MS);
     for (const p of PACING_PROFILES) {
       expect(estimateAnimMs([], p)).toBe(0);
       expect(estimateAnimMs(events, p)).toBe(events.reduce((a, e) => a + eventBudgetMs(e, p), 0));

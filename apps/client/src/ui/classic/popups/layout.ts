@@ -1,8 +1,9 @@
 // 原版弹窗的素材键与几何（original-skin.md §4.2 通用；ui.md §2.1–§2.3；本机素材包逐像素统计，见各常量注释）。纯数据与纯函数。
 //
 // - 新闻板 / 命运板：Panel#66 = ui.newsBoard 图0（蓝 NEWS）/ 图1（紫 ?），440×480 贴 (0,0)；插图框在 (25,44)、388×251
-//   （框内近白像素的包围盒），新闻插图 Data#400+i = illustration.news.<i>（36 条逐一目视对上）；命运插图 Data#436–475 的
-//   对应未核实（catalog 置信度 guess）→ 命运整体回退程序化弹窗（ClassicPopupHost.popupKeys），不取 illustration.fate.*。
+//   （框内近白像素的包围盒），新闻插图 Data#400+i = illustration.news.<i>（36 条逐一目视对上；exe 0x44a200
+//   lea edi,[ebx+0x190]）；命运插图 = Data#FATE_ART_TABLE[slot] = illustration.fate.<表值 − 436>（exe 0x473dd8，见下方
+//   「命运板」），文字左上 (24,330)、表情头像 (390,344)（exe fcn.0044c4a0 与各处理函数参数 0 分支）。
 // - 神明老虎机：Panel#67 = ui.godSlot，图0 4 位机身 193×183（锚点 96,98）、图1 3 位 156×183（锚点 78,98）、图2/3 拉杆
 //   上 / 下、图4–23 滚轮条 38×36（图 4+2d = 数字 d 居中、5+2d = d 与 d+1 之间），滚轮窗左上 (21,97)、步距 37（目视）。
 // - 轮盘：Panel#68–71 = ui.roulette.0–3，图0/1 天使（挥杖两态）、图2–13 转盘每帧顺时针转 30°。按盘面数值与
@@ -33,11 +34,69 @@ export function newsArtKey(id: number): string {
   return `illustration.news.${id}`;
 }
 
+/**
+ * 新闻板 / 命运板下面垫的底色：原版把 Panel#66 的图整张不透明拷到后台缓冲（新闻 0x44a2ba、命运 0x44c626 都是
+ * fcn.00454a55，与卡片插画同一个拷贝函数，没有色键），图里 RGB 0 的像素画出来是黑色；素材包的 ui.newsBoard 按
+ * rgb0-backdrop 把这些像素抠成了透明（插图框下沿的阴影条等），不垫底会透出棋盘。垫黑后与原版逐像素相同
+ */
+export const BOARD_UNDERLAY = '#000';
+
 export const NEWS_BOARD = {
   w: 440,
   h: 480,
   art: { x: 25, y: 44, w: 388, h: 251 },
   text: { x: 28, y: 304, w: 384, h: 164 },
+} as const;
+
+// ───────────────────────── 命运板 ─────────────────────────
+
+/**
+ * 命运插图表（49 项，Data 资源号）：下标 = 命运处理函数表下标 slot（第 k 条命运 k < 33 为 k，33–36 在地图 gm 为 k + 4·gm，
+ * 与 presentation/eventText.fateVariantSlot 相同）。40 张插图全部被引用，同一标题总对应同一张图。
+ * 与 tools/extract 资源目录的 FATE_ART_TABLE 同值（那边由本机测试逐项对 exe 核对）。
+ * @source exe v2.06 VA 0x473dd8 u16[49]（0x44c542：k<33 用表[k]；0x44c58a：k≥33 用表[k+4gm]）
+ */
+export const FATE_ART_TABLE: readonly number[] = Object.freeze([
+  436, 437, 438, 439, 440, 441, 442, 443, 444, 445, 446, 447, 448, 449, 450, 451, 452, 453, 454, 455, 456, 456, 456,
+  457, 457, 458, 459, 460, 460, 460, 461, 462, 463,
+  // slot 33–36 台湾、37–40 大陆、41–44 日本、45–48 美国
+  464, 465, 466, 467, 464, 468, 469, 470, 471, 465, 466, 472, 473, 474, 469, 475,
+]);
+
+/** 命运插图的首个资源号（illustration.fate.<res − 436>） */
+export const FATE_ART_BASE = 436;
+
+/** 命运插图的逻辑键（slot 越界时按 0） */
+export function fateArtKey(slot: number): string {
+  const res = FATE_ART_TABLE[slot] ?? FATE_ART_TABLE[0]!;
+  return `illustration.fate.${res - FATE_ART_BASE}`;
+}
+
+/**
+ * 命运板上的表情头像：讲话头像（portrait.speaker.<抽到命运的人的角色>，map#15+角色）的图号 1–4，按处理函数参数 0 分支
+ * 逐条读出（坏事图2 / 图3，得钱图4，k4、k20、k27 图1，33–36 都是图3）。
+ * @source exe v2.06 各命运处理函数 fcn.00454905(板图1, [0x495ccc+seat*0x34]+0x18/0x24/0x30/0x3c, 390, 344)，
+ *   例如 0x44a8f6–0x44a91a；k20 / k27 经 0x44bc6b 跳到 0x44bd80（图1），0x44bd66–0x44bd8a 是得钱一组共用的结尾（图4）
+ */
+export const FATE_FACE: readonly number[] = Object.freeze([
+  2, 2, 3, 3, 1, 4, 2, 3, 3, 2, 3, 3, 3, 3, 2, 2, 2, 3, 3, 2, 1, 4, 4, 2, 3, 4, 3, 1, 4, 4, 2, 4, 2, 3, 3, 3, 3, 3, 3,
+  3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+]);
+
+/**
+ * 命运板（exe fcn.0044c4a0）：Panel#66 图1 整张 440×480 拷到 (0,0)；插图 388×251 不透明贴 (25,44)；文字从 (24,330) 起
+ * 左上对齐（fcn.0044e200(28, #F0F0F0, #101010, 3, 0)：28px 粗体、#101010 的 (1,1) 阴影、字距 −1）；表情头像按锚点画在
+ * (390,344)。原版的文字只有一两行 28px 的整句；我们的标题照原版 28px 写在 (24,330)，正文与金额另起一块（避开头像）。
+ */
+export const FATE_BOARD = {
+  frame: 1,
+  w: 440,
+  h: 480,
+  art: NEWS_BOARD.art,
+  title: { x: 24, y: 330 },
+  face: { x: 390, y: 344 },
+  /** 我们的正文与金额：标题下方到板底、头像左侧 */
+  body: { x: 24, y: 366, w: 344, h: 102 },
 } as const;
 
 // ───────────────────────── 老虎机 ─────────────────────────

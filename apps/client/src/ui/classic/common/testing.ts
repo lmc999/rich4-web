@@ -114,6 +114,20 @@ export function fakeCardImages(): Record<string, FakeImage> {
   return out;
 }
 
+/** 与原版包同一逻辑路径的 40 张命运插图：illustration.fate.<i> → images/data/<436+i>.png（388×251） */
+export function fakeFateImages(): Record<string, FakeImage> {
+  const out: Record<string, FakeImage> = {};
+  for (let i = 0; i < 40; i++) out[`illustration.fate.${i}`] = { file: `images/data/${436 + i}.png`, w: 388, h: 251 };
+  return out;
+}
+
+/** 与原版包同一逻辑路径的 36 张新闻插图：illustration.news.<i> → images/data/<400+i>.png（388×251） */
+export function fakeNewsImages(): Record<string, FakeImage> {
+  const out: Record<string, FakeImage> = {};
+  for (let i = 0; i < 36; i++) out[`illustration.news.${i}`] = { file: `images/data/${400 + i}.png`, w: 388, h: 251 };
+  return out;
+}
+
 /**
  * 带图集的假素材包客户端：sheets 里的键是可用的精灵条目（帧横排在各自的一页图集上），loadAtlas / atlasImageUrl 照常可用，
  * 经典外壳与场景的按需加载都走真实代码路径；gate 给出时 loadAtlas 等它（测试「准备中」与超时）；images 里的键是整图条目
@@ -162,10 +176,12 @@ export function atlasPackClient(
     usableEntry(key: string): AssetEntry | null {
       const img = o.images && Object.hasOwn(o.images, key) ? o.images[key] : undefined;
       if (img) {
+        const card = key.startsWith('card.');
+        const fate = key.startsWith('illustration.fate.');
         return {
           type: 'image',
-          group: key.startsWith('card.') ? 'card' : 'illustration.news',
-          confidence: key.startsWith('card.') ? 'exe' : 'visual',
+          group: card ? 'card' : fate ? 'illustration.fate' : 'illustration.news',
+          confidence: card || fate ? 'exe' : 'visual',
           src: ['synthetic'],
           file: img.file,
           w: img.w,

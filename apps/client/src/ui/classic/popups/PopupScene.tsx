@@ -1,13 +1,24 @@
 // 原版演出弹窗的外壳：Stage4x3 的只读场景（不抢焦点、不挡棋盘与工具列；与舞台同一落点与倍率，经 portal 挂到经典舞台），
 // 根元素 data-testid="popup"、data-kind 与程序化弹窗层一致（E2E 两种皮肤共用）；最短展示时间之后出现「点一下跳过」
 // （网页版的钮）。亮卡照原版：不画跳过钮，从一开始任意鼠标键放开或按键放开就结束（anyInputSkips）。
+// 整块盖住工具列与棋盘视窗的板子（新闻板、命运板）在板面上接住指针、暂停经典快捷键（shield），不让输入穿到看不见的
+// 工具列钮上。
 // 另有 useTicker（演出用的真实时间节拍，减少动态时不走）。
 import { useReducedMotion } from 'motion/react';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, type SyntheticEvent, useEffect, useRef, useState } from 'react';
 import { useTx } from '../../../i18n/tx';
 import { type SceneBackdrop, Stage4x3 } from '../common/Stage4x3';
 import { TEXT } from '../common/textStyles';
+import { useSwallowHotkeys } from '../keyboard';
 import pp from './popups.module.css';
+
+/** 场景逻辑坐标的矩形 */
+export interface SceneRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 export interface PopupSceneProps {
   kind: string;
@@ -18,9 +29,19 @@ export interface PopupSceneProps {
   /**
    * 原版的跳过方式（亮卡）：不画跳过钮、没有最短时间，页面上任意鼠标左 / 右键放开或按键放开（焦点在输入框里打字时除外）
    * 就结束——exe 亮卡的等待 fcn.00450f9a(1500) 在 PeekMessage 循环里遇到 WM_LBUTTONUP / WM_RBUTTONUP / WM_KEYUP 即返回。
-   * 只是监听、不拦截：点到的工具列、棋盘照常响应；只算亮卡出现之后按下的（出卡确认那一下的放开不算）
+   * 只是监听、不拦截：点到的工具列、棋盘照常响应（盖住工具列的板子另用 shield 接住板面上的输入）；只算亮卡出现之后
+   * 按下的（出卡确认那一下的放开不算）
    */
   anyInputSkips?: boolean;
+  /**
+   * 板面（场景逻辑坐标）：整块盖住工具列与棋盘视窗的板子（新闻板、命运板 440×480 贴 (0,0)）在这个矩形里接住指针。
+   * 场景是只读的（pointer-events: none），不接住的话点板子会同时点到板子下面看不见的工具列钮（「查询」开资产表、
+   * 「说明」开说明框、「托管」直接切换托管）或棋盘；原版板子期间程序停在等待循环里（fcn.00452c39），点不到工具列。
+   * 接住的指针不往下传（stopPropagation，右键不弹浏览器菜单）；经典快捷键暂停（keyboard.useSwallowHotkeys，场景根另标
+   * data-input-shield 供 shouldHandleHotkey 认），按 M、< > 跳过板子时不会顺带切大地图、转视角。
+   * 跳过：anyInputSkips 时放开即跳过（useAnyInputSkip）；否则可跳过之后（最短时间到了）点板子等于点跳过钮
+   */
+  shield?: SceneRect;
   backdrop?: SceneBackdrop;
   testId?: string;
   attrs?: Readonly<Record<`data-${string}`, string | undefined>>;
@@ -77,6 +98,7 @@ export function PopupScene({
   minMs,
   onSkip,
   anyInputSkips = false,
+  shield,
   backdrop = 'none',
   testId = 'popup',
   attrs,
@@ -94,6 +116,7 @@ export function PopupScene({
     return () => clearTimeout(id);
   }, [minMs, anyInputSkips]);
   useAnyInputSkip(anyInputSkips, onSkip);
+  useSwallowHotkeys(shield !== undefined);
   return (
     <Stage4x3
       testId={testId}
@@ -101,9 +124,22 @@ export function PopupScene({
       readOnly
       interactive
       backdrop={backdrop}
-      attrs={{ 'data-kind': kind, 'data-skippable': skippable ? 'true' : 'false', 'data-classic': 'true', ...attrs }}
+      attrs={{
+        'data-kind': kind,
+        'data-skippable': skippable ? 'true' : 'false',
+        'data-classic': 'true',
+        'data-input-shield': shield ? 'true' : undefined,
+        ...attrs,
+      }}
     >
       {children}
+      {shield && (
+        <InputShield
+          rect={shield}
+          testId={`${testId}-shield`}
+          onTap={skippable && !anyInputSkips ? onSkip : undefined}
+        />
+      )}
       {skippable && !anyInputSkips && (
         <button
           type="button"
@@ -116,6 +152,43 @@ export function PopupScene({
         </button>
       )}
     </Stage4x3>
+  );
+}
+
+/** 接住的指针 / 鼠标事件：不往下传（React 祖先与窗口上的冒泡监听都收不到） */
+function swallow(e: SyntheticEvent): void {
+  e.stopPropagation();
+}
+
+/**
+ * 板面上接住指针的透明层（见 PopupSceneProps.shield）：只读场景里唯一 pointer-events: auto 的一块（另有跳过钮），
+ * 落点在板面上的按下、放开、点击、右键都停在这里；onTap 给出时点击即跳过（没有 anyInputSkips 的板子）
+ */
+function InputShield({ rect, testId, onTap }: { rect: SceneRect; testId: string; onTap?: () => void }): ReactNode {
+  return (
+    <div
+      className={pp.shield}
+      style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
+      data-testid={testId}
+      aria-hidden="true"
+      onPointerDown={swallow}
+      onPointerUp={swallow}
+      onMouseDown={(e) => {
+        // 不把焦点挪走、不开始选字（原版点板子只是结束等待）
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onMouseUp={swallow}
+      onDoubleClick={swallow}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onTap?.();
+      }}
+    />
   );
 }
 

@@ -177,7 +177,10 @@ export interface PlayerState {
   /** 未落地时为 0 */
   node: TileId;
   prevNode: TileId;
-  /** 关押期间保存朝向，释放时恢复 */
+  /**
+   * 已停用（ENGINE_VERSION 0.5.0 起不再写入，恒为 null）：原先关押期间保存朝向、释放时恢复；
+   * 现在获释留在关押格、来路 = 关押格（flow/turn.ts release）。字段保留以免改 state 结构，旧快照里的值在释放时清掉
+   */
   savedPrevNode: TileId | null;
   vehicle: Vehicle;
   /** 持久保存；ROLL{dice} 会改写它 */

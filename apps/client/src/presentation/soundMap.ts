@@ -6,7 +6,8 @@
 // - scene：事件期间的场景曲（监狱、医院、破产、乐透开奖、月结、拍卖、结算）。场所屏与小游戏的场景曲由 UI 状态决定
 //   （audio/selectors.sceneLayersFor）。
 // 事件槽的触发门槛与概率按 r_minigames_chars §2.4（第三方转述，语义置信度 visual / guess），金额门槛乘物价指数。
-import { GOD, type GodKind, type SeatIndex } from '@rich4/shared/engine';
+import { type CardId, cardDef, GOD, type GodKind, type SeatIndex } from '@rich4/shared/engine';
+import { cardGainShows } from '@rich4/shared/view';
 import {
   moneyVoice,
   pointsVoice,
@@ -31,6 +32,31 @@ const flic = (zzfx: ZzfxPresetId, cue?: string): SfxCue => ({ ...z(zzfx, cue), f
  * 和颗数无关。由 DICE_ROLLED 的 handler 按演出时刻放（timed，经 ctx.audio.cue）；没有素材包时用 ZzFX 预设 dice
  */
 export const DICE_KNOCK: SfxCue = Object.freeze({ cue: 'dice.roll', zzfx: 'dice', timed: true });
+
+/**
+ * 亮卡开始时的音效：Effect#62（card.use，亮卡函数 fcn.00440bac 0x440cd2）。得卡亮卡（卡片格、聖誕節）由 CARD_GAINED 的
+ * handler 在亮卡出现时经 ctx.audio.cue 放；聖誕節得卡在下面标 timed（不亮卡时 handler 一开始就放）
+ */
+export const CARD_SHOW_SFX: SfxCue = Object.freeze({ cue: 'card.use', zzfx: 'magic', timed: true });
+
+/**
+ * 程序化命运翻面卡开头的「翻牌」声（ZzFX 预设 card，没有原版音效）。原版命运板 fcn.0044c4a0（0x44c4a0–0x44c6cd，含处理函数
+ * 参数 0 分支）整段只播文案开头 #NNNN 的语音（fcn.0044e2e3 0x44e32a–0x44e375 → fcn.00452b5d），没有音效；标 timed：
+ * 事件开始时不放，FATE 的 handler 只在程序化翻面卡时放，原版命运板不放
+ */
+export const FATE_FLIP_SFX: SfxCue = Object.freeze({ zzfx: 'card', timed: true });
+
+/**
+ * 得卡后按卡价说的事件槽台词（原版卡片格 0x41ac13、聖誕節 0x450e3c 调 fcn.0044db5f(座位, 卡价)）：卡价 > 100 用槽 0
+ * （pointsHigh），51–100 在槽 0 / 1 里随机（rand & 1），1–50 用槽 2（pointsLow）。标 timed：亮卡结束后由 handler 说出
+ */
+export function cardGainVoice(seat: SeatIndex, card: CardId): VoiceCue[] {
+  const price = cardDef(card).price;
+  if (price > 100) return [{ k: 'slot', seat, slot: 'pointsHigh', timed: true }];
+  if (price > 50) return [{ k: 'slot', seat, slot: 'pointsHigh', alt: ['pointsMid'], timed: true }];
+  if (price > 0) return [{ k: 'slot', seat, slot: 'pointsLow', timed: true }];
+  return [];
+}
 
 /** 进对局就预载的事件音效：按演出时刻放、每回合都响（第一声不因现场下载或合成超过 maxSfxLatencyMs 被丢掉） */
 export const GAME_PRELOAD_CUES: readonly SfxCue[] = Object.freeze([DICE_KNOCK]);
@@ -166,7 +192,12 @@ export const SOUND_MAP = {
   RESEARCH_DONE: { sfx: z('ding', 'gain.item') },
   RESEARCH_CANCELLED: {},
   // ── card
-  CARD_GAINED: { sfx: flic('card') },
+  // 得卡：卡片格的问号 FLIC（Data#495）带音效 99（flicCovered）；聖誕節送卡没有 FLIC，亮卡开始时放 Effect#62（timed）。
+  // 卡片格与聖誕節亮卡之后按卡价说事件槽台词；私密手牌下别人看不到卡号，不说（也就推不出卡价档位）
+  CARD_GAINED: {
+    sfx: (e) => (e.source === 'holiday' ? CARD_SHOW_SFX : flic('card')),
+    voice: (e) => (e.card !== null && cardGainShows(e.source) ? cardGainVoice(e.seat, e.card) : []),
+  },
   CARD_LOST: {},
   // 出卡：Effect#62（card.use）在亮卡开始时响（fcn.00440bac 0x440cd2）；卡片台词等亮卡结束之后才说——原版 0x44090a
   // 亮卡停 1.5 秒返回 → 0x440914 进卡片处理函数，例如均富 0x440d1d 扣卡 → 0x440d51 fcn.0044d870 说台词。标 timed，
@@ -298,9 +329,10 @@ export const SOUND_MAP = {
   BANK_REJECTED: { sfx: z('sad') },
   // ── event
   NEWS: { sfx: z('news'), voice: (e) => [{ k: 'news', key: `news.${e.id}` }] },
-  // 命运 33–36 在大陆 / 日本 / 美国图换成表项 37–48 的语音（voice 0222–0233，见 eventText.fateVariantSlot）
+  // 命运 33–36 在大陆 / 日本 / 美国图换成表项 37–48 的语音（voice 0222–0233，见 eventText.fateVariantSlot）；
+  // 翻牌声只属于程序化翻面卡（timed，见 FATE_FLIP_SFX），原版命运板只有语音
   FATE: {
-    sfx: z('card'),
+    sfx: FATE_FLIP_SFX,
     voice: (e, q) => [{ k: 'news', key: `fate.${fateVariantSlot(e.id, q.map?.def.globalMapId)}` }],
   },
   MAGIC_CONDITION: { voice: (e) => [{ k: 'npc', key: `magic.condition.${e.cond}` }] },

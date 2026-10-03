@@ -52,6 +52,7 @@
     "SHOP_OPENED": "{{who}} 走進百貨公司",
     "SHOP_TRADE": "{{who}} 在百貨公司交易（{{n}} 點券）",
     "CHAIRMAN_GIFT": "董事長 {{who}} 獲得百貨公司贈禮",
+    "CHAIRMAN_GIFT_gift": "董事長 {{who}} 獲得百貨公司贈禮：{{gift}}",
     "ITEM_GAINED": "{{who}} 獲得 {{item}} ×{{n}}",
     "ITEM_LOST": "{{who}} 失去 {{item}} ×{{n}}",
     "ITEM_USED": "{{who}} 使用了 {{item}}",
@@ -170,10 +171,15 @@
     "cardUsed": "{{who}} 使用卡片",
     "cardPassive": "被動卡生效",
     "cardFizzle": "卡片沒有效果",
+    "cardGained": "{{who}} 得到卡片",
     "cardShow": {
       "use": "{{who}}\n\n使用{{card}}",
       "passive": "{{who}}\n\n{{card}}生效！",
       "fizzle": "{{who}}\n\n{{card}}沒有效果",
+      "gain": "{{who}}\n\n得到{{card}}！",
+      "gainHidden": "{{who}}\n\n得到一張卡片！",
+      "holiday": "聖誕節\n\n{{who}}得到{{card}}！",
+      "holidayHidden": "聖誕節\n\n{{who}}得到一張卡片！",
       "target": "→ {{target}}"
     },
     "target": "目標：{{target}}",

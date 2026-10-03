@@ -81,7 +81,13 @@ export const LOG_FORMAT = {
   PASSIVE: (e, n) => L(n, 'PASSIVE', { who: n.seat(e.seat), card: n.card(e.card) }),
   SHOP_OPENED: (e, n) => L(n, 'SHOP_OPENED', { who: n.seat(e.seat) }),
   SHOP_TRADE: (e, n) => L(n, 'SHOP_TRADE', { who: n.seat(e.seat), n: e.points }),
-  CHAIRMAN_GIFT: (e, n) => L(n, 'CHAIRMAN_GIFT', { who: n.seat(e.seat) }),
+  // 看得到送的是什么（本人、公开手牌）时写出卡名 / 道具名；私密下别人两者都是 null，只写获得赠礼
+  CHAIRMAN_GIFT: (e, n) =>
+    e.card !== null
+      ? L(n, 'CHAIRMAN_GIFT', { who: n.seat(e.seat), gift: n.card(e.card) }, 'gift')
+      : e.item !== null
+        ? L(n, 'CHAIRMAN_GIFT', { who: n.seat(e.seat), gift: n.item(e.item) }, 'gift')
+        : L(n, 'CHAIRMAN_GIFT', { who: n.seat(e.seat) }),
   ITEM_GAINED: (e, n) => L(n, 'ITEM_GAINED', { who: n.seat(e.seat), item: n.item(e.item), n: e.qty }),
   ITEM_LOST: (e, n) => L(n, 'ITEM_LOST', { who: n.seat(e.seat), item: n.item(e.item), n: e.qty }),
   ITEM_USED: (e, n) => L(n, 'ITEM_USED', { who: n.seat(e.seat), item: n.item(e.item) }),

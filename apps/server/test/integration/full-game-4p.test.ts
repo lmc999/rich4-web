@@ -62,9 +62,13 @@ describe('integration/full-game-4p', () => {
     // 只有打满 30 天的对局才要求批次数 > 100
     const reason = s.bots[0]!.over!.result.reason;
     expect(s.host.batches.length).toBeGreaterThan(reason === 'timeLimit' ? 100 : 40);
-    // ≥ 2 名真人的联机对局开局锁定私密手牌（net/room.ts effectiveHandVisibility）：去掉只给本人看的 cards / items 后
-    // 四人的终局视图一致；各自只看得到自己的手牌与背包
-    const strip = (v: GameView) => ({ ...v, players: v.players.map(({ cards: _c, items: _i, ...p }) => p) });
+    // ≥ 2 名真人的联机对局开局锁定私密手牌（net/room.ts effectiveHandVisibility）：去掉只给本人看的 cards / items，
+    // 以及按观察者裁剪的他人敌意（只保留「对观察者本人」一项，architecture §28.3）后四人的终局视图一致；
+    // 各自只看得到自己的手牌与背包
+    const strip = (v: GameView) => ({
+      ...v,
+      players: v.players.map(({ cards: _c, items: _i, hostility: _h, ...p }) => p),
+    });
     const views = s.bots.map((b) => canonicalJson(strip(b.view!)));
     expect(new Set(views).size).toBe(1);
     for (const [i, b] of s.bots.entries()) {

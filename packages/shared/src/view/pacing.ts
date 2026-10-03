@@ -5,8 +5,9 @@
  * 演出节奏 profile（房间设置 RoomSettings.pacing，默认 original）：
  * - compact：紧凑预算（M2 起的初版，按原版节奏粗估、M3/M10 实测调整）；原版皮肤的 FLIC 在里面加速或截取（playFit）。
  * - original：以原版 FLIC 原长为准——有 FLIC 的事件预算 = max(compact, FLIC 原长 + handler 里 FLIC 之外的等待 + 余量)，
- *   保证原版皮肤能按原速完整播完（playFit 的可用时长 = 预算 − 其他等待 ≥ FLIC 原长）；亮卡的事件（出卡、被动卡生效）
- *   按原版亮卡的 1.5 秒（CARD_SHOW_MS）放宽；其余事件与 compact 完全相同。original 的每一项都 ≥ compact。
+ *   保证原版皮肤能按原速完整播完（playFit 的可用时长 = 预算 − 其他等待 ≥ FLIC 原长）；亮卡的事件（出卡、被动卡生效、
+ *   卡片格与聖誕節得卡）按原版亮卡的 1.5 秒（CARD_SHOW_MS）放宽；命运按原版命运板（语音时长、加持消息框、0.8 秒停顿，
+ *   FATE_SHOW）放宽；其余事件与 compact 完全相同。original 的每一项都 ≥ compact。
  *
  * 调整预算只影响倒计时公平性与演出节奏，不影响规则。
  */
@@ -84,15 +85,138 @@ export interface CardShowTiming {
   readonly castMs: number;
   /** 被动卡生效（PASSIVE） */
   readonly passiveMs: number;
+  /** 得卡（CARD_GAINED，只限卡片格与聖誕節送卡，见 CARD_GAIN_SHOW_SOURCES） */
+  readonly gainMs: number;
 }
 
 export const CARD_SHOW_MS: Readonly<Record<PacingProfile, CardShowTiming>> = Object.freeze({
-  original: Object.freeze({ castMs: 1500, passiveMs: 1500 }),
-  compact: Object.freeze({ castMs: 1200, passiveMs: 950 }),
+  original: Object.freeze({ castMs: 1500, passiveMs: 1500, gainMs: 1500 }),
+  compact: Object.freeze({ castMs: 1200, passiveMs: 950, gainMs: 1200 }),
 });
 
 /** 亮卡之后 handler 的收尾等待（同步显示态、金额飘字） */
 export const CARD_SHOW_TAIL_MS = 100;
+
+// ───────────────────────── 得卡亮卡（原版时序） ─────────────────────────
+
+/**
+ * 得卡时亮大卡的来源：原版亮卡函数 fcn.00440bac 全 exe 10 个直接调用点里，得卡只有两处——卡片格（0x41ab89 先播 FLIC
+ * Data#495，0x41abfa 亮卡「得到%s！」）与聖誕節送卡（fcn.00450c16：0x450de8 镜头移到这位玩家 fcn.0041cc56(x,y,0)，
+ * 0x450e29 亮卡「聖誕節\n\n%s得到%s！」），都停 1.5 秒。其余得卡途径（魔法屋、福神、董事长赠品、抢夺、生日…）原版
+ * 只出消息框，不亮卡。
+ * @source docs/research/original-assets/ui.md §2.2（亮卡）；exe v2.06 0x41ab89–0x41ac13、0x450dc4–0x450e3c
+ */
+export const CARD_GAIN_SHOW_SOURCES = Object.freeze(['square', 'holiday'] as const);
+
+/** 这次得卡原版会不会亮大卡 */
+export function cardGainShows(source: string): boolean {
+  return (CARD_GAIN_SHOW_SOURCES as readonly string[]).includes(source);
+}
+
+/** 聖誕節送卡：亮卡前镜头移到得卡的人（fcn.0041cc56 的耗时未测，按 300 ms 估） */
+export const CARD_GAIN_FOCUS_MS = 300;
+
+/**
+ * 卡片格得卡 FLIC 之后的等待（亮卡 + 收尾）：两种节奏都按 original 的 1.5 秒预留——原版舞台的 FLIC 可用时长按一张
+ * 不分节奏的「FLIC 之外的等待」表扣除（客户端 game/fx/timings 的 ORIG_FLIC_WAITS），预留宽了 FLIC 只会更早压缩，
+ * 亮卡不会被预算截断
+ */
+const CARD_GAIN_AFTER_FLIC_MS = CARD_SHOW_MS.original.gainMs + CARD_SHOW_TAIL_MS;
+
+/** compact 节奏给卡片格得卡 FLIC 的时长（原长 994 ms 约 2 倍速） */
+const CARD_GAIN_FLIC_COMPACT_MS = 500;
+
+/** 得卡事件的 compact 预算：卡片格 = FLIC + 亮卡 + 余量；聖誕節 = 镜头 + 亮卡 + 收尾 + 余量；其余不亮卡 */
+function cardGainedCompact(e: GameEventOf<'CARD_GAINED'>): number {
+  if (e.source === 'square') return Math.max(700, CARD_GAIN_FLIC_COMPACT_MS + CARD_GAIN_AFTER_FLIC_MS + 100);
+  if (e.source === 'holiday') {
+    return Math.max(700, CARD_GAIN_FOCUS_MS + CARD_SHOW_MS.compact.gainMs + CARD_SHOW_TAIL_MS + 100);
+  }
+  return 700;
+}
+
+// ───────────────────────── 命运板（原版时序） ─────────────────────────
+
+/**
+ * 命运语音的时长（ms），下标 = 命运处理函数表下标 slot（第 k 条命运 k < 33 为 k，33–36 在地图 gm 1–3 为 k + 4·gm，
+ * 见客户端 eventText.fateVariantSlot）；语音为 Speaking.mkf #0185 + slot（文案开头的 #NNNN，fcn.0044e2e3 0x44e32a–0x44e375
+ * 解析后当场播放）。与 ORIGINAL_FLICS 记 FLIC 原长同一种做法：只是事实时长，服务器据此算命运板的停留预算。
+ * @source 素材包 manifest voice.0185–0233 的 durationMs（本机 v2.06 原版包，packId daa850ef3a455b4a）
+ */
+export const FATE_VOICE_MS: readonly number[] = Object.freeze([
+  2331, 2199, 2596, 3706, 3816, 3521, 1803, 1605, 2850, 2209, 1755, 2339, 2141, 2769, 2957, 3294, 2480, 1875, 2206,
+  3077, 1749, 1749, 1749, 1282, 1282, 1532, 1689, 1459, 1459, 1459, 1429, 2489, 2052,
+  // slot 33–36：台湾；37–40 大陆；41–44 日本；45–48 美国
+  2866, 2207, 2260, 2411, 2866, 2792, 2494, 2136, 2820, 1884, 2260, 2124, 2736, 2224, 2494, 2567,
+]);
+
+/** 命运板的节拍（1x，ms） */
+export interface FateShowTiming {
+  /** 命运板停留（original：等语音播完、不足 1.6 秒补足） */
+  readonly holdMs: number;
+  /** 加持消息框（没有加持为 0） */
+  readonly blessingMs: number;
+  /** 效果之后的停顿（original：0.8 秒） */
+  readonly tailMs: number;
+  /** handler 收尾（同步显示态、金额飘字） */
+  readonly endMs: number;
+}
+
+/**
+ * 原版命运板（fcn.0044c4a0）：板子出现 → fcn.00452c39(1600)（0x44c679）等语音播完、不足 1.6 秒补足 1.6 秒，任意鼠标键 /
+ * 按键放开即结束并停掉语音 → 处理函数参数 1 执行效果，有加持时重画地图后出 1.5 秒消息框「<神>保佑……」
+ * （fcn.0043f90f(0x489330, 1500)）→ fcn.00450f9a(800)（0x44c6af）再停 0.8 秒。
+ * compact 沿用初版的 2.25 秒（有加持时板子 1.35 秒 + 消息框 0.9 秒）+ 收尾 0.2 秒，总长不变。
+ * @source docs/research/events-from-exe.md；exe v2.06 0x44c4a0–0x44c6af
+ */
+export const FATE_SHOW = Object.freeze({
+  original: Object.freeze({ minHoldMs: 1600, blessingMs: 1500, tailMs: 800, endMs: 100 }),
+  compact: Object.freeze({ totalMs: 2250, blessingMs: 900, endMs: 200 }),
+});
+
+/** 一张命运（处理函数表下标 slot）的节拍；blessing：有没有加持消息框（FATE 事件的 blessing 不为 null） */
+export function fateShowMs(slot: number, blessing: boolean, profile: PacingProfile): FateShowTiming {
+  if (profile === 'original') {
+    const o = FATE_SHOW.original;
+    const voice = FATE_VOICE_MS[slot] ?? 0;
+    return {
+      holdMs: Math.max(o.minHoldMs, voice),
+      blessingMs: blessing ? o.blessingMs : 0,
+      tailMs: o.tailMs,
+      endMs: o.endMs,
+    };
+  }
+  const c = FATE_SHOW.compact;
+  return {
+    holdMs: blessing ? c.totalMs - c.blessingMs : c.totalMs,
+    blessingMs: blessing ? c.blessingMs : 0,
+    tailMs: 0,
+    endMs: c.endMs,
+  };
+}
+
+/** 命运编号 → 可能的处理函数表下标（33–36 按地图有四个；事件不带地图，预算取最长的一个） */
+const FATE_BY_MAP = { from: 33, to: 36 } as const;
+function fateSlots(id: number): number[] {
+  if (!Number.isInteger(id)) return [];
+  if (id < FATE_BY_MAP.from || id > FATE_BY_MAP.to) return [id];
+  return [0, 1, 2, 3].map((gm) => id + 4 * gm);
+}
+
+/** FATE 的 original 预算 = max(compact, 最长的命运板停留 + 加持消息框 + 0.8 秒 + 收尾 + 余量) */
+function fateOriginalBudget(e: GameEventOf<'FATE'>): number {
+  const blessing = e.blessing !== null && e.blessing !== undefined;
+  let longest = 0;
+  for (const slot of fateSlots(e.id)) {
+    const t = fateShowMs(slot, blessing, 'original');
+    longest = Math.max(longest, t.holdMs + t.blessingMs + t.tailMs + t.endMs);
+  }
+  if (longest === 0) {
+    const o = FATE_SHOW.original;
+    longest = o.minHoldMs + (blessing ? o.blessingMs : 0) + o.tailMs + o.endMs;
+  }
+  return Math.max(COMPACT_BUDGET_MS.FATE, longest + FLIC_SLACK_MS);
+}
 
 /** 一种节奏的完整预算表：以 GameEvent['type'] 为键穷举 */
 export type EventBudgetTable = { readonly [T in GameEventType]: EventBudget<T> };
@@ -143,8 +267,8 @@ export const COMPACT_BUDGET_MS = Object.freeze({
   RESEARCH_STARTED: 800,
   RESEARCH_DONE: 1000,
   RESEARCH_CANCELLED: 600,
-  // card
-  CARD_GAINED: 700,
+  // card（得卡：卡片格与聖誕節送卡亮大卡，见 CARD_GAIN_SHOW_SOURCES；其余 700）
+  CARD_GAINED: cardGainedCompact,
   CARD_LOST: 500,
   CARD_USED: 1400,
   CARD_NO_EFFECT: 800,
@@ -362,7 +486,8 @@ export const FLIC_SLACK_MS = 100;
  * 有原版 FLIC 的事件（design-draft §3.5 的对应表）。表里没有的事件 original = compact。
  * - HOLIDAY：送卡的节日即圣诞（513）；其余按烟火（482）预留——事件不带地图的节日 flags，没有 FLIC 的节日会多等不到 1 秒。
  * - PARACHUTE：事件不带角色号，按 12 个角色里最长的一段预留。
- * - CARD_GAINED / POINTS_GAINED：原版只在落到卡片格 / 点券格时播放（exe 调用点都在落点处理里）。
+ * - CARD_GAINED / POINTS_GAINED：原版只在落到卡片格 / 点券格时播放（exe 调用点都在落点处理里）；卡片格得卡 FLIC 之后
+ *   还要亮卡 1.5 秒（extraMs，见 CARD_GAIN_AFTER_FLIC_MS）。
  * - OBJECT_REMOVED：被踩中的地雷 / 路面炸弹（与 handlers/items.ts 的 removalOf → 'boom' 同一口径）。
  * - DICE_ROLLED：按实际掷出的颗数（遥控骰子只有 1 颗）；FLC 之外是持骰动作（按最多 9 帧）与落定停留（DICE_TIMING.original）；
  *   停留 / 乌龟不掷骰（dice 为空）没有预留。
@@ -375,7 +500,11 @@ const FLIC_RESERVES = {
     flic: (e) => (e.dice.length === 0 ? null : DICE_FLICS[Math.min(3, e.dice.length) as DiceCount]),
   },
   POINTS_GAINED: { extraMs: 0, flic: (e) => (e.source === 'square' ? ORIGINAL_FLICS.pointsGain : null) },
-  CARD_GAINED: { extraMs: 0, flic: (e) => (e.source === 'square' ? ORIGINAL_FLICS.cardGain : null) },
+  // 卡片格：FLIC 之后亮卡 1.5 秒 + 收尾（CARD_GAIN_AFTER_FLIC_MS）
+  CARD_GAINED: {
+    extraMs: CARD_GAIN_AFTER_FLIC_MS,
+    flic: (e) => (e.source === 'square' ? ORIGINAL_FLICS.cardGain : null),
+  },
   OBJECT_REMOVED: {
     extraMs: 0,
     flic: (e) =>
@@ -441,15 +570,31 @@ function originalOverrides(): { readonly [T in FlicEventType]: (e: GameEventOf<T
 const cardShowBudget = (type: 'CARD_USED' | 'PASSIVE', showMs: number): number =>
   Math.max(COMPACT_BUDGET_MS[type], showMs + CARD_SHOW_TAIL_MS + FLIC_SLACK_MS);
 
-/** original 节奏里按原版亮卡时长放宽的事件类型 */
-export const CARD_SHOW_EVENT_TYPES = Object.freeze(['CARD_USED', 'PASSIVE'] as const);
+/** 得卡的 original 预算：卡片格按 FLIC 原长 + 亮卡（FLIC 预留）；聖誕節 = 镜头 + 亮卡 1.5 秒 + 收尾 + 余量；其余同 compact */
+function cardGainedOriginal(e: GameEventOf<'CARD_GAINED'>): number {
+  if (e.source === 'holiday') {
+    return Math.max(
+      cardGainedCompact(e),
+      CARD_GAIN_FOCUS_MS + CARD_SHOW_MS.original.gainMs + CARD_SHOW_TAIL_MS + FLIC_SLACK_MS,
+    );
+  }
+  return originalBudget(e);
+}
 
-/** original 节奏：有 FLIC 预留的事件按原长放宽，亮卡的事件按原版 1.5 秒放宽，其余沿用 compact */
+/** original 节奏里按原版亮卡时长放宽的事件类型（得卡另在 FLIC 预留与聖誕節送卡里放宽） */
+export const CARD_SHOW_EVENT_TYPES = Object.freeze(['CARD_USED', 'PASSIVE', 'CARD_GAINED'] as const);
+
+/** original 节奏里按原版命运板时序（语音时长 + 加持消息框 + 0.8 秒）放宽的事件类型 */
+export const FATE_SHOW_EVENT_TYPES = Object.freeze(['FATE'] as const);
+
+/** original 节奏：有 FLIC 预留的事件按原长放宽，亮卡的事件按原版 1.5 秒放宽，命运按原版命运板，其余沿用 compact */
 export const ORIGINAL_BUDGET_MS: EventBudgetTable = Object.freeze({
   ...COMPACT_BUDGET_MS,
   ...originalOverrides(),
   CARD_USED: cardShowBudget('CARD_USED', CARD_SHOW_MS.original.castMs),
   PASSIVE: cardShowBudget('PASSIVE', CARD_SHOW_MS.original.passiveMs),
+  CARD_GAINED: cardGainedOriginal,
+  FATE: fateOriginalBudget,
 } satisfies EventBudgetTable);
 
 /** 按节奏取预算表：EVENT_BUDGET_MS[profile][type] */

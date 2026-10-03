@@ -88,6 +88,8 @@ describe('场景：买地 → 加盖 → 过路费（同街累加）', () => {
     sc.edit((s) => {
       s.lands[0]!.level = 2;
     });
+    // 直接跳到到期前一天再自然推进一天：整月自然推进时新闻 / 命运 / 魔法屋可能先把 L1 清掉（随机轨迹随规则变化）
+    sc.apply({ type: 'SYS_DEBUG', op: { op: 'setDate', date: 20050214 } });
     sc.until((s) => s.clock.date === 20050215 && s.pending[0]?.kind === 'TURN_MENU');
     const expired = sc.log.find((e) => e.type === 'TENURE_EXPIRED');
     expect(expired).toMatchObject({ lots: ['L1'] });

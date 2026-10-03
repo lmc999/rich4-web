@@ -385,10 +385,12 @@ describe('M6 神明与关押', () => {
     // 事件前、警车之后、事件后各一次
     expect(seq.indexOf('escort')).toBeGreaterThan(0);
     expect(seq.slice(seq.indexOf('escort')).filter((n) => n === 'syncWorld')).toHaveLength(2);
-    const free = { players: [{ seat: 1 as SeatIndex, set: { st: { ...st, jail: 0 }, node: 13 } }] };
+    // 获释不换节点（原版 0x40d184）：post 里没有 node，棋子留在关押格 14，不重新摆放
+    const free = { players: [{ seat: 1 as SeatIndex, set: { st: { ...st, jail: 0 }, returning: true } }] };
     const r = await run({ type: 'RELEASED', actor: { t: 'seat', seat: 1 }, from: 'jail', post: free });
     const rs = names(r.stage);
     expect(rs.slice(0, rs.indexOf('release')).filter((n) => n === 'syncWorld')).toHaveLength(2);
+    expect(r.calls.filter((c) => c[0] === 'placeActor')).toEqual([]);
   });
 
   it('RELEASED / BAIL：开门闪光', async () => {

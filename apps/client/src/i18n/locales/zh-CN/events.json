@@ -52,6 +52,7 @@
     "SHOP_OPENED": "{{who}} 走进百货公司",
     "SHOP_TRADE": "{{who}} 在百货公司交易（{{n}} 点券）",
     "CHAIRMAN_GIFT": "董事长 {{who}} 获得百货公司赠礼",
+    "CHAIRMAN_GIFT_gift": "董事长 {{who}} 获得百货公司赠礼：{{gift}}",
     "ITEM_GAINED": "{{who}} 获得 {{item}} ×{{n}}",
     "ITEM_LOST": "{{who}} 失去 {{item}} ×{{n}}",
     "ITEM_USED": "{{who}} 使用了 {{item}}",
@@ -170,10 +171,15 @@
     "cardUsed": "{{who}} 使用卡片",
     "cardPassive": "被动卡生效",
     "cardFizzle": "卡片没有效果",
+    "cardGained": "{{who}} 得到卡片",
     "cardShow": {
       "use": "{{who}}\n\n使用{{card}}",
       "passive": "{{who}}\n\n{{card}}生效！",
       "fizzle": "{{who}}\n\n{{card}}没有效果",
+      "gain": "{{who}}\n\n得到{{card}}！",
+      "gainHidden": "{{who}}\n\n得到一张卡片！",
+      "holiday": "圣诞节\n\n{{who}}得到{{card}}！",
+      "holidayHidden": "圣诞节\n\n{{who}}得到一张卡片！",
       "target": "→ {{target}}"
     },
     "target": "目标：{{target}}",

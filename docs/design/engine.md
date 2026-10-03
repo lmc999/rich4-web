@@ -239,7 +239,7 @@ export interface PlayerState {
   points: number;                    // uint16
   // 位置与行进
   placed: boolean; node: NodeId; prevNode: NodeId;
-  savedPrevNode: NodeId | null;      // 关押期间保存朝向，释放时恢复
+  savedPrevNode: NodeId | null;      // 已停用（0.5.0 起恒为 null，字段保留）：获释留在关押格、来路 = 关押格，见 §7.2 步骤 3
   vehicle: Vehicle; diceCount: 1 | 2 | 3;
   engineer: { days: number; restore: 'walk' | 'moto' | 'car' } | null;
   st: Counters2;
@@ -501,7 +501,10 @@ ROOT.step:
 3 tickActorDay：
      主阻碍 hotel/away/jail/hospital 执行 tick2：
        c==0 → 不变
-       c==0x80 → 置 0 并 release()：离开监狱或医院闸门、恢复 savedPrevNode 朝向、returning=true
+       c==0x80 → 置 0 并 release()：坐牢 / 住院不换节点，留在关押格（jailHold / hospitalHold），prevNode = 关押格
+                 （= 原版来路 0：下次起步在全部未封邻格里 rand15()%n 随机选，只有 1 个候选也消耗一次 fork），
+                 returning=true；旅馆原地、航空 / 出国回到原节点                                     @0x40d184、0x40bc10
+                 （被关时 applyConfinement 已把 node / prevNode 写成关押格 @0x43c34c / 0x43d9d9；期满、新闻 0、保释同路）
        否则 c-1；结果为 0 时改成 0x80
      若主阻碍都为 0，再对 hibernate/sleepwalk/tortoise 执行 tick2（关押期间不倒数）；stay 总是执行 tick2
      alliance.days--（到期解除；双方敌意各 −20×PI）；insuranceDays--；bankReject--；god.days--（到 0 离场，搭档刷出）

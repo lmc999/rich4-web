@@ -3,6 +3,9 @@
 // 场景走原版精灵路径（data-scene="classic"），全部用 DOM 备用控件（与程序化对话框同名的 data-testid）操作。
 // 1) 魔法屋 → 监狱保释 → 医院雇恶人（4 个真人；P1、P3 为手机横屏 844×390，量实际命中尺寸 ≥44px）：P1 在魔法屋对「现金最多的
 //    人」P2 施「坐牢 3 天」；P3 停在监狱保释格选 P2 → YES 保释；P4 停在医院保释格雇流氓；4 页 HUD 与服务器快照一致；
+// 1b) 获释位置（VERIFY V-M7，原版 0x40d184 获释不换节点）：2 个真人，P1 魔法屋把 P2 关进监狱、下一圈停在保释格保释他；P2 获释
+//    （RELEASED / RETURNED）后两页的 view 与棋盘上 P2 都在关押格 14、来路 = 14、不是关押外观；P2 下一回合强制岔路 0 往回走到 13
+//    （旧实现获释后来路固定为 13，只能往 15 走）；
 // 2) 拍卖卡四人竞价：P1 在 L1 出拍卖卡，P2（手机）/ P3 / P4 在原版拍卖厅并发竞价——出价后其他人的场景刷新价格与领先者，
 //    Q 版小人与领先描边在场；卖方 P1 与退出的 P2 看观战版原版拍卖厅（classic-auction-watch）；P3 成交；
 // 3) 公佈欄挂牌购买：P1 回合里点工具列 SALE → 原版公佈欄（回合菜单的原版场景套了 venues/b 的 ClassicBoardSheet）→
@@ -251,6 +254,97 @@ test('魔法屋施法坐牢 → 监狱保释 → 医院雇恶人：原版场景�
     expect(await logTypes(d)).toContain('VILLAIN_HIRED');
 
     await consistent(pages);
+    expectNoErrors(players);
+  } finally {
+    for (const p of players) await p.context.close();
+  }
+});
+
+/** 本页棋盘上 seat 的角色：所在格、是否可见、关押外观（两种渲染器同形的测试钩子） */
+async function actorOnBoard(
+  page: Page,
+  seat: number,
+): Promise<{ tile: number | null; visible: boolean; confined: string | null } | null> {
+  return page.evaluate((s) => {
+    // biome-ignore lint/suspicious/noExplicitAny: 测试钩子
+    const r = (window as any).__rich4?.renderer;
+    // biome-ignore lint/suspicious/noExplicitAny: 测试钩子
+    const a = r?.board.allActors().find((x: any) => x.seat === s);
+    if (!a) return null;
+    const c = a.currentStatus?.confined;
+    return { tile: a.tile, visible: a.root.visible, confined: c ? (typeof c === 'string' ? c : c.where) : null };
+  }, seat);
+}
+
+/** 本页 view 里 seat 的位置与关押计数 */
+async function seatPos(page: Page, seat: number): Promise<{ node: number; prevNode: number; jail: number }> {
+  return page.evaluate((s) => {
+    // biome-ignore lint/suspicious/noExplicitAny: 测试钩子
+    const v = (window as any).__rich4.store.game.getState().latest;
+    // biome-ignore lint/suspicious/noExplicitAny: 测试钩子
+    const p = v.players.find((x: any) => x.seat === s);
+    return { node: p.node, prevNode: p.prevNode, jail: p.st.jail };
+  }, seat);
+}
+
+test('获释留在关押格：魔法屋坐牢 → 保释 → P2 获释后仍在 14、来路 14，下一回合可往回走到 13', async ({ browser }) => {
+  test.setTimeout(180_000);
+  const players = [await classicPlayer(browser, 'P1', DESKTOP), await classicPlayer(browser, 'P2', DESKTOP)];
+  const pages = players.map((p) => p.page);
+  const [a, b] = pages as [Page, Page];
+  const HOLD = 14;
+  try {
+    const code = await createRoom(a, { map: 'test', timer: 'off' });
+    await joinRoom(b, code);
+    await pickCharacter(a, 9);
+    await pickCharacter(b, 4);
+    await setReady(b);
+    await startGame(a, pages);
+    for (const p of pages) await expect(p.getByTestId('classic-stage')).toBeVisible({ timeout: 30_000 });
+
+    // ── P1 在魔法屋对「现金最多的人」P2 施「坐牢 3 天」（P2 还没跳伞：直接落在监狱关押格 14） ──
+    await waitMyTurn(a);
+    await acted(a, () => debugAct(a, { op: 'setCash', seat: 1, cash: 900_000, deposit: null }));
+    await acted(a, () => debugAct(a, { op: 'forceNext', purpose: 'magicCond', values: [3] }));
+    await stepOnto(a, 0, 8, 7);
+    await waitDecision(a, ['MAGIC_CAST']);
+    await a.getByTestId('magic-effect-2').click();
+    await acted(a, () => a.getByTestId('magic-confirm').click());
+    await syncPages(pages, a);
+    expect(await seatPos(a, 1)).toMatchObject({ node: HOLD, prevNode: HOLD });
+    expect((await seatPos(a, 1)).jail).toBeGreaterThan(0);
+
+    // ── P2 受阻；P1 停在保释格 14 保释 P2 ──
+    await waitMyTurn(a);
+    await acted(a, () => debugAct(a, { op: 'setPoints', seat: 0, points: 400 }));
+    await stepOnto(a, 0, 15, 16);
+    await waitDecision(a, ['BAIL']);
+    await a.getByTestId('bail-seat-1').click();
+    await acted(a, () => a.getByTestId('bail-confirm').click());
+    await syncPages(pages, a);
+
+    // ── P2 的回合：获释、走回棋盘（不掷骰）→ 又轮到 P1：两页的 view 与棋盘上 P2 都还在关押格 14 ──
+    await waitMyTurn(a);
+    await syncPages(pages, a);
+    expect(await logTypes(a)).toEqual(expect.arrayContaining(['RELEASED', 'RETURNED']));
+    for (const p of pages) {
+      expect(await seatPos(p, 1)).toEqual({ node: HOLD, prevNode: HOLD, jail: 0 });
+      expect(await actorOnBoard(p, 1)).toEqual({ tile: HOLD, visible: true, confined: null });
+    }
+
+    // ── P1 走开（12 → 13 得点，无决策）；P2 的回合强制岔路 0：从 14 往回走到 13 ──
+    await stepOnto(a, 0, 12, 11);
+    await waitMyTurn(b);
+    await acted(b, () => debugAct(b, { op: 'forceNext', purpose: 'fork', values: [0] }));
+    await acted(b, () => debugAct(b, { op: 'forceNext', purpose: 'dice', values: [1] }));
+    await waitMyTurn(b);
+    await acted(b, () => b.getByTestId('action-roll').click());
+    await waitIdle(b);
+    await syncPages(pages, b);
+    for (const p of pages) {
+      expect(await seatPos(p, 1)).toMatchObject({ node: 13, prevNode: HOLD });
+      expect((await actorOnBoard(p, 1))?.tile).toBe(13);
+    }
     expectNoErrors(players);
   } finally {
     for (const p of players) await p.context.close();

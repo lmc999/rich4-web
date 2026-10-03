@@ -83,7 +83,7 @@ client：skin/（PackClient、FLC 播放器、皮肤选择与回退）
   - 未做（与本次反馈无关，记在这里）：原版按下 GO 后隐去 GO 钮（0x417ae2）、GO 钮默认在 (180,120) 且可拖动（0x47310c；fcn.00417623 里按下掩膜区 2 紫色边框只记下指针位置、置 [0x488ba2]=1（0x417ab1–0x417abd，应是拖动的起点），只有区 3 钮面才掷骰）；我们固定在视窗右下角、区 2 也算 GO，不能按时（原版此时隐去 GO）借用「停留」帧 2/3 作禁止态。
 
 ### 4.2 原版场景与对话框（替代现有 React 对话框的表现层）
-- 通用：YES/NO（Data#399 + 消息框 Data#476）、计算器数字输入（Panel#21，命中掩膜 Panel#22）、讲话框与头像表情（map#15–26）、卡片欄（Panel#11）、神明老虎机（Panel#67）、轮盘（Panel#68–71：航空/旅馆/购物中心/保险，按盘面核对）、新闻板与命运板（Panel#66 + 插图 Data#400–475；命运插图 Data#436–475 与各条命运的对应已从 exe 0x473dd8 读出、catalog 升为 exe（§6.1），客户端接回原版命运板之前仍整体回退程序化弹窗）、月结颁奖（Panel#25）、资产表（Panel#9）。
+- 通用：YES/NO（Data#399 + 消息框 Data#476）、计算器数字输入（Panel#21，命中掩膜 Panel#22）、讲话框与头像表情（map#15–26）、卡片欄（Panel#11）、神明老虎机（Panel#67）、轮盘（Panel#68–71：航空/旅馆/购物中心/保险，按盘面核对）、新闻板与命运板（Panel#66 + 插图 Data#400–475；命运插图 Data#436–475 与各条命运的对应已从 exe 0x473dd8 读出、catalog 升为 exe（§6.1）；2026-10-03 起客户端用原版命运板（`ui/classic/popups/FateBoard.tsx`，architecture §30））、得卡亮卡（卡片格 / 聖誕節，与出卡同一个亮卡版式）、月结颁奖（Panel#25）、资产表（Panel#9）。
 - 场所屏：银行与 ATM（Panel#23/24）、百货（Panel#10）、乐透投注与开奖（Panel#12/14–17）、魔法屋（Panel#18–20，区域掩膜 Panel#19）、拍卖（Panel#26）、股市（Panel#75/76）、公佈欄（Panel#73）、监狱/恶人/医院（Panel#63–65）、托管 AI（Panel#77）。
 - 目标选择：在棋盘视窗内用原版光标（Data#0 箭头、手形、准星）点选，同时保留可访问的 DOM 候选列表（隐藏在侧栏，E2E 使用）。
 - 亮卡（`ui/classic/popups/CardCast`，出卡 CARD_USED、被动卡 PASSIVE、没有效果 CARD_NO_EFFECT；exe 亮卡函数 fcn.00440bac，细节见 research/original-assets/ui.md §2.2）：

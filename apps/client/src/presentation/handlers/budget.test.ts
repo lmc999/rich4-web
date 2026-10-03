@@ -18,6 +18,7 @@ import { tx } from '../../i18n/tx';
 import { useRoomStore } from '../../store/roomStore';
 import { roomView } from '../../test/roomFixtures';
 import { selfPlay } from '../../test/selfPlay';
+import { registerClassicPopupProbe, usePopupStore } from '../../ui/popups/popupStore';
 import { BUDGET_TOLERANCE, EventPlayer } from '../EventPlayer';
 import { makeNames } from '../names';
 import type { BoardPort, EventHandler, HandlerMap, PresentationContext } from '../types';
@@ -442,22 +443,35 @@ describe.each(PACING_PROFILES)('原版舞台 OrigStage：handler 用时 ≤ EVEN
     const pack = buildFakeFlicPack();
     const bench = new StageBench({ profile, flics: pack, holidays });
     await bench.fake.flics!.ready;
+    // 原版皮肤：演出弹窗一律按原版画面打开（命运板、亮卡、卡片格 / 聖誕節得卡亮卡），按原版的节拍走
+    const off = registerClassicPopupProbe(() => true);
     let flics = 0;
-    for (const e of [...m6m7Events(), ...flicEvents()]) {
-      const { used } = await bench.run(e, view);
-      within(e, used, profile);
-      const f = eventFlicOf(e, {
-        map: { holidays: holidays.map((h) => ({ ...h, month: 1, day: 1, kind: 0 })) },
-        characterOf: (s) => bench.fake.host.characterOf(s),
-      });
-      if (!f) continue;
-      flics++;
-      const w = ORIG_FLIC_WAITS[f.type];
-      if (profile === 'original') {
-        expect(used, `${e.type} ${f.use}：FLIC 没有原速播完`).toBeGreaterThanOrEqual(
-          flicMs(f.timing) + w.before + w.after - 32,
-        );
+    const extra: GameEvent[] = [
+      { type: 'CARD_GAINED', seat: 0, card: 3, source: 'holiday' },
+      { type: 'CARD_GAINED', seat: 1, card: null, source: 'square' },
+      { type: 'FATE', seat: 0, id: 4, amount: 1000, blessing: 'high' },
+      { type: 'FATE', seat: 0, id: 35, amount: null, blessing: null },
+    ];
+    try {
+      for (const e of [...m6m7Events(), ...flicEvents(), ...extra]) {
+        const { used } = await bench.run(e, view);
+        within(e, used, profile);
+        const f = eventFlicOf(e, {
+          map: { holidays: holidays.map((h) => ({ ...h, month: 1, day: 1, kind: 0 })) },
+          characterOf: (s) => bench.fake.host.characterOf(s),
+        });
+        if (!f) continue;
+        flics++;
+        const w = ORIG_FLIC_WAITS[f.type];
+        if (profile === 'original') {
+          expect(used, `${e.type} ${f.use}：FLIC 没有原速播完`).toBeGreaterThanOrEqual(
+            flicMs(f.timing) + w.before + w.after - 32,
+          );
+        }
       }
+    } finally {
+      off();
+      usePopupStore.getState().clear();
     }
     expect(flics).toBeGreaterThan(25);
     // FLIC 确实经 flic-map 载入并播放了（不是空转回退），同步音效经 ctx.audio 放出

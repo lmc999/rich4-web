@@ -66,16 +66,25 @@ function refreshQuota(ctx: Ctx, p: PlayerState): void {
   });
 }
 
-/** 关押类释放：搬到保释格、恢复进关押前的朝向、本回合走回棋盘（原版 +0x15|=0x10） */
+/**
+ * 关押类释放：本回合走回棋盘（原版 +0x15|=0x10）。
+ * 坐牢 / 住院不换节点：人留在关押格（jailHold / hospitalHold，被关时 applyConfinement 写入），来路写成关押格本身——
+ * 等价于原版来路 0：下一次起步时 forwardCandidates 不排除任何邻格，在全部未封邻格里 rand15() % n 随机选
+ * （只有 1 个候选也照样消耗一次 fork 随机数）。台湾监狱 1、医院 23 因此沿支线走出来，环路上的医院（大陆 63 等）两个方向都可能。
+ * @source exe v2.06 0x40d184（获释：只置 +0x15 bit4、按景观→关押格算朝向，不改节点 +0x0c 与来路 +0x0e（VA 0x49391c / 0x49391e）；
+ *         新闻 0、保释同样走这里；偏移按玩家记录基址 0x493910、步长 0x68 计，与 +0x15、计数 +0x32 同一记法）；
+ *         0x43c34c / 0x43d9d9（被关时节点写成关押格）、0x43c359 / 0x43d9e6（来路写 0）；
+ *         0x40bc10–0x40bc89（起步选路：邻格 ≠ 来路且未封 → rand() % n，0 个候选才掉头）
+ */
 function release(ctx: Ctx, p: PlayerState, where: ConfineWhere): void {
-  const idx = ctx.map.index;
   if (where === 'jail' || where === 'hospital') {
-    const gate = where === 'jail' ? idx.jailGate : idx.hospitalGate;
-    p.node = gate;
-    const nb = ctx.map.neighbors(gate);
-    p.prevNode = p.savedPrevNode !== null && nb.includes(p.savedPrevNode) ? p.savedPrevNode : (nb[0] ?? gate);
+    const idx = ctx.map.index;
+    const hold = where === 'jail' ? idx.jailHold : idx.hospitalHold;
+    p.node = hold;
+    p.prevNode = hold;
   }
   // hotel / away 的去向属于 M4 / M7（旅馆原地、航空与出国回到原节点）
+  // savedPrevNode 自 0.5.0 起不再写入；旧快照里关押前保存的值在这里清掉
   p.savedPrevNode = null;
   p.returning = true;
 }

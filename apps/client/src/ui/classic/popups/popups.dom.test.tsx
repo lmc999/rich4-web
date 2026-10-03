@@ -1,6 +1,7 @@
 // 原版弹窗（client-dom，original-skin.md §4.2 通用、§5 A11）：
-// - 演出弹窗按素材逐个判定：新闻板（含插图键）、命运板（程序化插图）、神明老虎机（滚动后定格）、终局排名；缺素材 / 没有原版
-//   画面的种类（出卡、魔法屋）整体用程序化弹窗；乐透开奖交给场所组的开关组件（不在经典舞台里时画程序化弹窗）；
+// - 演出弹窗按素材逐个判定：新闻板（含插图键）、命运板（插图表 0x473dd8，详见 ./eventCards.dom.test）、神明老虎机（滚动后
+//   定格）、终局排名、出卡亮卡、魔法屋消息框；缺素材时整体用程序化弹窗；乐透开奖交给场所组的开关组件（不在经典舞台里时画
+//   程序化弹窗）；
 // - 事件后演出：FEE_PAID / COMPANY_FEE 的转盘种类与停格、月结名次；显示态日志推进时弹出，instant 不弹；
 // - 工具列打开的原版界面：info 面板 → 原版资产表（翻页、切换玩家、EXIT）；托管设置 → 原版托管对话框（提交 game:autopilot）；
 //   素材不可用时不接管；
@@ -137,9 +138,10 @@ function Host({ current }: { current: OpenPopup | null }): ReactNode {
 }
 
 describe('演出弹窗：原版 / 程序化逐个判定', () => {
-  it('素材键：新闻带插图键、老虎机与神明小像、终局排名；命运（插图未核实）与其余种类没有原版画面', () => {
+  it('素材键：新闻带插图键、命运板带插图键（表 0x473dd8）、老虎机与神明小像、终局排名、亮卡、魔法屋消息框', () => {
     expect(popupKeys(open(news))).toEqual(['ui.newsBoard', 'illustration.news.11']);
-    expect(popupKeys(open(fate))).toBeNull();
+    // 命运 25 → Data#458 → illustration.fate.22
+    expect(popupKeys(open(fate))).toEqual(['ui.newsBoard', 'illustration.fate.22']);
     expect(popupKeys(open(god))).toEqual(['ui.godSlot', 'ui.common']);
     expect(popupKeys(open({ ...god, slot: null }))).toEqual(['ui.common', 'venue.assets.screen']);
     const cast = open({
@@ -154,8 +156,8 @@ describe('演出弹窗：原版 / 程序化逐个判定', () => {
     });
     expect(popupKeys(cast)).toEqual(['ui.common', 'card.17']);
     const magic = open({ kind: 'magic', caster: player, title: '魔法', line: '现金全部存入', targets: [] });
-    expect(popupKeys(magic)).toBeNull();
-    expect(classicPopupReady(magic)).toBe(false);
+    expect(popupKeys(magic)).toEqual(['ui.common']);
+    expect(classicPopupReady(magic)).toBe(true);
   });
 
   it('新闻：原版新闻板（data-news、插图框、打字机标题、受影响玩家），根元素 testid=popup 与 data-kind', () => {
@@ -180,13 +182,21 @@ describe('演出弹窗：原版 / 程序化逐个判定', () => {
     expect(screen.queryByTestId('news-popup')).toBeNull();
   });
 
-  it('回归：命运插图置信度 guess → 整个命运弹窗用程序化版本（不在原版紫板上拼程序化插图）', () => {
-    expect(popupKeys(open(fate))).toBeNull();
-    expect(classicPopupReady(open(fate))).toBe(false);
+  it('命运：原版命运板（紫板 + 插图），不再回退程序化翻面卡；插图不在素材包里才整体用程序化版本', () => {
+    expect(classicPopupReady(open(fate))).toBe(true);
+    const { unmount } = render(<Host current={open(fate)} />);
+    const board = screen.getByTestId('fate-popup');
+    expect(board.closest('[data-scene="classic"]')).not.toBeNull();
+    expect(board.querySelector('[data-sprite="ui.newsBoard/1"]')).not.toBeNull();
+    // 插图框（这里的假素材仓库没有绑定素材包客户端，整图取不到 URL，先画白框；取到时的画法见 eventCards.dom.test）
+    expect(board.querySelector('[data-asset-key="illustration.fate.22"]')).not.toBeNull();
+    expect(screen.queryByTestId('legacy-popup')).toBeNull();
+    unmount();
+    const keys = Object.keys(a11FakeSheets());
+    resetSkinStoreForTest({ client: a11PackClient(keys) });
     render(<Host current={open(fate)} />);
     expect(screen.getByTestId('legacy-popup')).toHaveAttribute('data-kind', 'fate');
     expect(screen.queryByTestId('fate-art')).toBeNull();
-    expect(document.querySelector('[data-scene="classic"]')).toBeNull();
   });
 
   it('老虎机：3 位机身，滚轮滚动后从左到右定格在 1 2 3；拉杆先下后上', async () => {
@@ -275,11 +285,14 @@ describe('演出弹窗：原版 / 程序化逐个判定', () => {
     expect(pop).not.toHaveTextContent('让对手立刻入狱');
   });
 
-  it('魔法屋：程序化弹窗；乐透开奖交给场所组的开关（不在经典舞台里 → 程序化）', () => {
+  it('魔法屋：宝石消息框（原版魔法屋的结果用通用消息框）；乐透开奖交给场所组的开关（不在经典舞台里 → 程序化）', () => {
     const { rerender } = render(
       <Host current={open({ kind: 'magic', caster: player, title: '魔法', line: 'x', targets: [] })} />,
     );
-    expect(screen.getByTestId('legacy-popup')).toHaveAttribute('data-kind', 'magic');
+    const magic = screen.getByTestId('magic-popup');
+    expect(magic.closest('[data-scene="classic"]')).toHaveAttribute('data-kind', 'magic');
+    expect(magic.querySelector('[data-frame="ui.common/5"]')).not.toBeNull();
+    expect(screen.queryByTestId('legacy-popup')).toBeNull();
     rerender(
       <Host current={open({ kind: 'lottery', title: '乐透开奖', number: 5, winner: null, subtitle: '无人中奖' })} />,
     );
@@ -489,9 +502,9 @@ describe('亮卡：卡片 id → 素材键 card.<k> → Data#(529+k) 的插画�
     await bindCardPack();
     const p = open(castSpec(6, 'cast'));
     const { unmount } = render(<Host current={p} />);
-    // 素材就绪：会用原版画面；没有原版画面的种类（魔法屋）不会
+    // 素材就绪：会用原版画面；没有原版画面的种类（乐透开奖由场所组自己判定）不会
     expect(opensClassic(castSpec(6, 'cast'))).toBe(true);
-    expect(opensClassic({ kind: 'magic', caster: player, title: '魔法', line: 'x', targets: [] })).toBe(false);
+    expect(opensClassic({ kind: 'lottery', title: '乐透', number: 1, winner: null, subtitle: '' })).toBe(false);
     expect(usePopupStore.getState().classicShown).toEqual({ popupId: p.popupId, kind: 'cardCast' });
     act(() => usePopupStore.getState().close(p.popupId));
     expect(usePopupStore.getState().classicShown).toBeNull();

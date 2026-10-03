@@ -1,8 +1,8 @@
-// 原版新闻板（original-skin.md §4.2 通用；ui.md §2.3 Panel#66 图0 + 插图 Data#400–435）：板面 440×480 贴在舞台 (0,0)
+// 原版新闻板（original-skin.md §4.2 通用；ui.md §2.3 Panel#66 图0 + 插图 Data#400–435）：板面 440×480 不透明贴在舞台 (0,0)
+// （下面垫黑：原版整张拷贝，素材包抠掉的 RGB 0 像素原版是黑色，见 layout.ts 的 BOARD_UNDERLAY）
 // （盖住工具列与棋盘视窗，资料栏与日历照常可见），插图框 (25,44) 388×251，下方写分类、标题（打字机）、内文与受影响玩家。
-// 插图 Data#400+i = illustration.news.<i>。
-// 命运板（Panel#66 图1 紫板 + 命运插图 Data#436–475）暂不接：命运插图与 37 条命运的对应未核实（catalog 置信度 guess），
-// 按「guess 整体回退」由 ClassicPopupHost 交给程序化 FatePopup，不在原版板面上拼程序化插图。
+// 插图 Data#400+i = illustration.news.<i>（exe 0x44a200 lea edi,[ebx+0x190]）。
+// 命运板（同一张 Panel#66 的图1 紫板 + 命运插图表 0x473dd8）见 ./FateBoard。
 // data-testid 与程序化 NewsPopup 相同（news-popup[data-news]、news-headline、news-affected…）。
 import type { ReactNode } from 'react';
 import { useTx } from '../../../i18n/tx';
@@ -12,7 +12,7 @@ import type { AffectedRow, NewsPopupSpec } from '../../popups/popupStore';
 import { classicText, TEXT } from '../common/textStyles';
 import { useSceneImage } from '../dialogs/parts';
 import { Sprite } from '../Sprite';
-import { NEWS_BOARD, NEWS_SHEET, newsArtKey } from './layout';
+import { BOARD_UNDERLAY, NEWS_BOARD, NEWS_SHEET, newsArtKey } from './layout';
 import pp from './popups.module.css';
 
 function Affected({ rows }: { rows: readonly AffectedRow[] }): ReactNode {
@@ -55,6 +55,11 @@ export function NewsBoard({ spec, ms }: { spec: NewsPopupSpec; ms: number }): Re
       data-news={spec.id}
       aria-label={t('events:popup.news')}
     >
+      <span
+        className={pp.underlay}
+        style={{ left: 0, top: 0, width: NEWS_BOARD.w, height: NEWS_BOARD.h, background: BOARD_UNDERLAY }}
+        aria-hidden="true"
+      />
       <Sprite sheet={NEWS_SHEET} frame={0} x={0} y={0} origin="topLeft" />
       {img ? (
         <span

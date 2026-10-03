@@ -1,5 +1,7 @@
-// 原版描边字（ui.md §4 字体结论）：原版用 GDI 的「細明體」逐字 TextOutA，样式位 bit0 先用边框色描一圈再画正文、
-// bit1 粗体、bit2 正文偏移 1px 形成阴影。网页里用 8 方向 1px 的 text-shadow 模拟 bit0、1px 右下阴影模拟 bit2，
+// 原版描边字（ui.md §4 字体结论）：原版用 GDI 的「細明體」逐字 TextOutA。按 DrawText 路径 fcn.0044e2e3 的反汇编
+// （0x44e458–0x44e4f6）：样式位 bit0 = 先在 (1,1) 用边框色画一遍（右下阴影）、正文在原位，bit1 粗体，bit2 = 绕 (1,1) 的
+// 4 方向描边、正文偏移 (1,1)（早先这里把 bit0 / bit2 写反了；TextOut 路径 fcn.0044e0f6 未逐字核对）。网页里用 8 方向 1px 的
+// text-shadow 模拟描边、1px 右下阴影模拟阴影，
 // 字体栈与原版主题同一份（skin/theme 的 ORIGINAL_FONT_STACK：local 細明體 → Noto Serif TC…）。
 // 字号以舞台逻辑像素计（场景整体随舞台缩放），常用档位取原版调用分布里最多的几档：12 / 15 / 16 / 20 px。
 import type { CSSProperties } from 'react';
@@ -12,7 +14,7 @@ export const CLASSIC_FONT = `var(--classic-font, ${ORIGINAL_FONT_STACK})`;
 export const CLASSIC_FONT_SIZES = [12, 15, 16, 20, 24, 28] as const;
 export type ClassicFontSize = (typeof CLASSIC_FONT_SIZES)[number];
 
-/** 8 方向描边：(±w, 0)、(0, ±w)、(±w, ±w) 各一层，模拟 GDI「先用边框色描一圈」 */
+/** 8 方向描边：(±w, 0)、(0, ±w)、(±w, ±w) 各一层，模拟 GDI 的描边（样式 bit2） */
 export function outlineShadow(color = '#000', w = 1): string {
   const out: string[] = [];
   for (const dy of [-w, 0, w]) {
@@ -24,7 +26,7 @@ export function outlineShadow(color = '#000', w = 1): string {
   return out.join(', ');
 }
 
-/** bit2：正文右下偏移 1px 的阴影 */
+/** 右下 1px 的阴影（样式 bit0：先在 (1,1) 画一遍边框色） */
 export function dropShadow(color = '#000', d = 1): string {
   return `${d}px ${d}px 0 ${color}`;
 }

@@ -12,7 +12,8 @@ import type { GameState } from '../types/state';
  *   建设 C5（22、23）；股票下标 0..4。主环路 1..24 顺时针。
  * - 环路式医院：20 = 保释格 = 关押格（同大陆 63、日本 55、美国 85 / 118）；
  * - 台湾式监狱：保释格 16 → 支线 25（封路）→ 关押格 26（同台湾 12→1、大陆 28→144、日本 78→84）。
- * 释放方向、关押格放置规则都属于 VERIFY V-M7（待用户在原版核实）：这里只锁定现状。
+ * 获释位置与方向按 exe 核实（VERIFY V-M7，v2.06 0x40d184 / 0x40bc10）：获释不换节点、留在关押格，来路 = 关押格（原版写 0），
+ * 下一次起步在全部未封邻格里随机选；关押格放置规则（放物件、跳伞落点）仍待核实，这里只锁定现状。
  */
 let registry: DataRegistry | null = null;
 function industriesRegistry(): DataRegistry {
@@ -38,10 +39,9 @@ function chairman(s: GameState, stock: number, seat: SeatIndex = 1): void {
   st.chairman = seat;
 }
 
-/** 与 flow/confine.ts applyConfinement 相同：首次关押保存来路，棋子搬到关押格 */
+/** 与 flow/confine.ts applyConfinement 相同：棋子搬到关押格，来路写成关押格本身 */
 function confine(s: GameState, seat: SeatIndex, where: 'hospital' | 'jail', days: number, hold: number): void {
   const p = s.players[seat]!;
-  p.savedPrevNode = p.prevNode;
   p.st[where] = days;
   p.node = hold;
   p.prevNode = hold;
@@ -154,45 +154,57 @@ describe('test-industries：各行业的收费与事件路径', () => {
   });
 });
 
-describe('test-industries：关押结构与释放方向（⚑V-M7 待核实，锁定现状）', () => {
-  it('环路式医院 20：来路与保释格不相邻 → prevNode 取 nb[0] = 19，出院后第一步走向 21', () => {
+describe('test-industries：关押结构与释放方向（V-M7：exe v2.06 0x40d184 / 0x40bc10）', () => {
+  /** 关押前站在 at（来路 prev）的 0 号住院 1 天，推进到获释后的回合菜单 */
+  function releasedFromLoopHospital(at: number, prev: number) {
     const sc = industries()
       .untilMenu(1)
       .edit((s) => {
-        s.players[0]!.node = 5;
-        s.players[0]!.prevNode = 4;
+        s.players[0]!.node = at;
+        s.players[0]!.prevNode = prev;
         confine(s, 0, 'hospital', 1, 20);
       });
     untilReleasedMenu(sc, 0);
-    expect(sc.player(0)).toMatchObject({ node: 20, prevNode: 19, savedPrevNode: null });
-    sc.force('dice', 1).roll(0);
-    expect(sc.player(0).node).toBe(21);
+    return sc;
+  }
+
+  it('环路式医院 20：获释留在关押格，node = prevNode = 20（来路相当于原版 0），关押前的来路不影响', () => {
+    for (const [at, prev] of [
+      [5, 4],
+      [22, 21],
+    ] as const) {
+      const sc = releasedFromLoopHospital(at, prev);
+      expect(sc.event('RETURNED')).toMatchObject({ seat: 0, node: 20 });
+      expect(sc.player(0)).toMatchObject({ node: 20, prevNode: 20, savedPrevNode: null, returning: false });
+    }
   });
 
-  it('环路式医院 20：关押前的来路恰好与保释格相邻时沿用它（22 来自 21 → 出院后走向 19）', () => {
-    const sc = industries()
-      .untilMenu(1)
-      .edit((s) => {
-        s.players[0]!.node = 22;
-        s.players[0]!.prevNode = 21;
-        confine(s, 0, 'hospital', 1, 20);
-      });
-    untilReleasedMenu(sc, 0);
-    expect(sc.player(0)).toMatchObject({ node: 20, prevNode: 21 });
-    sc.force('dice', 1).roll(0);
-    expect(sc.player(0).node).toBe(19);
+  it('环路式医院 20：出院后第一步在两个邻格里随机选（fork 0 → 19，fork 1 → 21）', () => {
+    for (const [fork, to] of [
+      [0, 19],
+      [1, 21],
+    ] as const) {
+      const sc = releasedFromLoopHospital(5, 4);
+      sc.force('fork', fork).force('dice', 1).roll(0);
+      expect(sc.player(0)).toMatchObject({ node: to, prevNode: 20 });
+      expect(sc.state.secret.debugQueue).toEqual([]);
+    }
   });
 
-  it('台湾式监狱：命运 33 关进支线尽头 26；获释搬到保释格 16，prevNode = nb[0] = 15，走向 17，永不进支线', () => {
+  it('台湾式监狱：命运 33 关进支线尽头 26；获释仍在 26，下一步沿支线 26 → 25 → 保释格 16 走出来', () => {
     const sc = industries();
     sc.stackDeck('fate', [33]).teleport(0, 12, 11).force('dice', 1).roll(0);
     expect(sc.event('FATE')).toMatchObject({ seat: 0, id: 33 });
     expect(sc.event('CONFINED')).toMatchObject({ where: 'jail', days: 3 });
-    expect(sc.player(0)).toMatchObject({ node: 26, prevNode: 26, savedPrevNode: 12 });
+    expect(sc.player(0)).toMatchObject({ node: 26, prevNode: 26, savedPrevNode: null });
     untilReleasedMenu(sc, 0);
-    expect(sc.player(0)).toMatchObject({ node: 16, prevNode: 15 });
-    sc.force('dice', 1).roll(0);
-    expect(sc.player(0).node).toBe(17);
+    expect(sc.log.findLast((e) => e.type === 'RETURNED')).toMatchObject({ seat: 0, node: 26 });
+    expect(sc.player(0)).toMatchObject({ node: 26, prevNode: 26 });
+    // 关押格只有一个邻格：照样消耗一次 fork 随机数（强制值被取走）
+    sc.force('fork', 0).force('dice', 2).roll(0);
+    expect(sc.state.secret.debugQueue).toEqual([]);
+    expect(sc.event('MOVE_SEGMENT')).toMatchObject({ path: [25, 16] });
+    expect(sc.player(0)).toMatchObject({ node: 16, prevNode: 25 });
   });
 
   it('环路上的关押格：被关的人不算「在棋盘上」，路过的人可以停在同一格并被问保释', () => {

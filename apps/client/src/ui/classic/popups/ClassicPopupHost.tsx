@@ -1,24 +1,27 @@
 // 原版皮肤的弹窗宿主（original-skin.md §4.2 通用；由 ui/popups/PopupLayer 在经典布局里懒加载挂载）：
-// 1) 演出弹窗（popupStore）：新闻 → 新闻板、神明 → 老虎机 / 神明消息框、终局 → 排名画面；命运沿用程序化弹窗（命运插图
-//    Data#436–475 与各条命运的对应未核实，guess 整体回退）；
-//    出卡 → 卡片插画 + 消息框；乐透开奖交给场所组的 ClassicLotteryDraw（venues/a）；魔法屋沿用程序化弹窗（原版魔法屋
-//    属于场所组）。每个弹窗按素材判定一次：
+// 1) 演出弹窗（popupStore）：新闻 → 新闻板、命运 → 命运板（Panel#66 图1 + 命运插图表 exe 0x473dd8 选的插图，加持另出
+//    消息框）、神明 → 老虎机 / 神明消息框、终局 → 排名画面；出卡、被动卡、卡片格与聖誕節得卡 → 卡片插画 + 消息框（私密手牌下
+//    别人的得卡只有消息框）；魔法屋点名与施法 → 宝石消息框（原版魔法屋的结果用通用消息框）；乐透开奖交给场所组的
+//    ClassicLotteryDraw（venues/a）。每个弹窗按素材判定一次：
 //    所需逻辑键全部就绪（sceneKeysStatus = ready）才用原版画面，否则整个弹窗用程序化版本（legacy），不半原版半程序化；
 //    挂载时把这个判定登记给 handler（popupStore.opensClassic：原版亮卡不叠网页版的气泡、粒子与光束），正以原版画面显示的
-//    弹窗记在 popupStore.classicShown（原版亮卡期间缺省位置的 toast 暂缓）；亮卡照原版任意鼠标键 / 按键放开就结束（anyInputSkips）；
+//    弹窗记在 popupStore.classicShown（原版亮卡期间缺省位置的 toast 暂缓）；亮卡与命运板照原版任意鼠标键 / 按键放开就结束
+//    （anyInputSkips；原版亮卡 fcn.00450f9a、命运板 fcn.00452c39 都没有最短时间）；新闻板、命运板盖着工具列，板面上接住
+//    指针、暂停经典快捷键（boardShield），点板子不会点到下面看不见的工具列钮；
 // 2) 事件后演出：轮盘、月结颁奖（./eventPopups，监听显示态日志）；
 // 3) 工具列打开的原版界面：资产表（工具列「查询」→ uiStore 打开 info 面板时改开原版资产表）、托管设置
 //    （openTrusteeSettings → 改开原版托管对话框）、存读档（工具列 LOAD / SAVE 经 ./screenRequests 请求 → 原版风格的 Data#479 窗）。
 //    素材不可用时不接管，照旧打开程序化面板 / 对话框；精灵还在加载时等它就绪（有上限）再开原版界面。
 //    开原版界面时收起系统菜单（closeSystemMenu）：菜单是挂在 body 上的模态框，盖在经典舞台之上，托管设置又是从菜单里
 //    打开的——不收起的话原版托管画面被菜单挡住、点不到（程序化对话框同样挂在 body 上，照旧叠在菜单之上）。
-// 挂载时（空闲时）预取这些弹窗与界面的精灵，演出出现时通常已就绪；亮卡要用的消息框图集页（ui.common）直接下载位图，
-// 再低优先级逐张预取 30 张卡片插画（手牌里看得到的在前）：亮卡只停 1.2–1.5 秒，插画或消息框要是等弹窗出现才下载，
-// 慢网络下整段都是空框、字浮在棋盘上（出卡人、别的玩家、观战者都一样）。
+// 挂载时（空闲时）预取这些弹窗与界面的精灵，演出出现时通常已就绪；亮卡要用的消息框图集页（ui.common）与新闻 / 命运板的
+// 图集页（ui.newsBoard）直接下载位图，再低优先级逐张预取 30 张卡片插画（手牌里看得到的在前）、本图会用到的命运插图与
+// 36 张新闻插图：亮卡只停 1.2–1.5 秒、命运板 1.6–3.8 秒，插画或板面要是等弹窗出现才下载，慢网络下整段都是空框、字浮在
+// 棋盘上（出卡人、别的玩家、观战者都一样）。
 import type { MapIndex } from '@rich4/shared/data';
 import { CARD_IDS, type CardId, type SeatIndex } from '@rich4/shared/engine';
 import type { GameView } from '@rich4/shared/view';
-import { type ReactNode, useEffect, useLayoutEffect, useState } from 'react';
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { currentSeat, useGameStore } from '../../../store/gameStore';
 import { mySeat, useRoomStore } from '../../../store/roomStore';
 import { useUiStore } from '../../../store/uiStore';
@@ -33,21 +36,26 @@ import { ClassicLotteryDraw } from '../venues/a/LotteryDraw';
 import { ASSETS_KEYS, AssetSheet } from './AssetSheet';
 import { CardCast } from './CardCast';
 import { EventPopupLayer, useEventPopupWatcher } from './eventPopups';
+import { FateBlessingBox, FateBoard, fateSlotOf } from './FateBoard';
 import { GodPopup } from './GodPopup';
 import {
   ASSETS_SHEET,
   AUTOPLAY_SHEET,
   COMMON_SHEET,
   FACE_SHEET,
+  FATE_BOARD,
+  fateArtKey,
   MONTHLY_SHEET,
+  NEWS_BOARD,
   NEWS_SHEET,
   newsArtKey,
   SAVELOAD_SHEET,
   SLOT_SHEET,
   WHEELS,
 } from './layout';
+import { MagicBox } from './MagicBox';
 import { NewsBoard } from './NewsBoard';
-import { PopupScene } from './PopupScene';
+import { PopupScene, type SceneRect } from './PopupScene';
 import { Ranking } from './Ranking';
 import { SAVELOAD_KEYS, type SaveLoadMode, SaveLoadScreen } from './SaveLoadScreen';
 import { registerClassicScreenHandler } from './screenRequests';
@@ -77,17 +85,43 @@ export function cardArtPrefetchOrder(view: GameView | null): CardId[] {
 /** 同时在下载的卡片插画张数（后台预取，不和棋盘素材抢带宽） */
 export const CARD_ART_PREFETCH_CONCURRENCY = 2;
 
-/** 按顺序预取卡片插画（alive 为 false 时停下）；素材包里没有的键跳过 */
-export async function prefetchCardArt(cards: readonly CardId[], alive: () => boolean): Promise<void> {
+/** 按顺序低优先级预取整图（alive 为 false 时停下，同时 CARD_ART_PREFETCH_CONCURRENCY 张）；素材包里没有的键跳过 */
+export async function prefetchImageKeys(keys: readonly string[], alive: () => boolean): Promise<void> {
   let next = 0;
   const worker = async (): Promise<void> => {
-    while (alive() && next < cards.length) {
-      const card = cards[next++]!;
-      await preloadClassicImage(cardArtKey(card));
+    while (alive() && next < keys.length) {
+      const key = keys[next++]!;
+      await preloadClassicImage(key);
     }
   };
   await Promise.all(Array.from({ length: CARD_ART_PREFETCH_CONCURRENCY }, worker));
 }
+
+/** 按顺序预取卡片插画（alive 为 false 时停下）；素材包里没有的键跳过 */
+export async function prefetchCardArt(cards: readonly CardId[], alive: () => boolean): Promise<void> {
+  await prefetchImageKeys(
+    cards.map((c) => cardArtKey(c)),
+    alive,
+  );
+}
+
+/** 第 33 条起的命运按地图换插图（与 presentation/eventText 的 FATE_BY_MAP_FROM 相同） */
+const FATE_BY_MAP_FROM = 33;
+const FATE_COUNT = 37;
+
+/**
+ * 这张地图会用到的命运插图键（去重，按命运编号）：k < 33 用表[k]，33–36 用表[k + 4·gm]（gm 不是 1–3 时按台湾）。
+ * 慢网络下命运板要是等弹窗出现才下载插图，板上的白框会空一阵。
+ */
+export function fateArtPrefetchKeys(globalMapId: number | null | undefined): string[] {
+  const gm = globalMapId === 1 || globalMapId === 2 || globalMapId === 3 ? globalMapId : 0;
+  const out = new Set<string>();
+  for (let k = 0; k < FATE_COUNT; k++) out.add(fateArtKey(k < FATE_BY_MAP_FROM ? k : k + 4 * gm));
+  return [...out];
+}
+
+/** 36 张新闻插图的键 */
+export const NEWS_ART_KEYS: readonly string[] = Object.freeze(Array.from({ length: 36 }, (_, i) => newsArtKey(i)));
 
 /** 演出弹窗所需的逻辑键；没有原版画面的种类返回 null（用程序化弹窗） */
 export function popupKeys(p: PopupSpec): string[] | null {
@@ -95,15 +129,18 @@ export function popupKeys(p: PopupSpec): string[] | null {
     case 'news':
       return [NEWS_SHEET, newsArtKey(p.id)];
     case 'fate':
-      // 命运插图（Data#436–475，illustration.fate.*）与 37 条命运的对应未核实（catalog 置信度 guess）：
-      // 按「guess 整体回退」走程序化命运弹窗，不在原版紫板上拼程序化插图。核实后再接原版命运板。
-      return null;
+      // 命运板：Panel#66 图1 + 插图表 0x473dd8 选的插图（表情头像只是点缀，加载中先不画，不进判定）；
+      // 加持段只有通用消息框
+      return p.phase === 'blessing' ? [COMMON_SHEET] : [NEWS_SHEET, fateArtKey(fateSlotOf(p))];
     case 'god':
       return p.slot ? [SLOT_SHEET, COMMON_SHEET] : [COMMON_SHEET, ASSETS_SHEET];
     case 'gameOver':
       return [MONTHLY_SHEET];
     case 'cardCast':
-      return [COMMON_SHEET, cardArtKey(p.card)];
+      // 私密手牌下别人的得卡没有卡号：只有消息框
+      return p.card === null ? [COMMON_SHEET] : [COMMON_SHEET, cardArtKey(p.card)];
+    case 'magic':
+      return [COMMON_SHEET];
     default:
       return null;
   }
@@ -124,6 +161,10 @@ function ClassicPopupBody({ p }: { p: OpenPopup }): ReactNode {
       return <GodPopup spec={p} ms={p.realMs} />;
     case 'cardCast':
       return <CardCast spec={p} />;
+    case 'fate':
+      return p.phase === 'blessing' ? <FateBlessingBox spec={p} /> : <FateBoard spec={p} />;
+    case 'magic':
+      return <MagicBox spec={p} />;
     case 'gameOver':
       return (
         <Ranking
@@ -144,6 +185,16 @@ function ClassicPopupBody({ p }: { p: OpenPopup }): ReactNode {
     default:
       return null;
   }
+}
+
+/**
+ * 整块盖住工具列与棋盘视窗的板子（新闻板、命运板，440×480 贴舞台 (0,0)）：板面上接住指针、暂停经典快捷键
+ * （PopupScene 的 shield）。命运的加持消息框、亮卡、魔法屋消息框都在棋盘视窗里（y ≥ 48），不盖工具列，照旧只听不拦
+ */
+export function boardShield(p: PopupSpec): SceneRect | undefined {
+  if (p.kind === 'news') return { x: 0, y: 0, w: NEWS_BOARD.w, h: NEWS_BOARD.h };
+  if (p.kind === 'fate' && p.phase !== 'blessing') return { x: 0, y: 0, w: FATE_BOARD.w, h: FATE_BOARD.h };
+  return undefined;
 }
 
 function PopupSwitch({ p, legacy }: { p: OpenPopup; legacy: LegacyPopup }): ReactNode {
@@ -182,23 +233,16 @@ function PopupSwitch({ p, legacy }: { p: OpenPopup; legacy: LegacyPopup }): Reac
     );
   }
   if (!classic) return <>{legacy(p)}</>;
-  const title =
-    p.kind === 'news'
-      ? p.headline
-      : p.kind === 'fate'
-        ? p.title
-        : p.kind === 'god'
-          ? p.title
-          : p.kind === 'gameOver'
-            ? p.title
-            : p.kind;
+  // 场景的无障碍标签：新闻用标题，其余种类都有 title（乐透在上面已分流）
+  const title = p.kind === 'news' ? p.headline : p.title;
   return (
     <PopupScene
       kind={p.kind}
       label={title}
       minMs={p.minMs}
       onSkip={() => usePopupStore.getState().skip(p.popupId)}
-      anyInputSkips={p.kind === 'cardCast'}
+      anyInputSkips={p.kind === 'cardCast' || p.kind === 'fate'}
+      shield={boardShield(p)}
       backdrop={p.kind === 'gameOver' ? 'opaque' : 'none'}
     >
       <ClassicPopupBody p={p} />
@@ -334,6 +378,9 @@ export interface ClassicPopupHostProps {
 
 export default function ClassicPopupHost({ current, map, legacy }: ClassicPopupHostProps): ReactNode {
   const packId = useClassicAssets((s) => s.packId);
+  // 预取命运插图时按当前地图（33–36 按图换图）；地图晚到不重跑预取
+  const mapRef = useRef(map);
+  mapRef.current = map;
   useEventPopupWatcher(map);
   // handler 打开弹窗之前据此判断会不会用原版画面（原版亮卡时不叠网页版的气泡、粒子与光束）
   useEffect(() => registerClassicPopupProbe(classicPopupReady), []);
@@ -347,13 +394,18 @@ export default function ClassicPopupHost({ current, map, legacy }: ClassicPopupH
       const client = scenePackClient();
       if (!client) return;
       for (const key of CLASSIC_POPUP_SPRITES) if (client.usableEntry(key)) void ensureSceneSprite(key, client);
-      // 亮卡的宝石消息框（ui.common 图集页）先下，再低优先级逐张下卡片插画
-      if (client.usableEntry(COMMON_SHEET)) {
-        void ensureSceneSprite(COMMON_SHEET, client).then((sheet) => {
+      // 亮卡的宝石消息框（ui.common）与新闻 / 命运板（ui.newsBoard）的图集页先下，再低优先级逐张下卡片插画、
+      // 本图的命运插图与新闻插图
+      for (const key of [COMMON_SHEET, NEWS_SHEET]) {
+        if (!client.usableEntry(key)) continue;
+        void ensureSceneSprite(key, client).then((sheet) => {
           if (live && sheet) void preloadSpritePages(sheet);
         });
       }
-      void prefetchCardArt(cardArtPrefetchOrder(useGameStore.getState().view), () => live);
+      const gm = mapRef.current?.def.globalMapId ?? null;
+      void prefetchCardArt(cardArtPrefetchOrder(useGameStore.getState().view), () => live).then(() =>
+        prefetchImageKeys([...fateArtPrefetchKeys(gm), ...NEWS_ART_KEYS], () => live),
+      );
     };
     const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
     if (w.requestIdleCallback) w.requestIdleCallback(run);

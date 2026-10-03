@@ -111,18 +111,28 @@ describe('合成包：原版通用对话框与弹窗的条目', () => {
     }
   });
 
-  it('卡片插画 30 张（165×256）、新闻插图 36 张（388×251），都是不透明整图；卡片 k 的文件是按 card.k 画的那一张', () => {
-    expect(SYNTH_A11.images).toHaveLength(66);
+  it('卡片插画 30 张（165×256）、新闻插图 36 张、命运插图 40 张（388×251），都是不透明整图；卡片 k 的文件是按 card.k 画的那一张', () => {
+    expect(SYNTH_A11.images).toHaveLength(106);
     for (const k of SYNTH_A11.images) {
       const e = m.entries[k]!;
       expect(e.type, k).toBe('image');
       if (e.type !== 'image') continue;
       const card = k.startsWith('card.');
+      const fate = k.startsWith('illustration.fate.');
       expect([e.w, e.h], k).toEqual(card ? [165, 256] : [388, 251]);
       expect(e.transparency, k).toBe('opaque');
-      // 置信度跟资源目录：卡片插画有 exe 证据（0x440bea），新闻插图目视
-      expect(e.confidence, k).toBe(card ? 'exe' : 'visual');
+      // 置信度跟资源目录：卡片插画（0x440bea）与命运插图（插图表 0x473dd8）有 exe 证据，新闻插图目视
+      expect(e.confidence, k).toBe(card || fate ? 'exe' : 'visual');
     }
+    // 40 张命运插图各不相同（按插图号画），客户端测试能区分 33–36 按图换图
+    const fateFiles = new Set(
+      Array.from({ length: 40 }, (_, i) => {
+        const e = m.entries[`illustration.fate.${i}`]!;
+        if (e.type !== 'image') throw new Error(`illustration.fate.${i}`);
+        return m.files[e.file]!.sha256;
+      }),
+    );
+    expect(fateFiles.size).toBe(40);
     const files = new Set<string>();
     for (let k = 1; k <= 30; k++) {
       const e = m.entries[`card.${k}`]!;
@@ -139,8 +149,8 @@ describe('合成包：原版通用对话框与弹窗的条目', () => {
     // 不透明：四角是黑色（与原版卡片一样），没有 alpha < 255 的像素
     expect([...png.rgba.subarray(0, 4)]).toEqual([0, 0, 0, 255]);
     for (let i = 3; i < png.rgba.length; i += 4) if (png.rgba[i] !== 255) throw new Error(`card.7 像素 ${i >> 2} 透明`);
-    // 命运插图的对应未核实：合成包不给
-    expect(m.entries['illustration.fate.0']).toBeUndefined();
+    // 命运插图（插图表 exe 0x473dd8 已核实）：合成包给全 40 张，原版命运板在 E2E 原版配置下可用
+    expect(m.entries['illustration.fate.0']).toMatchObject({ type: 'image', group: 'illustration.fate' });
   });
 });
 

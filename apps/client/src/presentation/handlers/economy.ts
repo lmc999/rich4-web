@@ -1,6 +1,7 @@
 // M4 经济事件的演出（design/client.md §4.5）：股票成交、分红、乐透开奖、月结、百货交易、企业收费、贷款到期提醒。
 // 金额变化一律按事件 post 与提交前显示态之差飘字并闪动 HUD（showAllDeltas），不自己推算规则数值。
 import type { SeatIndex } from '@rich4/shared/engine';
+import { classicPopupHostActive } from '../../ui/popups/popupStore';
 import { formatEvent } from '../logFormat';
 import type { EventHandler, PresentationContext } from '../types';
 import { showAllDeltas, syncFromPost } from './common';
@@ -142,9 +143,13 @@ export const RESEARCH_DONE: EventHandler<'RESEARCH_DONE'> = async (e, ctx) => {
   await ctx.wait(700);
 };
 
+/**
+ * 百货董事长赠品（原版 fcn.0042dd0a：消息框「歡迎董事長光臨\n\n送您%s！」1.5 秒，不亮卡）：toast 写明送的是哪张卡 / 哪件
+ * 道具（看得到的人：本人或公开手牌；私密下别人只看到「获得百货公司赠礼」）；原版皮肤没有头顶的 🎁 飘字
+ */
 export const CHAIRMAN_GIFT: EventHandler<'CHAIRMAN_GIFT'> = async (e, ctx) => {
   const line = formatEvent(e, ctx.names);
   if (line && (e.seat === ctx.me || e.card !== null || e.item !== null)) ctx.ui.toast(line, 'success');
-  ctx.board.floatText({ seat: e.seat }, '🎁', 'info');
+  if (!classicPopupHostActive()) ctx.board.floatText({ seat: e.seat }, '🎁', 'info');
   await ctx.wait(700);
 };

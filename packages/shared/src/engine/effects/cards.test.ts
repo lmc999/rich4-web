@@ -4,6 +4,7 @@ import { TEST_MAP_SPEC } from '../../data/maps/fixtures/testMap';
 import { createRegistry, fixtureRegistry } from '../../data/maps/registry';
 import { CMB } from '../../data/tables/combat';
 import { ECON } from '../../data/tables/economy';
+import { ITEM } from '../../data/tables/ids';
 import { engineMap } from '../core/mapCache';
 import { buildTurnMenu } from '../decisions/build';
 import { movePrice } from '../rules/stock';
@@ -315,6 +316,30 @@ describe('cards（30 张卡的效果）', () => {
     expect(sc.player(2)).toMatchObject({ node: 14, st: expect.objectContaining({ jail: 5 }) });
     expect(sc.player(2).hostility[0]).toBe(150);
     sc.expectEvents(['CARD_USED', 'CONFINED']);
+  });
+
+  it('6 转向 / 11 传送机：在押的人不是候选，关押期间来路一直是关押格（V-M7；魔法屋效果 7 同样跳过，见 magic.test.ts）', () => {
+    const sc = setup([17, 6]).give(0, { items: [{ item: ITEM.TELEPORTER, qty: 1 }] });
+    sc.useCard(0, 17, { t: 'actor', actor: { t: 'seat', seat: 2 } });
+    expect(sc.player(2)).toMatchObject({ node: 14, prevNode: 14 });
+    const menu = buildTurnMenu(sc.state, em, 0);
+    const onBoard = [
+      { t: 'seat', seat: 0 },
+      { t: 'seat', seat: 1 },
+    ];
+    expect(menu.cards.find((r) => r.card === 6)!.targets).toEqual({ t: 'actor', actors: onBoard });
+    const tele = menu.items.find((r) => r.item === ITEM.TELEPORTER)!.targets;
+    expect(tele.t === 'teleport' && tele.sources.flatMap((x) => (x.k === 'actor' ? [x.actor] : []))).toEqual(onBoard);
+    const inmate = { t: 'seat', seat: 2 } as const;
+    expect(() => sc.useCard(0, 6, { t: 'actor', actor: inmate })).toThrow(/INVALID_TARGET/);
+    expect(() =>
+      sc.useItem(0, ITEM.TELEPORTER, {
+        t: 'teleport',
+        source: { k: 'actor', actor: inmate },
+        dest: { k: 'road', node: 9 },
+      }),
+    ).toThrow(/INVALID_TARGET/);
+    expect(sc.player(2)).toMatchObject({ node: 14, prevNode: 14 });
   });
 
   it('18–21 复仇 / 嫁祸 / 免费 / 免罪：被动卡不能主动打出', () => {

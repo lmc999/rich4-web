@@ -4,7 +4,7 @@ import { buildMapIndex, buildTestMap } from '@rich4/shared/data';
 import type { GameEvent } from '@rich4/shared/engine';
 import { describe, expect, it } from 'vitest';
 import { HANDLERS } from '../presentation/handlers';
-import { DICE_KNOCK } from '../presentation/soundMap';
+import { DICE_KNOCK, FATE_FLIP_SFX } from '../presentation/soundMap';
 import type { HandlerMap, PresentationContext } from '../presentation/types';
 import { selfPlay } from '../test/selfPlay';
 import { AudioEngine } from './AudioEngine';
@@ -250,6 +250,14 @@ describe('事件', () => {
     const d2 = new AudioDirector(bare);
     expect(d2.playCue(DICE_KNOCK)?.key).toBe('zzfx.dice');
     expect(bare.ops).toEqual(['sfx zzfx.dice sfx']);
+  });
+
+  it('命运（翻牌声 timed）：事件开始时只说命运语音、不放音效（原版命运板只有语音）；程序化翻面卡由 handler 经 playCue 放 ZzFX card', () => {
+    const { e, d } = spy();
+    const a = d.onEvent({ type: 'FATE', seat: 0, id: 3, amount: null, blessing: null }, actx());
+    expect(a.sfx).toBeNull();
+    expect(e.ops.filter((o) => o.startsWith('sfx'))).toEqual([]);
+    expect(d.playCue(FATE_FLIP_SFX)?.key).toBe('zzfx.card');
   });
 
   it('卡片台词（timed）：事件开始时 Effect#62 照放、台词只选好不说；speakTimed(事件) 在亮卡结束时按序说出、只说一次；end / reset 后作废', () => {

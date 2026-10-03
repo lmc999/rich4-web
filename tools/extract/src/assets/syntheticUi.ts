@@ -3120,7 +3120,8 @@ async function addSyntheticVenuesAFlics(
 // - venue.monthly.screen（Panel#25，83 帧）：底图、MONEY 卡（名次格 (19+83i,41) 64×88）、名次 1–4、主持人、Q 版小人；
 // - venue.assets.screen（Panel#9，25 帧）：三页 640×480（数值栏、道具 / 卡片格、表格线同原版位置）、EXIT、箭头、蓝钮、神明小像；
 // - ui.autoplay（Panel#77，18 帧）：托管对话框 435×355（红点、滑杆刻度、框钮位置同原版）、页签、红点、箭头、12 个圆头像；
-// - card.1–30（Data#530–559）165×256、illustration.news.0–35（Data#400–435）388×251，都是不透明整图（卡片四角涂黑）。
+// - card.1–30（Data#530–559）165×256、illustration.news.0–35（Data#400–435）388×251、illustration.fate.0–39
+//   （Data#436–475，命运板插图，按 exe 0x473dd8 的插图表被 49 个命运表项引用）388×251，都是不透明整图（卡片四角涂黑）。
 // - illustration.holiday.<n>（SYNTH_HOLIDAY_ART：四张图各自的首末 slot）200×200 不透明占位，按 gm 换底色、中间画 slot。
 // 内容全部是自绘色块、线条与点阵，不含原版像素。
 
@@ -3830,6 +3831,17 @@ function a11NewsImage(i: number): Canvas {
   return c;
 }
 
+/** 命运插图（388×251，不透明）：紫色调（与命运板同色系），中间画插图号 i */
+function a11FateImage(i: number): Canvas {
+  const c = new Canvas(388, 251);
+  c.rect(0, 0, 388, 251, lighter([150, 70, 170, 255], 0.5));
+  c.rect(0, 180, 388, 71, lighter(hue(i + 3), 0.3));
+  c.frame(0, 0, 388, 251, [110, 40, 130, 255], 4);
+  a11Number(c, i, 194, 110, 5, INK);
+  c.dots(10, 236, Math.min(i + 1, 40), INK, 3);
+  return c;
+}
+
 /** 节日插画占位（200×200，不透明）：按 gm 换底色，中间画 slot */
 function a11HolidayImage(gm: number, slot: number): Canvas {
   const c = new Canvas(200, 200);
@@ -3861,10 +3873,11 @@ export const SYNTH_A11 = {
   images: [
     ...Array.from({ length: 30 }, (_, k) => `card.${k + 1}`),
     ...Array.from({ length: 36 }, (_, i) => `illustration.news.${i}`),
+    ...Array.from({ length: 40 }, (_, i) => `illustration.fate.${i}`),
   ],
 } as const;
 
-/** 写进合成包：A11 的整图（卡片插画、新闻插图；精灵随 UI_FRAMES 一起写） */
+/** 写进合成包：A11 的整图（卡片插画、新闻插图、命运插图；精灵随 UI_FRAMES 一起写） */
 async function addSyntheticA11Images(
   writer: PackWriter,
   byKey: ReadonlyMap<string, Catalog['items'][number]>,
@@ -3875,7 +3888,12 @@ async function addSyntheticA11Images(
     if (it?.type !== 'image') throw new Error(`资源目录缺少整图 ${key}`);
     const item = it as ImageItem;
     const card = /^card\.(\d+)$/.exec(key);
-    const canvas = card ? a11CardImage(Number(card[1])) : a11NewsImage(Number(key.split('.').at(-1)));
+    const n = Number(key.split('.').at(-1));
+    const canvas = card
+      ? a11CardImage(Number(card[1]))
+      : key.startsWith('illustration.fate.')
+        ? a11FateImage(n)
+        : a11NewsImage(n);
     if (canvas.w !== item.w || canvas.h !== item.h) throw new Error(`${key} 尺寸与资源目录不符`);
     const file = `images/synthetic-ui/${key}.png`;
     await writer.writeFile(file, encodePngRgba(canvas.w, canvas.h, canvas.rgba, png), 'image', item.group);

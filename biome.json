@@ -13,7 +13,8 @@
       "!**/*.json",
       "!test",
       "!test-results",
-      "!playwright-report"
+      "!playwright-report",
+      "!!**/.claude/worktrees"
     ]
   },
   "formatter": {

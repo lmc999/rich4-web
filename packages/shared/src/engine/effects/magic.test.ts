@@ -182,6 +182,8 @@ describe('magic（魔法屋）', () => {
       expect.objectContaining({ actor: { t: 'seat', seat: 1 } }),
     ]);
     expect(d.player(1).prevNode).toBe(7);
+    // 在押的人来路不变（原版 v2.06 0x43152a 同样跳过计数非 0 的人），获释后仍从关押格随机出发
+    expect(d.player(2)).toMatchObject({ node: 14, prevNode: 14 });
   });
 
   it('magic：首回合还没跳伞的人也可能被选中：关押直接落在监狱（之后不再跳伞），向后转跳过', () => {

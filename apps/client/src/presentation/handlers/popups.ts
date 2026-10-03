@@ -57,22 +57,33 @@ export function signedMoney(ctx: PresentationContext, n: number): string {
  * 打开弹窗并等待 ms（1x 时钟；中止、跳过时提前结束），结束时关闭。已中止时不打开。
  * minMs：最短展示时间（1x 毫秒，按当前倍速换算），之后用户点击可以跳过。
  * 弹窗寿命按动画时钟计，组件内部动画按真实时间走：打开时把当前倍速一并交给弹窗，组件按真实寿命安排节奏。
+ * 返回是否被用户跳过（命运板跳过时停掉语音，原版 fcn.00452c39 → fcn.00452bd6）。
  */
-export async function showPopup(ctx: PresentationContext, spec: PopupSpec, ms: number, minMs?: number): Promise<void> {
-  if (ctx.signal.aborted) return;
+export async function showPopup(
+  ctx: PresentationContext,
+  spec: PopupSpec,
+  ms: number,
+  minMs?: number,
+): Promise<boolean> {
+  if (ctx.signal.aborted) return false;
   const store = usePopupStore.getState();
   const id = store.open(spec, ms, minMs ?? Math.min(ms, 1200), ctx.animSpeed?.() ?? 1);
   let skip: () => void = () => {};
+  let wasSkipped = false;
   const skipped = new Promise<void>((resolve) => {
     skip = resolve;
   });
-  const off = onPopupSkip(id, () => skip());
+  const off = onPopupSkip(id, () => {
+    wasSkipped = true;
+    skip();
+  });
   try {
     await Promise.race([ctx.wait(ms), skipped]);
   } finally {
     off();
     usePopupStore.getState().close(id);
   }
+  return wasSkipped;
 }
 
 /** 事件的 post（handler 的泛型参数统一取用） */

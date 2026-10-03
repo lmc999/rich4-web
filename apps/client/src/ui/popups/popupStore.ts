@@ -34,6 +34,16 @@ export interface FatePopupSpec {
   kind: 'fate';
   player: PlayerRef;
   id: number;
+  /**
+   * 原版命运处理函数表的下标（第 33–36 条在大陆 / 日本 / 美国图为 k + 4·gm，见 presentation/eventText.fateVariantSlot）：
+   * 原版命运板按它取插图（表 0x473dd8）与表情头像；缺省等于 id
+   */
+  slot?: number;
+  /**
+   * 原版皮肤的命运分两段：board = 命运板（插图 + 文案）；blessing = 板子之后的加持消息框（原版 fcn.0043f90f 1.5 秒）。
+   * 缺省 board；程序化弹窗两段都画整张翻面卡
+   */
+  phase?: 'board' | 'blessing';
   title: string;
   text: string;
   amountText: string | null;
@@ -46,13 +56,17 @@ export interface FatePopupSpec {
 export interface CardCastPopupSpec {
   kind: 'cardCast';
   player: PlayerRef;
-  card: CardId;
+  /** 卡号；得卡（gain）时私密手牌模式下别人看不到种类为 null（只画消息框，不贴卡图） */
+  card: CardId | null;
   cardName: string;
   desc: string;
-  /** 顶部标题（「使用卡片」「被动卡生效」「没有效果」） */
+  /** 顶部标题（「使用卡片」「被动卡生效」「没有效果」「得到卡片」） */
   title: string;
   targetText: string | null;
-  variant: 'cast' | 'passive' | 'fizzle';
+  /** cast 出卡、passive 被动卡生效、fizzle 没有效果、gain 得卡（卡片格 / 聖誕節，原版同一个亮卡函数） */
+  variant: 'cast' | 'passive' | 'fizzle' | 'gain';
+  /** 得卡的来源（variant 为 gain 时）：卡片格「得到%s！」、聖誕節「聖誕節\n\n%s得到%s！」 */
+  gainFrom?: 'square' | 'holiday';
 }
 
 export interface GodPopupSpec {
@@ -198,6 +212,11 @@ export function opensClassic(spec: PopupSpec): boolean {
   } catch {
     return false;
   }
+}
+
+/** 原版皮肤的弹窗宿主是否挂着（经典布局）：handler 据此省掉原版没有的棋盘飘字（得卡的 🃏、董事长赠品的 🎁） */
+export function classicPopupHostActive(): boolean {
+  return classicProbe !== null;
 }
 
 /** 登记跳过回调（handler 用来提前结束等待）；返回注销函数 */

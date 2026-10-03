@@ -58,8 +58,10 @@
   transform-origin: center;
 }
 
+/* 卡面字色写死：原版皮肤的经典舞台根元素是浅色字（#f4ead0），素材不全回退到这些程序化弹窗时不能继承，否则浅字压在奶油底上看不见 */
 .card {
   position: relative;
+  color: var(--c-ink);
   background: var(--c-cream);
   border: var(--border);
   border-radius: var(--radius);
@@ -237,6 +239,7 @@
 }
 
 .flipFace {
+  color: var(--c-ink);
   background: var(--c-cream);
 }
 

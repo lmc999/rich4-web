@@ -36,6 +36,13 @@
   outline: 2px solid #ffe060;
 }
 
+/* 板面接住指针（PopupScene 的 shield）：新闻板 / 命运板盖着工具列，点板子不能穿到下面看不见的工具列钮 */
+.shield {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
+}
+
 [data-hit="wide"] .skip::before {
   content: "";
   position: absolute;
@@ -58,7 +65,12 @@
   pointer-events: none;
 }
 
-/* 命运板的程序化插图：大问号 + 本人头像（命运插图的对应未核实） */
+/* 新闻板 / 命运板的底（原版整张不透明拷贝，见 layout.ts 的 BOARD_UNDERLAY） */
+.underlay {
+  position: absolute;
+  pointer-events: none;
+}
+
 .affected {
   display: flex;
   flex-wrap: wrap;

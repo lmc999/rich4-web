@@ -63,13 +63,28 @@ export const FACILITY_BUILT: EventHandler<'FACILITY_BUILT'> = async (e, ctx) => 
   await ctx.wait(250);
 };
 
+/**
+ * 命运拆屋 / 征收时镜头移到地块的时长：原版第 0、1 条命运的处理函数先 fcn.0041cc56(x,y,2) 把镜头移到被拆 / 被征收的
+ * 地块（0x44a940 / 0x44aad8）再执行（见 events.ts 的 FATE_AFTER_BOARD）；镜头函数的耗时未测，与聖誕節送卡同按 300 ms 估
+ */
+export const FATE_LOT_FOCUS_MS = 300;
+
+/**
+ * 地产被拆 / 被收回：震屏 → 0.4 秒后地块变样 → 再停 0.3 秒（与原版拆屋的 fcn.004501ac 逐帧震动 + 停 400 ms → 重画 →
+ * 停 300 ms 0x44a9b6 同一节奏）。命运引起的（违建被拆、土地被征收；引擎先发 FATE 再改地产）先把镜头移到地块，等待期间
+ * 镜头一直停在地块上（对同一点再 focus：镜头动画期间跟随不抢镜头），看着它变样，之后才由跟随拉回行动者
+ */
 export const LOT_MUTATED: EventHandler<'LOT_MUTATED'> = async (e, ctx) => {
+  const atLot = e.cause.k === 'fate';
+  const hold = (ms: number): Promise<unknown> =>
+    atLot ? Promise.all([ctx.wait(ms), ctx.board.focus({ lot: e.lot }, ms, ctx.signal)]) : ctx.wait(ms);
+  if (atLot) await ctx.board.focus({ lot: e.lot }, FATE_LOT_FOCUS_MS, ctx.signal);
   ctx.board.shake(6, 350);
   const line = formatEvent(e, ctx.names);
   if (line) ctx.ui.toast(line, 'warn');
-  await ctx.wait(400);
+  await hold(400);
   syncFromPost(ctx, e.post);
-  await ctx.wait(300);
+  await hold(300);
 };
 
 /** 金币从付款人飞向收款人，两边飘字 */

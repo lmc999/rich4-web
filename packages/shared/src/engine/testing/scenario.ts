@@ -173,7 +173,6 @@ export class Scenario {
     const hold = this.engineMapHold();
     return this.edit((s) => {
       const p = s.players.find((x) => x.seat === seat)!;
-      if (p.st.jail === 0) p.savedPrevNode = p.prevNode;
       p.st.jail = days;
       p.placed = true;
       p.node = hold;

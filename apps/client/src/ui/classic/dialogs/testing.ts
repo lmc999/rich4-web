@@ -91,14 +91,14 @@ export function a11FakeSheets(): Record<string, SpriteSheet> {
   return out;
 }
 
-/** 假素材包里的整图键（卡片插画、新闻插图） */
+/** 假素材包里的整图键（卡片插画、新闻插图、命运插图） */
 export function isImageKey(key: string): boolean {
-  return /^(card\.\d+|illustration\.news\.\d+)$/.test(key);
+  return /^(card\.\d+|illustration\.(news|fate)\.\d+)$/.test(key);
 }
 
 /**
- * 假素材包客户端：sprites 里的键为精灵条目、*.mask 为掩膜条目、卡片插画与新闻插图为整图条目；其余返回 null。
- * 缺省可用 = a11FakeSheets 的全部键 + 计算器掩膜 + 全部卡片插画与新闻插图。
+ * 假素材包客户端：sprites 里的键为精灵条目、*.mask 为掩膜条目、卡片插画、新闻插图与命运插图为整图条目；其余返回 null。
+ * 缺省可用 = a11FakeSheets 的全部键 + 计算器掩膜 + 全部卡片插画、新闻插图与命运插图。
  */
 export function a11PackClient(usable?: Iterable<string>): PackClient & { asked: string[] } {
   const keys = new Set(
@@ -107,6 +107,7 @@ export function a11PackClient(usable?: Iterable<string>): PackClient & { asked: 
       'ui.numpad.mask',
       ...Array.from({ length: 30 }, (_, k) => `card.${k + 1}`),
       ...Array.from({ length: 36 }, (_, i) => `illustration.news.${i}`),
+      ...Array.from({ length: 40 }, (_, i) => `illustration.fate.${i}`),
     ],
   );
   const base = fakePackClient([...keys].filter((k) => !isImageKey(k)));
@@ -117,10 +118,11 @@ export function a11PackClient(usable?: Iterable<string>): PackClient & { asked: 
       base.asked.push(key);
       if (!keys.has(key)) return null;
       const card = key.startsWith('card.');
+      const fate = key.startsWith('illustration.fate.');
       return {
         type: 'image',
-        group: card ? 'card' : 'illustration.news',
-        confidence: card ? 'exe' : 'visual',
+        group: card ? 'card' : fate ? 'illustration.fate' : 'illustration.news',
+        confidence: card || fate ? 'exe' : 'visual',
         src: [],
         file: `images/${key}.png`,
         w: card ? 165 : 388,

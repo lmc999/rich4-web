@@ -59,7 +59,7 @@ describe('DECISION_TIMING_CLASS', () => {
 
 describe('EngineApi 占位与错误类型', () => {
   it('版本号', () => {
-    expect(ENGINE_VERSION).toBe('0.4.0');
+    expect(ENGINE_VERSION).toBe('0.5.0');
     expect(STATE_SCHEMA_VERSION).toBe(1);
   });
 

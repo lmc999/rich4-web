@@ -4,7 +4,7 @@
 // anim=instant，走演出路径，看新闻、命运、轮盘、老虎机）：
 // 1) 买地（BUY_LAND 原版 YES/NO + 讲话头像）→ 卡片欄用查税卡：原版目标面板（DOM 候选）选对手、棋盘视窗换成原版光标 →
 //    升级（UPGRADE_LAND）→ 买设施地 → 兴建旅馆（设施类别选择 Data#476 图4）→ 对手住进旅馆：观战页弹出原版转盘
-//    （旅馆盘，停在强制的 3 天）→ 新闻板（插图 + 所得税）→ 命运（继承遗产；命运插图未核实，整体回退程序化弹窗）→
+//    （旅馆盘，停在强制的 3 天）→ 新闻板（插图 + 所得税）→ 命运板（继承遗产：Panel#66 图1 + 插图表 0x473dd8 选的插图）→
 //    资产表（工具列「查询」接管成原版资产表：
 //    三页、数值与 HUD 一致）→ 托管设置（原版托管对话框）；每一步断言场景是原版（data-scene="classic"）、intent 被服务器接受；
 // 2) 老虎机：保留开局摆在路上的神明，走到小财神上（强制老虎机 1 2 3），观战页的原版老虎机滚动后定格在 123。
@@ -159,7 +159,7 @@ async function lotOf(page: Page, id: string): Promise<{ owner: number | null; le
   }, id);
 }
 
-test('原版对话框与弹窗：买地、升级、设施、轮盘、新闻板（命运回退程序化）、用卡选目标、资产表、托管', async ({
+test('原版对话框与弹窗：买地、升级、设施、轮盘、新闻板、命运板（原版插图）、用卡选目标、资产表、托管', async ({
   browser,
 }) => {
   test.setTimeout(420_000);
@@ -276,16 +276,16 @@ test('原版对话框与弹窗：买地、升级、设施、轮盘、新闻板�
     await expect(news.getByTestId('news-art')).toBeVisible();
     await waitIdle(A);
 
-    // ── 命运：继承遗产（命运插图未核实，guess 整体回退 → 程序化命运弹窗，不在原版紫板上拼） ──
+    // ── 命运板：继承遗产（观战页：原版紫板 + 插图表 0x473dd8 选的插图 Data#458 = illustration.fate.22） ──
     await waitMyTurn(A);
     await watcherCaughtUp(W);
     await acted(A, () => debugAct(A, { op: 'stackDeck', deck: 'fate', ids: [25] }));
     await stepOnto(A, 0, 2, 1);
-    const fate = W.getByTestId('fate-popup');
+    const fate = W.locator('[data-scene="classic"] [data-testid="fate-popup"]');
     await expect(fate).toBeVisible({ timeout: 30_000 });
     await expect(fate).toHaveAttribute('data-fate', '25');
+    await expect(fate.getByTestId('fate-art')).toHaveAttribute('data-asset-key', 'illustration.fate.22');
     await expect(fate.getByTestId('fate-amount')).toBeVisible();
-    await expect(W.locator('[data-scene="classic"] [data-testid="fate-popup"]')).toHaveCount(0);
     await waitIdle(A);
 
     // ── 资产表：工具列「查询」接管成原版资产表 ──
