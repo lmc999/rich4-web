@@ -59,6 +59,14 @@ async function eventState(page: Page): Promise<{
 
 const BAD_TEXT = /undefined|NaN|\{\{|\[object|\b(?:events|news|fate|magic|hud|ui):[A-Za-z0-9]/;
 
+/**
+ * 手牌私密（座位上真人 ≥ 2，architecture §28.3）下，得失卡片 / 道具、百货交易、董事长赠品的日志按观察者脱敏：
+ * 本人看到卡名、别人看到「1 张卡片」。比对各页日志时只比这些行的事件类型
+ */
+const HAND_PRIVATE_LOG = /^(CARD_GAINED|CARD_LOST|ITEM_GAINED|ITEM_LOST|SHOP_TRADE|CHAIRMAN_GIFT)\|/;
+const comparableLog = (log: string[]): string[] =>
+  log.slice(-40).map((l) => (HAND_PRIVATE_LOG.test(l) ? l.slice(0, l.indexOf('|')) : l));
+
 /** 4 页面追上同一 seq；HUD 与服务器快照一致；显示态与日志一致且没有坏文案 */
 async function consistent(pages: Page[]) {
   await syncPages(pages);
@@ -67,7 +75,7 @@ async function consistent(pages: Page[]) {
   for (const h of huds) expect(h).toEqual(server);
   const states = await Promise.all(pages.map((p) => eventState(p)));
   for (const s of states) {
-    expect({ ...s, log: s.log.slice(-40) }).toEqual({ ...states[0]!, log: states[0]!.log.slice(-40) });
+    expect({ ...s, log: comparableLog(s.log) }).toEqual({ ...states[0]!, log: comparableLog(states[0]!.log) });
     for (const line of s.log) expect(line).not.toMatch(BAD_TEXT);
   }
   return states[0]!;

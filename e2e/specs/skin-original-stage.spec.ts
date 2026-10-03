@@ -444,6 +444,14 @@ async function eventState(page: Page): Promise<{
 
 const BAD_TEXT = /undefined|NaN|\{\{|\[object|\b(?:events|news|fate|magic|hud|ui):[A-Za-z0-9]/;
 
+/**
+ * 手牌私密（座位上真人 ≥ 2，architecture §28.3）下，得失卡片 / 道具、百货交易、董事长赠品的日志按观察者脱敏：
+ * 本人看到卡名、别人看到「1 張卡片」。比对各页日志时只比这些行的事件类型
+ */
+const HAND_PRIVATE_LOG = /^(CARD_GAINED|CARD_LOST|ITEM_GAINED|ITEM_LOST|SHOP_TRADE|CHAIRMAN_GIFT)\|/;
+const comparableLog = (log: string[]): string[] =>
+  log.slice(-40).map((l) => (HAND_PRIVATE_LOG.test(l) ? l.slice(0, l.indexOf('|')) : l));
+
 async function consistentEvents(pages: Page[]) {
   await syncPages(pages);
   const huds = await Promise.all(pages.map((p) => hudSnapshot(p)));
@@ -451,7 +459,7 @@ async function consistentEvents(pages: Page[]) {
   for (const h of huds) expect(h).toEqual(server);
   const states = await Promise.all(pages.map((p) => eventState(p)));
   for (const s of states) {
-    expect({ ...s, log: s.log.slice(-40) }).toEqual({ ...states[0]!, log: states[0]!.log.slice(-40) });
+    expect({ ...s, log: comparableLog(s.log) }).toEqual({ ...states[0]!, log: comparableLog(states[0]!.log) });
     expect(s.stage).toBe('original');
     for (const line of s.log) expect(line).not.toMatch(BAD_TEXT);
   }
